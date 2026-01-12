@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: genet-backend
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: genet-backend
+spec:
+  replicas: {{ .Values.backend.replicas }}
+  selector:
+    matchLabels:
+      app: genet-backend
+  template:
+    metadata:
+      labels:
+        app: genet-backend
+    spec:
+      serviceAccountName: genet-backend
+      containers:
+      - name: backend
+        image: {{ .Values.backend.image }}
+        imagePullPolicy: {{ .Values.backend.imagePullPolicy }}
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: PORT
+          value: "8080"
+        volumeMounts:
+        - name: config
+          mountPath: /etc/genet
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: config
+        configMap:
+          name: genet-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: genet-backend
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    app: genet-backend
+  ports:
+  - port: {{ .Values.service.backend.port }}
+    targetPort: 8080
+    name: http
+  type: {{ .Values.service.backend.type }}
+

@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: genet-config
+  namespace: {{ .Release.Namespace }}
+data:
+  config.yaml: |
+    podLimitPerUser: {{ .Values.backend.config.podLimitPerUser }}
+    gpuLimitPerUser: {{ .Values.backend.config.gpuLimitPerUser }}
+    gpu:
+{{ toYaml .Values.backend.config.gpu | indent 6 }}
+    ui:
+{{ toYaml .Values.backend.config.ui | indent 6 }}
+    lifecycle:
+{{ toYaml .Values.backend.config.lifecycle | indent 6 }}
+    storage:
+{{ toYaml .Values.backend.config.storage | indent 6 }}
+    oauth:
+{{ toYaml .Values.backend.config.oauth | indent 6 }}
+    proxy:
+{{ toYaml .Values.backend.config.proxy | indent 6 }}
+    registry:
+{{ toYaml .Values.backend.config.registry | indent 6 }}
+    images:
+{{ toYaml .Values.backend.config.images | indent 6 }}

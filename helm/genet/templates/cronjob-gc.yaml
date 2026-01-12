@@ -1,0 +1,30 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: genet-lifecycle-controller
+  namespace: {{ .Release.Namespace }}
+spec:
+  schedule: "{{ .Values.cronjob.schedule }}"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: genet-controller
+        spec:
+          serviceAccountName: genet-backend
+          restartPolicy: OnFailure
+          containers:
+          - name: controller
+            image: {{ .Values.cronjob.image }}
+            command: ["/app/controller"]
+            volumeMounts:
+            - name: config
+              mountPath: /etc/genet
+          volumes:
+          - name: config
+            configMap:
+              name: genet-config
+

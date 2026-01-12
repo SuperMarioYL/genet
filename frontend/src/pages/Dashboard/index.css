@@ -1,0 +1,46 @@
+.dashboard-layout {
+  min-height: 100vh;
+}
+
+.dashboard-header {
+  background: #fff;
+  padding: 0 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.header-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.header-content h1 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.dashboard-content {
+  padding: 24px;
+  background: #f5f5f5;
+}
+
+.content-wrapper {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.quota-card {
+  margin-bottom: 24px;
+}
+
+.pods-section h2 {
+  margin-bottom: 16px;
+}
+
+.loading-container {
+  text-align: center;
+  padding: 40px;
+}
+

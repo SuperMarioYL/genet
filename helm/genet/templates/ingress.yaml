@@ -1,0 +1,40 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: genet-ingress
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+  - hosts:
+    - {{ .Values.ingress.host }}
+    secretName: {{ .Values.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+  - host: {{ .Values.ingress.host }}
+    http:
+      paths:
+      # API 请求转发到后端
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: genet-backend
+            port:
+              number: 8080
+      # 其他请求转发到前端
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: genet-frontend
+            port:
+              number: 80
+{{- end }}
+

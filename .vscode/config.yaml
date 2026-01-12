@@ -1,0 +1,114 @@
+# Genet 本地开发配置
+# 修改此文件自定义本地调试时的配置
+
+podLimitPerUser: 3
+gpuLimitPerUser: 3
+
+gpu:
+  availableTypes:
+    - name: "NVIDIA A100"
+      resourceName: "nvidia.com/gpu"
+      nodeSelector:
+        gpu-type: "a100"
+    - name: "NVIDIA V100"
+      resourceName: "nvidia.com/gpu"
+      nodeSelector:
+        gpu-type: "v100"
+  presetImages:
+    - name: "test"
+      image: "linuxserver/openssh-server"
+      description: "ssh基础镜像"
+    - name: "PyTorch 2.0"
+      image: "pytorch/pytorch:2.0.1-cuda11.7-cudnn8-runtime"
+      description: "PyTorch 2.0 with CUDA 11.7"
+
+ui:
+  defaultTTLHours: 4
+  minTTLHours: 1
+  maxTTLHours: 24
+  enableJupyter: false
+  enableCustomImage: true
+
+lifecycle:
+  autoDeleteTime: "23:00"
+  timezone: "Asia/Shanghai"
+  warningThresholdHours: 1
+
+storage:
+  storageClass: "hostpath" # Docker Desktop 使用 hostpath
+  size: "10Gi"
+  # 额外的通用存储（会挂载到每个 Pod）
+  extraVolumes: []
+  # 示例配置：
+  # extraVolumes:
+  #   # PVC 类型（共享数据集）
+  #   - name: "datasets"
+  #     mountPath: "/data/datasets"
+  #     readOnly: true
+  #     pvc: "shared-datasets"
+  #
+  #   # HostPath 类型（本地缓存）
+  #   - name: "cache"
+  #     mountPath: "/data/cache"
+  #     readOnly: false
+  #     hostPath: "/mnt/cache"
+  #
+  #   # NFS 类型（网络存储）
+  #   - name: "models"
+  #     mountPath: "/data/models"
+  #     readOnly: true
+  #     nfs:
+  #       server: "nfs.example.com"
+  #       path: "/exports/models"
+
+oauth:
+  # OAuth 配置说明：
+  # enabled: false - 使用默认用户 dev-user（不需要启动 Mock OAuth）
+  # enabled: true  - 启用 OAuth 认证（需要先运行 make mock-oauth-start）
+  enabled: true
+  providerURL: "http://localhost:8888/default" # Mock OAuth2 Server
+  clientID: "genet"
+  clientSecret: "genet-secret"
+  redirectURL: "http://localhost:8080/api/auth/callback"
+  frontendURL: "http://localhost:3000"
+  scopes:
+    - "openid"
+    - "profile"
+    - "email"
+  jwtSecret: "genet-dev-jwt-secret-32chars!!"
+  cookieDomain: "" # 空表示当前域
+  cookieSecure: false # 本地开发用 http
+
+# 代理配置（会注入到 Pod 的环境变量和 ~/.bashrc 中）
+proxy:
+  # HTTP 代理地址，留空则不配置
+  httpProxy: ""
+  # HTTPS 代理地址，留空则不配置
+  httpsProxy: ""
+  # 不使用代理的地址列表（逗号分隔）
+  noProxy: "localhost,127.0.0.1,.cluster.local"
+  # 示例配置：
+  # httpProxy: "http://proxy.example.com:8080"
+  # httpsProxy: "http://proxy.example.com:8080"
+  # noProxy: "localhost,127.0.0.1,.cluster.local,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+
+# 镜像仓库配置（用于镜像保存/commit 功能）
+registry:
+  # 镜像仓库地址，如 registry.example.com 或 docker.io
+  url: ""
+  # 仓库用户名（可选，用于推送镜像）
+  username: ""
+  # 仓库密码（可选，用于推送镜像）
+  password: ""
+  # 示例配置：
+  # url: "registry.cn-hangzhou.aliyuncs.com"
+  # username: "your-username"
+  # password: "your-password"
+
+# 系统依赖镜像配置
+images:
+  # nerdctl 镜像，用于 commit 操作（将 Pod 保存为镜像）
+  nerdctl: "ghcr.io/containerd/nerdctl:v1.7.0"
+  # 如果无法访问 ghcr.io，可以替换为其他源：
+  # nerdctl: "docker.io/containerd/nerdctl:v1.7.0"
+  # nerdctl: "registry.cn-hangzhou.aliyuncs.com/your-namespace/nerdctl:v1.7.0"

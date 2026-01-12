@@ -1,0 +1,126 @@
+# Backend configuration
+backend:
+  image: genet-backend:latest
+  imagePullPolicy: IfNotPresent
+  replicas: 2
+
+  # Backend configuration (injected via ConfigMap)
+  config:
+    podLimitPerUser: 5
+    gpuLimitPerUser: 8
+
+    gpu:
+      availableTypes:
+        - name: "NVIDIA A100"
+          resourceName: "nvidia.com/gpu"
+          nodeSelector:
+            gpu-type: "a100"
+        - name: "NVIDIA V100"
+          resourceName: "nvidia.com/gpu"
+          nodeSelector:
+            gpu-type: "v100"
+        - name: "NVIDIA T4"
+          resourceName: "nvidia.com/gpu"
+          nodeSelector:
+            gpu-type: "t4"
+
+      presetImages:
+        - name: "CUDA 12.0"
+          image: "nvidia/cuda:12.0.0-base-ubuntu22.04"
+          description: "NVIDIA CUDA 12.0 基础镜像"
+        - name: "PyTorch 2.0"
+          image: "pytorch/pytorch:2.0.1-cuda11.7-cudnn8-runtime"
+          description: "PyTorch 2.0 with CUDA 11.7"
+        - name: "TensorFlow 2.13"
+          image: "tensorflow/tensorflow:2.13.0-gpu"
+          description: "TensorFlow 2.13 GPU 版本"
+
+    ui:
+      defaultTTLHours: 4
+      minTTLHours: 1
+      maxTTLHours: 24
+      enableJupyter: false
+      enableCustomImage: true
+
+    lifecycle:
+      autoDeleteTime: "23:00"
+      timezone: "Asia/Shanghai"
+      warningThresholdHours: 1
+
+    storage:
+      storageClass: "standard" # 根据集群调整
+      size: "50Gi"
+      # 额外的通用存储（会挂载到每个用户 Pod）
+      extraVolumes: []
+      # 示例：
+      # extraVolumes:
+      #   - name: "datasets"
+      #     mountPath: "/data/datasets"
+      #     readOnly: true
+      #     pvc: "shared-datasets"
+      #   - name: "models"
+      #     mountPath: "/data/models"
+      #     readOnly: true
+      #     nfs:
+      #       server: "nfs.example.com"
+      #       path: "/exports/models"
+
+    oauth:
+      enabled: false
+      providerURL: "" # OIDC Issuer URL
+      clientID: ""
+      clientSecret: ""
+      redirectURL: "" # 如: https://genet.example.com/api/auth/callback
+      frontendURL: "" # 如: https://genet.example.com
+      scopes:
+        - "openid"
+        - "profile"
+        - "email"
+      jwtSecret: "" # 生产环境必须设置强密钥
+      cookieDomain: ""
+      cookieSecure: true # 生产环境使用 HTTPS
+
+    # 代理配置（会注入到用户 Pod 的环境变量和 ~/.bashrc 中）
+    proxy:
+      httpProxy: "" # HTTP 代理地址，如: http://proxy.example.com:8080
+      httpsProxy: "" # HTTPS 代理地址
+      noProxy: "localhost,127.0.0.1,.cluster.local,10.0.0.0/8" # 不使用代理的地址
+
+    # 镜像仓库配置（用于镜像保存/commit 功能）
+    registry:
+      url: "" # 镜像仓库地址，如: registry.example.com
+      username: "" # 仓库用户名
+      password: "" # 仓库密码
+
+    # 系统依赖镜像配置
+    images:
+      nerdctl: "ghcr.io/containerd/nerdctl:v1.7.0" # nerdctl 镜像，用于 commit 操作
+
+# Frontend configuration
+frontend:
+  image: genet-frontend:latest
+  imagePullPolicy: IfNotPresent
+  replicas: 2
+
+# CronJob configuration (lifecycle controller)
+cronjob:
+  schedule: "*/1 * * * *" # Every minute
+  image: genet-backend:latest
+
+# Ingress configuration
+ingress:
+  enabled: true
+  className: "nginx"
+  host: "genet.example.com"
+  tls:
+    enabled: false
+    secretName: ""
+
+# Service configuration
+service:
+  backend:
+    type: ClusterIP
+    port: 8080
+  frontend:
+    type: ClusterIP
+    port: 80

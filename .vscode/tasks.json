@@ -1,0 +1,235 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Backend: Build API Server",
+      "type": "shell",
+      "command": "go build -o bin/api-server cmd/api/main.go",
+      "options": {
+        "cwd": "${workspaceFolder}/backend"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": false
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      },
+      "problemMatcher": ["$go"]
+    },
+    {
+      "label": "Backend: Build Controller",
+      "type": "shell",
+      "command": "go build -o bin/controller cmd/controller/main.go",
+      "options": {
+        "cwd": "${workspaceFolder}/backend"
+      },
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      },
+      "problemMatcher": ["$go"]
+    },
+    {
+      "label": "Backend: Run Tests",
+      "type": "shell",
+      "command": "go test -v ./...",
+      "options": {
+        "cwd": "${workspaceFolder}/backend"
+      },
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      },
+      "problemMatcher": ["$go"]
+    },
+    {
+      "label": "Backend: Run Tests with Coverage",
+      "type": "shell",
+      "command": "go test -v -cover -coverprofile=coverage.out ./...",
+      "options": {
+        "cwd": "${workspaceFolder}/backend"
+      },
+      "group": "test",
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      },
+      "problemMatcher": ["$go"]
+    },
+    {
+      "label": "Backend: Lint",
+      "type": "shell",
+      "command": "golangci-lint run",
+      "options": {
+        "cwd": "${workspaceFolder}/backend"
+      },
+      "group": "test",
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      },
+      "problemMatcher": ["$go"]
+    },
+    {
+      "label": "Frontend: Install Dependencies",
+      "type": "shell",
+      "command": "npm install",
+      "options": {
+        "cwd": "${workspaceFolder}/frontend"
+      },
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
+    },
+    {
+      "label": "Frontend: Start Dev Server",
+      "type": "shell",
+      "command": "DANGEROUSLY_DISABLE_HOST_CHECK=true npm start",
+      "options": {
+        "cwd": "${workspaceFolder}/frontend",
+        "env": {
+          "BROWSER": "none",
+          "PORT": "3000"
+        }
+      },
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      },
+      "problemMatcher": {
+        "owner": "custom",
+        "pattern": {
+          "regexp": "^$"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "Starting the development server",
+          "endsPattern": "webpack compiled|Compiled successfully|No issues found"
+        }
+      }
+    },
+    {
+      "label": "Frontend: Build Production",
+      "type": "shell",
+      "command": "npm run build",
+      "options": {
+        "cwd": "${workspaceFolder}/frontend"
+      },
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
+    },
+    {
+      "label": "Frontend: Run Tests",
+      "type": "shell",
+      "command": "npm test",
+      "options": {
+        "cwd": "${workspaceFolder}/frontend"
+      },
+      "group": "test",
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
+    },
+    {
+      "label": "Docker: Build Backend Image",
+      "type": "shell",
+      "command": "docker build -t genet-backend:dev -f backend/Dockerfile backend/",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
+    },
+    {
+      "label": "Docker: Build Frontend Image",
+      "type": "shell",
+      "command": "docker build -t genet-frontend:dev -f frontend/Dockerfile frontend/",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
+    },
+    {
+      "label": "Kubernetes: Port Forward Frontend",
+      "type": "shell",
+      "command": "kubectl port-forward -n genet-system svc/genet-frontend 8080:80",
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Kubernetes: Get Pods",
+      "type": "shell",
+      "command": "kubectl get pods -n genet-system",
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Kubernetes: Logs Backend",
+      "type": "shell",
+      "command": "kubectl logs -n genet-system -l app=genet-backend -f",
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Make: Build Images",
+      "type": "shell",
+      "command": "make build-images",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
+    },
+    {
+      "label": "Make: Install Dev",
+      "type": "shell",
+      "command": "make install-dev",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
+    }
+  ]
+}
+

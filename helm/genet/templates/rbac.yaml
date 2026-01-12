@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: genet-backend
+  namespace: {{ .Release.Namespace }}
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: genet-backend
+rules:
+# Helm needs core permissions
+- apiGroups: [""]
+  resources: ["pods", "services", "namespaces", "persistentvolumeclaims", "configmaps", "secrets"]
+  verbs: ["get", "list", "watch", "create", "delete", "patch", "update"]
+
+# Pod logs access
+- apiGroups: [""]
+  resources: ["pods/log"]
+  verbs: ["get", "list"]
+
+# Nodes (for getting node IPs)
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list"]
+
+# Kaniko Jobs (image building)
+- apiGroups: ["batch"]
+  resources: ["jobs"]
+  verbs: ["get", "list", "watch", "create", "delete"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: genet-backend
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: genet-backend
+subjects:
+- kind: ServiceAccount
+  name: genet-backend
+  namespace: {{ .Release.Namespace }}
+

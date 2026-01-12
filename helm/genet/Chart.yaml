@@ -1,0 +1,13 @@
+apiVersion: v2
+name: genet
+description: GPU Pod Management System based on Kubernetes
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - gpu
+  - kubernetes
+  - pod-management
+maintainers:
+  - name: Genet Team
+

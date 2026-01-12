@@ -1,0 +1,63 @@
+# Binaries
+*.exe
+*.dll
+*.so
+*.dylib
+bin/
+dist/
+
+# Test binary
+*.test
+
+# Coverage
+*.out
+coverage.txt
+coverage.html
+
+# Go workspace
+go.work
+go.work.sum
+
+# IDE
+.idea/
+.vscode/*
+!.vscode/config.yaml
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+
+# Dependencies
+vendor/
+node_modules/
+
+# Build artifacts
+backend/bin/
+frontend/build/
+frontend/.cache/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Kubernetes
+*.kubeconfig
+
+# Helm
+*.tgz
+
+# OS
+Thumbs.db

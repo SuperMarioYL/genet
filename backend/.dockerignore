@@ -1,0 +1,30 @@
+# 忽略不需要的文件
+.git
+.gitignore
+*.md
+.env
+.vscode
+.idea
+
+# 测试文件
+*_test.go
+testdata/
+
+# 构建输出
+bin/
+dist/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# 临时文件
+*.tmp
+*.log
+*.swp
+*.swo
+*~
+
+# 依赖
+vendor/
+

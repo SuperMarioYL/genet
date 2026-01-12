@@ -1,0 +1,68 @@
+.pod-card {
+  height: 100%;
+}
+
+.pod-header {
+  margin-bottom: 16px;
+}
+
+.pod-name {
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.pod-info {
+  margin: 12px 0;
+}
+
+.info-item {
+  margin: 8px 0;
+  font-size: 14px;
+}
+
+.warning-text {
+  color: #faad14;
+  font-size: 12px;
+}
+
+.connection-info {
+  margin: 12px 0;
+}
+
+.connection-title {
+  font-weight: 500;
+  margin-bottom: 12px;
+}
+
+.connection-item {
+  margin: 8px 0;
+}
+
+.connection-label {
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 4px;
+}
+
+.connection-value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.connection-value code {
+  flex: 1;
+  background: #f5f5f5;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pod-actions {
+  width: 100%;
+  justify-content: space-between;
+}
+

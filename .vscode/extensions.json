@@ -1,0 +1,28 @@
+{
+  "recommendations": [
+    // Go 开发
+    "golang.go",
+    
+    // TypeScript/React 开发
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "dsznajder.es7-react-js-snippets",
+    
+    // Kubernetes 和 Helm
+    "ms-kubernetes-tools.vscode-kubernetes-tools",
+    "redhat.vscode-yaml",
+    
+    // Docker
+    "ms-azuretools.vscode-docker",
+    
+    // Git
+    "eamodio.gitlens",
+    
+    // 其他实用工具
+    "streetsidesoftware.code-spell-checker",
+    "usernamehw.errorlens",
+    "wayou.vscode-todo-highlight",
+    "gruntfuggly.todo-tree"
+  ]
+}
+
