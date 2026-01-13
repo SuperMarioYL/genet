@@ -104,7 +104,9 @@ oauth:
   # ============================================
   clientID: "genet"
   clientSecret: "genet-secret"
-  redirectURL: "http://localhost:8080/api/auth/callback"
+  # 重要：redirectURL 必须指向前端地址，这样 OAuth 回调通过前端代理转发到后端
+  # 后端会在前端域（localhost:3000）下设置 cookie，确保后续请求能携带 cookie
+  redirectURL: "http://localhost:3000/api/auth/callback"
   frontendURL: "http://localhost:3000"
   scopes:
     - "openid"
@@ -128,7 +130,7 @@ oauth:
 #   tokenEmailClaim: "email"
 #   clientID: "your-client-id"
 #   clientSecret: "your-client-secret"
-#   redirectURL: "http://localhost:8080/api/auth/callback"
+#   redirectURL: "http://localhost:3000/api/auth/callback"  # 前端地址
 #   frontendURL: "http://localhost:3000"
 #   scopes:
 #     - "user:read"
