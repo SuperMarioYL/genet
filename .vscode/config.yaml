@@ -180,3 +180,14 @@ images:
   # 如果无法访问 ghcr.io，可以替换为其他源：
   # nerdctl: "docker.io/containerd/nerdctl:v1.7.0"
   # nerdctl: "registry.cn-hangzhou.aliyuncs.com/your-namespace/nerdctl:v1.7.0"
+
+# Kubernetes 客户端配置
+kubernetes:
+  # 禁用 HTTP/HTTPS 代理（推荐在 Windows 系统代理环境下启用）
+  # 解决问题：Windows 系统代理导致 K8s API 请求被错误路由
+  # true:  K8s API 请求直连，不使用系统代理
+  # false: 使用系统代理（默认行为）
+  disableProxy: true
+
+  # API 请求超时时间（秒）
+  timeout: 30

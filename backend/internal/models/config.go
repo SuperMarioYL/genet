@@ -18,11 +18,18 @@ type Config struct {
 	Proxy           ProxyConfig     `yaml:"proxy" json:"proxy"`
 	Registry        RegistryConfig  `yaml:"registry" json:"registry"`
 	Images          ImagesConfig    `yaml:"images" json:"images"`
+	Kubernetes      KubernetesConfig `yaml:"kubernetes" json:"kubernetes"`
 }
 
 // ImagesConfig 系统依赖镜像配置
 type ImagesConfig struct {
 	Nerdctl string `yaml:"nerdctl" json:"nerdctl"` // nerdctl 镜像，用于 commit 操作
+}
+
+// KubernetesConfig Kubernetes 客户端配置
+type KubernetesConfig struct {
+	DisableProxy bool `yaml:"disableProxy" json:"disableProxy"` // 禁用 HTTP/HTTPS 代理（解决 Windows 代理冲突）
+	Timeout      int  `yaml:"timeout" json:"timeout"`           // API 请求超时时间（秒），默认 30
 }
 
 // RegistryConfig 镜像仓库配置
@@ -214,6 +221,10 @@ func DefaultConfig() *Config {
 		},
 		Images: ImagesConfig{
 			Nerdctl: "ghcr.io/containerd/nerdctl:v1.7.0",
+		},
+		Kubernetes: KubernetesConfig{
+			DisableProxy: true, // 默认禁用代理，避免 Windows 代理冲突
+			Timeout:      30,   // 默认 30 秒超时
 		},
 	}
 }

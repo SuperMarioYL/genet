@@ -124,6 +124,11 @@ backend:
     images:
       nerdctl: "ghcr.io/containerd/nerdctl:v1.7.0" # nerdctl 镜像，用于 commit 操作
 
+    # Kubernetes 客户端配置
+    kubernetes:
+      disableProxy: true # 禁用 HTTP/HTTPS 代理（解决 Windows 代理冲突）
+      timeout: 30 # API 请求超时时间（秒）
+
 # Frontend configuration
 frontend:
   image: genet-frontend:latest
