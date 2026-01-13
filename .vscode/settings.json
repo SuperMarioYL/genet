@@ -4,23 +4,25 @@
   "go.lintTool": "golangci-lint",
   "go.lintOnSave": "package",
   "go.formatTool": "goimports",
-  "go.testFlags": ["-v"],
+  "go.testFlags": [
+    "-v"
+  ],
   "go.testTimeout": "30s",
   "go.coverOnSave": false,
   "go.coverOnSingleTest": true,
   "go.coverageOptions": "showUncoveredCodeOnly",
-  
   // TypeScript/React 配置
   "typescript.tsdk": "frontend/node_modules/typescript/lib",
   "typescript.enablePromptUseWorkspaceTsdk": true,
-  "eslint.workingDirectories": ["frontend"],
+  "eslint.workingDirectories": [
+    "frontend"
+  ],
   "eslint.validate": [
     "javascript",
     "javascriptreact",
     "typescript",
     "typescriptreact"
   ],
-  
   // 编辑器配置
   "editor.formatOnSave": true,
   "editor.codeActionsOnSave": {
@@ -28,7 +30,6 @@
     "source.organizeImports": "explicit"
   },
   "editor.defaultFormatter": "esbenp.prettier-vscode",
-  
   // 文件关联
   "[go]": {
     "editor.defaultFormatter": "golang.go",
@@ -49,16 +50,15 @@
   "[yaml]": {
     "editor.defaultFormatter": "redhat.vscode-yaml"
   },
-  
   // 文件排除
   "files.exclude": {
     "**/.git": true,
     "**/.DS_Store": true,
     "**/node_modules": true,
     "**/build": true,
-    "**/.next": true
+    "**/.next": true,
+    "**/Thumbs.db": true
   },
-  
   // 搜索排除
   "search.exclude": {
     "**/node_modules": true,
@@ -66,7 +66,6 @@
     "**/.git": true,
     "**/vendor": true
   },
-  
   // Kubernetes YAML 支持
   "yaml.schemas": {
     "kubernetes": [
@@ -74,21 +73,27 @@
       "helm/**/templates/*.yml"
     ]
   },
-  
-  // 终端配置
+  // 终端配置 - macOS
   "terminal.integrated.env.osx": {
-    "KUBECONFIG": "${env:HOME}/.kube/config"
+    "KUBECONFIG": "${workspaceFolder}/.vscode/kubeconfig"
   },
+  // 终端配置 - Linux
   "terminal.integrated.env.linux": {
-    "KUBECONFIG": "${env:HOME}/.kube/config"
+    "KUBECONFIG": "${workspaceFolder}/.vscode/kubeconfig"
   },
-  
+  // 终端配置 - Windows
+  "terminal.integrated.env.windows": {
+    "KUBECONFIG": "${workspaceFolder}\\.vscode\\kubeconfig"
+  },
+  // Windows 使用 PowerShell 作为默认终端
+  "terminal.integrated.defaultProfile.windows": "PowerShell",
   // 文件监视排除
   "files.watcherExclude": {
     "**/.git/objects/**": true,
     "**/.git/subtree-cache/**": true,
     "**/node_modules/*/**": true,
     "**/vendor/**": true
-  }
+  },
+  // 文件 EOL 设置（跨平台兼容）
+  "files.eol": "\n"
 }
-

@@ -8,6 +8,9 @@
     "esbenp.prettier-vscode",
     "dsznajder.es7-react-js-snippets",
     
+    // 调试器
+    "msjsdiag.debugger-for-chrome",
+    
     // Kubernetes 和 Helm
     "ms-kubernetes-tools.vscode-kubernetes-tools",
     "redhat.vscode-yaml",
@@ -25,4 +28,3 @@
     "gruntfuggly.todo-tree"
   ]
 }
-

@@ -93,12 +93,13 @@
     {
       "label": "Frontend: Start Dev Server",
       "type": "shell",
-      "command": "DANGEROUSLY_DISABLE_HOST_CHECK=true npm start",
+      "command": "npm start",
       "options": {
         "cwd": "${workspaceFolder}/frontend",
         "env": {
           "BROWSER": "none",
-          "PORT": "3000"
+          "PORT": "3000",
+          "DANGEROUSLY_DISABLE_HOST_CHECK": "true"
         }
       },
       "isBackground": true,
@@ -135,6 +136,19 @@
       "label": "Frontend: Run Tests",
       "type": "shell",
       "command": "npm test",
+      "options": {
+        "cwd": "${workspaceFolder}/frontend"
+      },
+      "group": "test",
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
+    },
+    {
+      "label": "Frontend: Type Check",
+      "type": "shell",
+      "command": "npx tsc --noEmit",
       "options": {
         "cwd": "${workspaceFolder}/frontend"
       },
@@ -203,33 +217,24 @@
       "problemMatcher": []
     },
     {
-      "label": "Make: Build Images",
+      "label": "Mock OAuth: Start",
       "type": "shell",
-      "command": "make build-images",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
-      "group": {
-        "kind": "build",
-        "isDefault": true
-      },
+      "command": "docker run -d --name mock-oauth2-server -p 8888:8080 ghcr.io/navikt/mock-oauth2-server:2.1.0",
       "presentation": {
         "reveal": "always",
         "panel": "new"
-      }
+      },
+      "problemMatcher": []
     },
     {
-      "label": "Make: Install Dev",
+      "label": "Mock OAuth: Stop",
       "type": "shell",
-      "command": "make install-dev",
-      "options": {
-        "cwd": "${workspaceFolder}"
-      },
+      "command": "docker stop mock-oauth2-server && docker rm mock-oauth2-server",
       "presentation": {
         "reveal": "always",
         "panel": "new"
-      }
+      },
+      "problemMatcher": []
     }
   ]
 }
-

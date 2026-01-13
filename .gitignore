@@ -26,10 +26,14 @@ go.work.sum
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
+!.vscode/README.md
+# kubeconfig 包含敏感信息，不要提交
+.vscode/kubeconfig
 *.swp
 *.swo
 *~
 .DS_Store
+Thumbs.db
 
 # Logs
 *.log
@@ -59,5 +63,5 @@ temp/
 # Helm
 *.tgz
 
-# OS
-Thumbs.db
+# OS (macOS/Windows)
+# Thumbs.db 已在上面排除

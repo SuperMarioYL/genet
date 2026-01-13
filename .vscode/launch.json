@@ -54,15 +54,6 @@
       "preLaunchTask": "Frontend: Start Dev Server"
     },
     {
-      "name": "Frontend: Edge Debug",
-      "type": "msedge",
-      "request": "launch",
-      "url": "http://localhost:3000",
-      "webRoot": "${workspaceFolder}/frontend/src",
-      "sourceMaps": true,
-      "preLaunchTask": "Frontend: Start Dev Server"
-    },
-    {
       "name": "Backend Tests",
       "type": "go",
       "request": "launch",
