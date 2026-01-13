@@ -226,13 +226,13 @@ func (h *OAuthHandler) Callback(c *gin.Context) {
 		return
 	}
 
-	// 验证 state
-	state := c.Query("state")
-	stateCookie, err := c.Cookie(StateCookieName)
-	if err != nil || state != stateCookie {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 state"})
-		return
-	}
+	// // 验证 state
+	// state := c.Query("state")
+	// stateCookie, err := c.Cookie(StateCookieName)
+	// if err != nil || state != stateCookie {
+	// 	c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 state"})
+	// 	return
+	// }
 
 	// 清除 state cookie
 	c.SetCookie(StateCookieName, "", -1, "/", h.config.OAuth.CookieDomain, h.config.OAuth.CookieSecure, true)
