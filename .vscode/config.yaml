@@ -64,9 +64,44 @@ storage:
 oauth:
   # OAuth 配置说明：
   # enabled: false - 使用默认用户 dev-user（不需要启动 Mock OAuth）
-  # enabled: true  - 启用 OAuth 认证（需要先运行 make mock-oauth-start）
+  # enabled: true  - 启用 OAuth 认证
+
   enabled: true
-  providerURL: "http://localhost:8888/default" # Mock OAuth2 Server
+
+  # ============================================
+  # 认证模式选择
+  # ============================================
+  # mode: "oidc" - OIDC 模式（自动发现端点，需配置 providerURL）
+  # mode: "oauth" - 纯 OAuth 模式（手动配置端点）
+  mode: "oidc"
+
+  # ============================================
+  # OIDC 模式配置（mode: "oidc" 时使用）
+  # ============================================
+  # Mock OAuth2 Server: make mock-oauth-start
+  providerURL: "http://localhost:8888/default"
+
+  # ============================================
+  # OAuth 模式配置（mode: "oauth" 时使用）
+  # ============================================
+  # 如果你的 OAuth Provider 不支持 OIDC 发现，使用这些配置：
+  authorizationEndpoint: "" # 如: https://auth.internal.com/oauth/authorize
+  tokenEndpoint: "" # 如: https://auth.internal.com/oauth/token
+  userinfoEndpoint: "" # 如: https://auth.internal.com/api/user（可选）
+
+  # ============================================
+  # 用户信息获取方式
+  # ============================================
+  # userinfoSource: "endpoint" - 从 userinfo API 获取
+  # userinfoSource: "token"    - 从 access_token/id_token JWT 解析
+  # userinfoSource: "both"     - 优先从 token 解析，失败则调用 endpoint
+  userinfoSource: "endpoint"
+  tokenUsernameClaim: "preferred_username" # Token 中用户名字段
+  tokenEmailClaim: "email" # Token 中邮箱字段
+
+  # ============================================
+  # 公共配置
+  # ============================================
   clientID: "genet"
   clientSecret: "genet-secret"
   redirectURL: "http://localhost:8080/api/auth/callback"
@@ -78,6 +113,28 @@ oauth:
   jwtSecret: "genet-dev-jwt-secret-32chars!!"
   cookieDomain: "" # 空表示当前域
   cookieSecure: false # 本地开发用 http
+
+# ============================================
+# 纯 OAuth 模式配置示例（取消注释使用）
+# ============================================
+# oauth:
+#   enabled: true
+#   mode: "oauth"
+#   authorizationEndpoint: "https://auth.internal.com/oauth/authorize"
+#   tokenEndpoint: "https://auth.internal.com/oauth/token"
+#   userinfoEndpoint: "https://auth.internal.com/api/user"
+#   userinfoSource: "both"
+#   tokenUsernameClaim: "username"
+#   tokenEmailClaim: "email"
+#   clientID: "your-client-id"
+#   clientSecret: "your-client-secret"
+#   redirectURL: "http://localhost:8080/api/auth/callback"
+#   frontendURL: "http://localhost:3000"
+#   scopes:
+#     - "user:read"
+#   jwtSecret: "your-jwt-secret-32chars-minimum"
+#   cookieDomain: ""
+#   cookieSecure: false
 
 # 代理配置（会注入到 Pod 的环境变量和 ~/.bashrc 中）
 proxy:

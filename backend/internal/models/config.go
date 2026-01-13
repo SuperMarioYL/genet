@@ -41,8 +41,23 @@ type ProxyConfig struct {
 
 // OAuthConfig OAuth 认证配置
 type OAuthConfig struct {
-	Enabled      bool     `yaml:"enabled" json:"enabled"`
-	ProviderURL  string   `yaml:"providerURL" json:"providerURL"`     // OIDC Issuer URL
+	Enabled bool   `yaml:"enabled" json:"enabled"`
+	Mode    string `yaml:"mode" json:"mode"` // "oidc" 或 "oauth"，默认 "oidc"
+
+	// OIDC 模式：只需配置 ProviderURL，自动发现其他端点
+	ProviderURL string `yaml:"providerURL" json:"providerURL"` // OIDC Issuer URL
+
+	// OAuth 模式：手动配置端点
+	AuthorizationEndpoint string `yaml:"authorizationEndpoint" json:"authorizationEndpoint"` // OAuth 授权端点
+	TokenEndpoint         string `yaml:"tokenEndpoint" json:"tokenEndpoint"`                 // OAuth Token 端点
+	UserinfoEndpoint      string `yaml:"userinfoEndpoint" json:"userinfoEndpoint"`           // 用户信息端点（可选）
+
+	// 用户信息获取方式
+	UserinfoSource     string `yaml:"userinfoSource" json:"userinfoSource"`         // "endpoint", "token", "both"
+	TokenUsernameClaim string `yaml:"tokenUsernameClaim" json:"tokenUsernameClaim"` // Token 中用户名字段，默认 "preferred_username"
+	TokenEmailClaim    string `yaml:"tokenEmailClaim" json:"tokenEmailClaim"`       // Token 中邮箱字段，默认 "email"
+
+	// 公共配置
 	ClientID     string   `yaml:"clientID" json:"clientID"`           // OAuth Client ID
 	ClientSecret string   `yaml:"clientSecret" json:"clientSecret"`   // OAuth Client Secret
 	RedirectURL  string   `yaml:"redirectURL" json:"redirectURL"`     // Callback URL
@@ -167,16 +182,23 @@ func DefaultConfig() *Config {
 			ExtraVolumes: []ExtraVolume{},
 		},
 		OAuth: OAuthConfig{
-			Enabled:      false,
-			ProviderURL:  "",
-			ClientID:     "",
-			ClientSecret: "",
-			RedirectURL:  "http://localhost:8080/api/auth/callback",
-			FrontendURL:  "http://localhost:3000",
-			Scopes:       []string{"openid", "profile", "email"},
-			JWTSecret:    "genet-jwt-secret-change-in-production",
-			CookieDomain: "",
-			CookieSecure: false,
+			Enabled:               false,
+			Mode:                  "oidc", // 默认 OIDC 模式
+			ProviderURL:           "",
+			AuthorizationEndpoint: "",
+			TokenEndpoint:         "",
+			UserinfoEndpoint:      "",
+			UserinfoSource:        "endpoint",           // 默认从 endpoint 获取
+			TokenUsernameClaim:    "preferred_username", // OIDC 标准字段
+			TokenEmailClaim:       "email",
+			ClientID:              "",
+			ClientSecret:          "",
+			RedirectURL:           "http://localhost:8080/api/auth/callback",
+			FrontendURL:           "http://localhost:3000",
+			Scopes:                []string{"openid", "profile", "email"},
+			JWTSecret:             "genet-jwt-secret-change-in-production",
+			CookieDomain:          "",
+			CookieSecure:          false,
 		},
 		Proxy: ProxyConfig{
 			HTTPProxy:  "",

@@ -67,7 +67,28 @@ backend:
 
     oauth:
       enabled: false
-      providerURL: "" # OIDC Issuer URL
+      # 认证模式: "oidc" 或 "oauth"
+      # - oidc: 自动发现端点（需配置 providerURL）
+      # - oauth: 手动配置端点（需配置 authorizationEndpoint, tokenEndpoint）
+      mode: "oidc"
+
+      # OIDC 模式配置
+      providerURL: "" # OIDC Issuer URL，如: https://auth.example.com
+
+      # OAuth 模式配置（mode 为 "oauth" 时使用）
+      authorizationEndpoint: "" # OAuth 授权端点
+      tokenEndpoint: "" # OAuth Token 端点
+      userinfoEndpoint: "" # 用户信息端点（可选）
+
+      # 用户信息获取方式: "endpoint", "token", "both"
+      # - endpoint: 从 userinfo API 获取
+      # - token: 从 access_token/id_token JWT 解析
+      # - both: 优先从 token 解析，失败则调用 endpoint
+      userinfoSource: "endpoint"
+      tokenUsernameClaim: "preferred_username" # Token 中用户名字段
+      tokenEmailClaim: "email" # Token 中邮箱字段
+
+      # 公共配置
       clientID: ""
       clientSecret: ""
       redirectURL: "" # 如: https://genet.example.com/api/auth/callback

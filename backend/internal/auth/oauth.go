@@ -24,12 +24,22 @@ const (
 
 	// Session 有效期
 	SessionDuration = 24 * time.Hour
+
+	// OAuth 模式
+	ModeOIDC  = "oidc"
+	ModeOAuth = "oauth"
+
+	// 用户信息获取方式
+	UserinfoSourceEndpoint = "endpoint"
+	UserinfoSourceToken    = "token"
+	UserinfoSourceBoth     = "both"
 )
 
 // OAuthHandler OAuth 认证处理器
 type OAuthHandler struct {
 	config     *models.Config
 	oidcConfig *OIDCConfig
+	endpoints  *OAuthEndpoints
 }
 
 // OIDCConfig OIDC 发现配置
@@ -39,6 +49,13 @@ type OIDCConfig struct {
 	TokenEndpoint         string `json:"token_endpoint"`
 	UserinfoEndpoint      string `json:"userinfo_endpoint"`
 	JwksURI               string `json:"jwks_uri"`
+}
+
+// OAuthEndpoints OAuth 端点配置（统一结构）
+type OAuthEndpoints struct {
+	AuthorizationEndpoint string
+	TokenEndpoint         string
+	UserinfoEndpoint      string
 }
 
 // TokenResponse OAuth Token 响应
@@ -72,10 +89,54 @@ func NewOAuthHandler(config *models.Config) *OAuthHandler {
 	}
 }
 
+// getMode 获取 OAuth 模式，默认 oidc
+func (h *OAuthHandler) getMode() string {
+	mode := strings.ToLower(h.config.OAuth.Mode)
+	if mode == ModeOAuth {
+		return ModeOAuth
+	}
+	return ModeOIDC
+}
+
+// getEndpoints 获取 OAuth 端点
+func (h *OAuthHandler) getEndpoints() (*OAuthEndpoints, error) {
+	if h.endpoints != nil {
+		return h.endpoints, nil
+	}
+
+	mode := h.getMode()
+
+	if mode == ModeOAuth {
+		// OAuth 模式：使用手动配置的端点
+		if h.config.OAuth.AuthorizationEndpoint == "" || h.config.OAuth.TokenEndpoint == "" {
+			return nil, fmt.Errorf("OAuth 模式需要配置 authorizationEndpoint 和 tokenEndpoint")
+		}
+		h.endpoints = &OAuthEndpoints{
+			AuthorizationEndpoint: h.config.OAuth.AuthorizationEndpoint,
+			TokenEndpoint:         h.config.OAuth.TokenEndpoint,
+			UserinfoEndpoint:      h.config.OAuth.UserinfoEndpoint,
+		}
+	} else {
+		// OIDC 模式：自动发现端点
+		if h.oidcConfig == nil {
+			if err := h.DiscoverOIDC(); err != nil {
+				return nil, err
+			}
+		}
+		h.endpoints = &OAuthEndpoints{
+			AuthorizationEndpoint: h.oidcConfig.AuthorizationEndpoint,
+			TokenEndpoint:         h.oidcConfig.TokenEndpoint,
+			UserinfoEndpoint:      h.oidcConfig.UserinfoEndpoint,
+		}
+	}
+
+	return h.endpoints, nil
+}
+
 // DiscoverOIDC 发现 OIDC 配置
 func (h *OAuthHandler) DiscoverOIDC() error {
 	if !h.config.OAuth.Enabled || h.config.OAuth.ProviderURL == "" {
-		return nil
+		return fmt.Errorf("OIDC 模式需要配置 providerURL")
 	}
 
 	discoveryURL := strings.TrimSuffix(h.config.OAuth.ProviderURL, "/") + "/.well-known/openid-configuration"
@@ -114,12 +175,11 @@ func (h *OAuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	// 确保已发现 OIDC 配置
-	if h.oidcConfig == nil {
-		if err := h.DiscoverOIDC(); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("OIDC 发现失败: %v", err)})
-			return
-		}
+	// 获取端点
+	endpoints, err := h.getEndpoints()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取 OAuth 端点失败: %v", err)})
+		return
 	}
 
 	// 生成 state
@@ -148,7 +208,7 @@ func (h *OAuthHandler) Login(c *gin.Context) {
 	params.Set("scope", strings.Join(h.config.OAuth.Scopes, " "))
 	params.Set("state", state)
 
-	authURL := h.oidcConfig.AuthorizationEndpoint + "?" + params.Encode()
+	authURL := endpoints.AuthorizationEndpoint + "?" + params.Encode()
 	c.Redirect(http.StatusFound, authURL)
 }
 
@@ -192,7 +252,7 @@ func (h *OAuthHandler) Callback(c *gin.Context) {
 	}
 
 	// 获取用户信息
-	userInfo, err := h.getUserInfo(c.Request.Context(), token.AccessToken)
+	userInfo, err := h.fetchUserInfo(c.Request.Context(), token)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取用户信息失败: %v", err)})
 		return
@@ -235,6 +295,11 @@ func (h *OAuthHandler) Callback(c *gin.Context) {
 
 // exchangeToken 用 code 换取 token
 func (h *OAuthHandler) exchangeToken(ctx context.Context, code string) (*TokenResponse, error) {
+	endpoints, err := h.getEndpoints()
+	if err != nil {
+		return nil, err
+	}
+
 	data := url.Values{}
 	data.Set("grant_type", "authorization_code")
 	data.Set("code", code)
@@ -242,7 +307,7 @@ func (h *OAuthHandler) exchangeToken(ctx context.Context, code string) (*TokenRe
 	data.Set("client_id", h.config.OAuth.ClientID)
 	data.Set("client_secret", h.config.OAuth.ClientSecret)
 
-	req, err := http.NewRequestWithContext(ctx, "POST", h.oidcConfig.TokenEndpoint, strings.NewReader(data.Encode()))
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoints.TokenEndpoint, strings.NewReader(data.Encode()))
 	if err != nil {
 		return nil, err
 	}
@@ -267,9 +332,126 @@ func (h *OAuthHandler) exchangeToken(ctx context.Context, code string) (*TokenRe
 	return &token, nil
 }
 
-// getUserInfo 获取用户信息
-func (h *OAuthHandler) getUserInfo(ctx context.Context, accessToken string) (*UserInfo, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", h.oidcConfig.UserinfoEndpoint, nil)
+// fetchUserInfo 根据配置获取用户信息
+func (h *OAuthHandler) fetchUserInfo(ctx context.Context, token *TokenResponse) (*UserInfo, error) {
+	source := strings.ToLower(h.config.OAuth.UserinfoSource)
+	if source == "" {
+		source = UserinfoSourceEndpoint // 默认从 endpoint 获取
+	}
+
+	var userInfo *UserInfo
+	var tokenErr, endpointErr error
+
+	// 根据 source 决定获取方式
+	switch source {
+	case UserinfoSourceToken:
+		// 只从 token 解析
+		userInfo, tokenErr = h.parseTokenClaims(token)
+		if tokenErr != nil {
+			return nil, fmt.Errorf("从 token 解析用户信息失败: %v", tokenErr)
+		}
+	case UserinfoSourceBoth:
+		// 优先从 token 解析，失败则从 endpoint 获取
+		userInfo, tokenErr = h.parseTokenClaims(token)
+		if tokenErr != nil || userInfo.PreferredUsername == "" {
+			userInfo, endpointErr = h.getUserInfoFromEndpoint(ctx, token.AccessToken)
+			if endpointErr != nil {
+				if tokenErr != nil {
+					return nil, fmt.Errorf("从 token 和 endpoint 获取用户信息都失败: token=%v, endpoint=%v", tokenErr, endpointErr)
+				}
+				return nil, fmt.Errorf("从 endpoint 获取用户信息失败: %v", endpointErr)
+			}
+		}
+	default:
+		// UserinfoSourceEndpoint：从 endpoint 获取
+		userInfo, endpointErr = h.getUserInfoFromEndpoint(ctx, token.AccessToken)
+		if endpointErr != nil {
+			return nil, fmt.Errorf("从 endpoint 获取用户信息失败: %v", endpointErr)
+		}
+	}
+
+	return userInfo, nil
+}
+
+// parseTokenClaims 从 access_token 或 id_token 解析用户信息
+func (h *OAuthHandler) parseTokenClaims(token *TokenResponse) (*UserInfo, error) {
+	// 优先使用 id_token（OIDC），其次使用 access_token
+	tokenToParse := token.IDToken
+	if tokenToParse == "" {
+		tokenToParse = token.AccessToken
+	}
+
+	// 尝试解析 JWT（不验证签名，只解码 payload）
+	parts := strings.Split(tokenToParse, ".")
+	if len(parts) != 3 {
+		return nil, fmt.Errorf("token 不是有效的 JWT 格式")
+	}
+
+	// 解码 payload
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return nil, fmt.Errorf("解码 JWT payload 失败: %v", err)
+	}
+
+	// 解析 claims
+	var claims map[string]interface{}
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return nil, fmt.Errorf("解析 JWT claims 失败: %v", err)
+	}
+
+	// 获取用户名字段
+	usernameClaim := h.config.OAuth.TokenUsernameClaim
+	if usernameClaim == "" {
+		usernameClaim = "preferred_username"
+	}
+
+	emailClaim := h.config.OAuth.TokenEmailClaim
+	if emailClaim == "" {
+		emailClaim = "email"
+	}
+
+	userInfo := &UserInfo{}
+
+	// 获取用户名（尝试多个字段）
+	if v, ok := claims[usernameClaim].(string); ok {
+		userInfo.PreferredUsername = v
+	}
+	if userInfo.PreferredUsername == "" {
+		if v, ok := claims["username"].(string); ok {
+			userInfo.PreferredUsername = v
+		}
+	}
+	if userInfo.PreferredUsername == "" {
+		if v, ok := claims["name"].(string); ok {
+			userInfo.Name = v
+		}
+	}
+
+	// 获取邮箱
+	if v, ok := claims[emailClaim].(string); ok {
+		userInfo.Email = v
+	}
+
+	// 获取 sub
+	if v, ok := claims["sub"].(string); ok {
+		userInfo.Sub = v
+	}
+
+	return userInfo, nil
+}
+
+// getUserInfoFromEndpoint 从 userinfo endpoint 获取用户信息
+func (h *OAuthHandler) getUserInfoFromEndpoint(ctx context.Context, accessToken string) (*UserInfo, error) {
+	endpoints, err := h.getEndpoints()
+	if err != nil {
+		return nil, err
+	}
+
+	if endpoints.UserinfoEndpoint == "" {
+		return nil, fmt.Errorf("未配置 userinfo endpoint")
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", endpoints.UserinfoEndpoint, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -351,4 +533,3 @@ func (h *OAuthHandler) ValidateSession(tokenString string) (*SessionClaims, erro
 
 	return nil, fmt.Errorf("invalid token")
 }
-
