@@ -451,11 +451,39 @@ func (h *OAuthHandler) getUserInfoFromEndpoint(ctx context.Context, accessToken 
 		return nil, fmt.Errorf("未配置 userinfo endpoint")
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", endpoints.UserinfoEndpoint, nil)
-	if err != nil {
-		return nil, err
+	// 获取请求方式，默认 GET
+	method := strings.ToUpper(h.config.OAuth.UserinfoMethod)
+	if method == "" {
+		method = "GET"
 	}
-	req.Header.Set("Authorization", "Bearer "+accessToken)
+
+	var req *http.Request
+
+	if method == "POST" {
+		// POST JSON 方式：请求体包含 client_id, access_token, scope
+		reqBody := map[string]interface{}{
+			"client_id":    h.config.OAuth.ClientID,
+			"access_token": accessToken,
+			"scope":        strings.Join(h.config.OAuth.Scopes, " "),
+		}
+		bodyBytes, err := json.Marshal(reqBody)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal userinfo request: %w", err)
+		}
+
+		req, err = http.NewRequestWithContext(ctx, "POST", endpoints.UserinfoEndpoint, strings.NewReader(string(bodyBytes)))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+	} else {
+		// GET 方式：标准 Bearer Token
+		req, err = http.NewRequestWithContext(ctx, "GET", endpoints.UserinfoEndpoint, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Authorization", "Bearer "+accessToken)
+	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

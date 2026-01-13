@@ -54,6 +54,7 @@ type OAuthConfig struct {
 
 	// 用户信息获取方式
 	UserinfoSource     string `yaml:"userinfoSource" json:"userinfoSource"`         // "endpoint", "token", "both"
+	UserinfoMethod     string `yaml:"userinfoMethod" json:"userinfoMethod"`         // "get" 或 "post"，默认 "get"
 	TokenUsernameClaim string `yaml:"tokenUsernameClaim" json:"tokenUsernameClaim"` // Token 中用户名字段，默认 "preferred_username"
 	TokenEmailClaim    string `yaml:"tokenEmailClaim" json:"tokenEmailClaim"`       // Token 中邮箱字段，默认 "email"
 
@@ -189,6 +190,7 @@ func DefaultConfig() *Config {
 			TokenEndpoint:         "",
 			UserinfoEndpoint:      "",
 			UserinfoSource:        "endpoint",           // 默认从 endpoint 获取
+			UserinfoMethod:        "get",                // 默认 GET 方式
 			TokenUsernameClaim:    "preferred_username", // OIDC 标准字段
 			TokenEmailClaim:       "email",
 			ClientID:              "",

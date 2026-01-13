@@ -85,6 +85,12 @@ backend:
       # - token: 从 access_token/id_token JWT 解析
       # - both: 优先从 token 解析，失败则调用 endpoint
       userinfoSource: "endpoint"
+
+      # userinfo API 的请求方式: "get" 或 "post"
+      # - get:  GET 请求 + Authorization: Bearer {token} （标准 OIDC）
+      # - post: POST JSON 请求，body 包含 {client_id, access_token, scope}
+      userinfoMethod: "get"
+
       tokenUsernameClaim: "preferred_username" # Token 中用户名字段
       tokenEmailClaim: "email" # Token 中邮箱字段
 

@@ -96,6 +96,12 @@ oauth:
   # userinfoSource: "token"    - 从 access_token/id_token JWT 解析
   # userinfoSource: "both"     - 优先从 token 解析，失败则调用 endpoint
   userinfoSource: "endpoint"
+
+  # userinfoMethod: userinfo API 的请求方式
+  # - "get":  GET 请求 + Authorization: Bearer {token} （标准 OIDC 方式）
+  # - "post": POST JSON 请求，body 包含 {client_id, access_token, scope}
+  userinfoMethod: "get"
+
   tokenUsernameClaim: "preferred_username" # Token 中用户名字段
   tokenEmailClaim: "email" # Token 中邮箱字段
 
@@ -126,6 +132,7 @@ oauth:
 #   tokenEndpoint: "https://auth.internal.com/oauth/token"
 #   userinfoEndpoint: "https://auth.internal.com/api/user"
 #   userinfoSource: "both"
+#   userinfoMethod: "post"  # 使用 POST JSON 方式获取用户信息
 #   tokenUsernameClaim: "username"
 #   tokenEmailClaim: "email"
 #   clientID: "your-client-id"
