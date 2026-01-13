@@ -102,8 +102,10 @@ oauth:
   # - "post": POST JSON 请求，body 包含 {client_id, access_token, scope}
   userinfoMethod: "get"
 
-  tokenUsernameClaim: "preferred_username" # Token 中用户名字段
-  tokenEmailClaim: "email" # Token 中邮箱字段
+  # 用户信息字段映射（适用于 token 解析和 endpoint 响应）
+  # 如果 OAuth Provider 返回的字段名不是标准的，可以通过这两个配置指定
+  tokenUsernameClaim: "preferred_username" # 用户名字段，常见值: username, preferred_username, login, user
+  tokenEmailClaim: "email" # 邮箱字段，常见值: email, mail, user_email
 
   # ============================================
   # 公共配置

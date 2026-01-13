@@ -399,7 +399,13 @@ func (h *OAuthHandler) parseTokenClaims(token *TokenResponse) (*UserInfo, error)
 		return nil, fmt.Errorf("解析 JWT claims 失败: %v", err)
 	}
 
-	// 获取用户名字段
+	// 从 claims map 中提取用户信息
+	return h.extractUserInfoFromMap(claims), nil
+}
+
+// extractUserInfoFromMap 从 map 中提取用户信息（支持字段映射配置）
+func (h *OAuthHandler) extractUserInfoFromMap(data map[string]interface{}) *UserInfo {
+	// 获取配置的字段名
 	usernameClaim := h.config.OAuth.TokenUsernameClaim
 	if usernameClaim == "" {
 		usernameClaim = "preferred_username"
@@ -412,32 +418,55 @@ func (h *OAuthHandler) parseTokenClaims(token *TokenResponse) (*UserInfo, error)
 
 	userInfo := &UserInfo{}
 
-	// 获取用户名（尝试多个字段）
-	if v, ok := claims[usernameClaim].(string); ok {
+	// 提取用户名（尝试多个字段，优先使用配置的字段）
+	if v, ok := data[usernameClaim].(string); ok && v != "" {
 		userInfo.PreferredUsername = v
 	}
+	// 回退到标准字段
 	if userInfo.PreferredUsername == "" {
-		if v, ok := claims["username"].(string); ok {
+		if v, ok := data["username"].(string); ok && v != "" {
 			userInfo.PreferredUsername = v
 		}
 	}
 	if userInfo.PreferredUsername == "" {
-		if v, ok := claims["name"].(string); ok {
+		if v, ok := data["preferred_username"].(string); ok && v != "" {
+			userInfo.PreferredUsername = v
+		}
+	}
+	if userInfo.PreferredUsername == "" {
+		if v, ok := data["name"].(string); ok && v != "" {
 			userInfo.Name = v
 		}
 	}
 
-	// 获取邮箱
-	if v, ok := claims[emailClaim].(string); ok {
+	// 提取邮箱
+	if v, ok := data[emailClaim].(string); ok && v != "" {
 		userInfo.Email = v
 	}
-
-	// 获取 sub
-	if v, ok := claims["sub"].(string); ok {
-		userInfo.Sub = v
+	// 回退到标准字段
+	if userInfo.Email == "" {
+		if v, ok := data["mail"].(string); ok && v != "" {
+			userInfo.Email = v
+		}
 	}
 
-	return userInfo, nil
+	// 提取 sub（用户唯一标识）
+	if v, ok := data["sub"].(string); ok && v != "" {
+		userInfo.Sub = v
+	}
+	// 回退到其他可能的 ID 字段
+	if userInfo.Sub == "" {
+		if v, ok := data["user_id"].(string); ok && v != "" {
+			userInfo.Sub = v
+		}
+	}
+	if userInfo.Sub == "" {
+		if v, ok := data["id"].(string); ok && v != "" {
+			userInfo.Sub = v
+		}
+	}
+
+	return userInfo
 }
 
 // getUserInfoFromEndpoint 从 userinfo endpoint 获取用户信息
@@ -496,12 +525,15 @@ func (h *OAuthHandler) getUserInfoFromEndpoint(ctx context.Context, accessToken 
 		return nil, fmt.Errorf("userinfo endpoint returned %d: %s", resp.StatusCode, string(body))
 	}
 
-	var userInfo UserInfo
-	if err := json.NewDecoder(resp.Body).Decode(&userInfo); err != nil {
-		return nil, err
+	// 先解析为 map，以便支持字段映射
+	var rawData map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&rawData); err != nil {
+		return nil, fmt.Errorf("failed to decode userinfo response: %w", err)
 	}
 
-	return &userInfo, nil
+	// 根据配置的字段名提取用户信息
+	userInfo := h.extractUserInfoFromMap(rawData)
+	return userInfo, nil
 }
 
 // createSessionToken 创建 session JWT

@@ -91,8 +91,9 @@ backend:
       # - post: POST JSON 请求，body 包含 {client_id, access_token, scope}
       userinfoMethod: "get"
 
-      tokenUsernameClaim: "preferred_username" # Token 中用户名字段
-      tokenEmailClaim: "email" # Token 中邮箱字段
+      # 用户信息字段映射（适用于 token 解析和 endpoint 响应）
+      tokenUsernameClaim: "preferred_username" # 用户名字段
+      tokenEmailClaim: "email" # 邮箱字段
 
       # 公共配置
       clientID: ""
