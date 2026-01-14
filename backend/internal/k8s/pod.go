@@ -1,9 +1,11 @@
 package k8s
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"hash/fnv"
+	"text/template"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -72,119 +74,29 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 			spec.HTTPProxy, spec.HTTPSProxy)
 	}
 
-	// 启动脚本（智能检测并配置 sshd）
-	startupScript := fmt.Sprintf(`#!/bin/bash
-set -e
+	// 使用配置的启动脚本模板
+	scriptTemplate := c.config.Pod.StartupScript
+	if scriptTemplate == "" {
+		return nil, fmt.Errorf("pod.startupScript 未配置")
+	}
 
-echo "=== Starting container setup ==="
+	// 渲染启动脚本
+	tmpl, err := template.New("startup").Parse(scriptTemplate)
+	if err != nil {
+		return nil, fmt.Errorf("解析启动脚本模板失败: %w", err)
+	}
 
-# 创建必要目录
-mkdir -p /run/sshd /workspace
+	var scriptBuf bytes.Buffer
+	err = tmpl.Execute(&scriptBuf, map[string]interface{}{
+		"SSHPort":     spec.SSHPort,
+		"Password":    spec.Password,
+		"ProxyScript": proxySetupScript,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("渲染启动脚本失败: %w", err)
+	}
 
-%s
-
-# 查找 sshd 可执行文件
-SSHD_BIN=""
-for path in /usr/sbin/sshd /usr/bin/sshd /sbin/sshd; do
-    if [ -x "$path" ]; then
-        SSHD_BIN="$path"
-        break
-    fi
-done
-
-# 如果没找到，尝试用 which
-if [ -z "$SSHD_BIN" ]; then
-    SSHD_BIN=$(which sshd 2>/dev/null || true)
-fi
-
-# 如果还是没有，尝试安装
-if [ -z "$SSHD_BIN" ]; then
-    echo "sshd not found, attempting to install..."
-    if command -v apt-get &> /dev/null; then
-        apt-get update && apt-get install -y openssh-server
-        SSHD_BIN="/usr/sbin/sshd"
-    elif command -v yum &> /dev/null; then
-        yum install -y openssh-server
-        SSHD_BIN="/usr/sbin/sshd"
-    elif command -v apk &> /dev/null; then
-        apk add --no-cache openssh-server
-        SSHD_BIN="/usr/sbin/sshd"
-    else
-        echo "WARNING: Cannot install sshd, no supported package manager found"
-    fi
-fi
-
-# 设置 root 密码
-echo "root:%s" | chpasswd 2>/dev/null || {
-    # 某些镜像可能没有 chpasswd，尝试其他方式
-    echo "root:%s" | passwd --stdin root 2>/dev/null || {
-        echo "WARNING: Failed to set password"
-    }
-}
-
-# 生成 SSH host keys
-ssh-keygen -A 2>/dev/null || true
-
-# 创建最小化的 sshd_config（避免无效配置问题）
-cat > /etc/ssh/sshd_config.genet << 'SSHEOF'
-Port %d
-PermitRootLogin yes
-PasswordAuthentication yes
-ChallengeResponseAuthentication no
-UsePAM yes
-Subsystem sftp /usr/lib/ssh/sftp-server
-HostKey /etc/ssh/ssh_host_rsa_key
-HostKey /etc/ssh/ssh_host_ecdsa_key
-HostKey /etc/ssh/ssh_host_ed25519_key
-SSHEOF
-
-# 如果 sftp-server 不在标准位置，尝试找到它
-if [ ! -f /usr/lib/ssh/sftp-server ]; then
-    SFTP_PATH=$(find /usr -name sftp-server 2>/dev/null | head -1)
-    if [ -n "$SFTP_PATH" ]; then
-        sed -i "s|/usr/lib/ssh/sftp-server|$SFTP_PATH|" /etc/ssh/sshd_config.genet
-    else
-        sed -i '/Subsystem sftp/d' /etc/ssh/sshd_config.genet
-    fi
-fi
-
-# 启动 SSH 服务
-if [ -n "$SSHD_BIN" ] && [ -x "$SSHD_BIN" ]; then
-    echo "Starting sshd: $SSHD_BIN -f /etc/ssh/sshd_config.genet"
-    $SSHD_BIN -f /etc/ssh/sshd_config.genet -D &
-    SSHD_PID=$!
-    sleep 2
-    
-    # 检查 sshd 是否真的在运行
-    if kill -0 $SSHD_PID 2>/dev/null; then
-        echo "sshd started successfully (PID: $SSHD_PID)"
-    else
-        echo "ERROR: sshd failed to start, trying with default config..."
-        $SSHD_BIN -D &
-        sleep 1
-    fi
-else
-    echo "WARNING: sshd not available, SSH access will not work"
-fi
-
-# 显示 GPU 信息（如果有）
-if command -v nvidia-smi &> /dev/null; then
-    echo "===== GPU Information ====="
-    nvidia-smi || true
-else
-    echo "===== CPU Only Mode ====="
-fi
-
-# 保持容器运行
-echo ""
-echo "============================================"
-echo "Pod is ready!"
-echo "SSH Port: %d"
-echo "Connect: ssh root@<node-ip> -p %d"
-echo "Password: %s"
-echo "============================================"
-tail -f /dev/null
-`, proxySetupScript, spec.Password, spec.Password, spec.SSHPort, spec.SSHPort, spec.SSHPort, spec.Password)
+	startupScript := scriptBuf.String()
 
 	// 主容器
 	container := corev1.Container{

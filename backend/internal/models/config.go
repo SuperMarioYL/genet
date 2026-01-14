@@ -127,6 +127,11 @@ type PodConfig struct {
 	// ExtraVolumeMounts 额外的 VolumeMount 配置（K8s 原生格式）
 	// 需要与 ExtraVolumes 配合使用
 	ExtraVolumeMounts []corev1.VolumeMount `yaml:"extraVolumeMounts,omitempty" json:"extraVolumeMounts,omitempty"`
+
+	// StartupScript 容器启动脚本模板
+	// 可用变量: {{.SSHPort}}, {{.Password}}, {{.ProxyScript}}
+	// 如果为空，使用默认脚本（假设镜像已有 sshd）
+	StartupScript string `yaml:"startupScript,omitempty" json:"startupScript,omitempty"`
 }
 
 // GPUConfig GPU 相关配置
@@ -221,6 +226,69 @@ func DefaultConfig() *Config {
 		Pod: PodConfig{
 			HostNetwork: true,
 			Resources:   nil, // 使用 nil 表示使用硬编码的默认值
+			StartupScript: `#!/bin/bash
+set -e
+
+echo "=== Starting Genet Pod ==="
+
+# 创建必要目录
+mkdir -p /run/sshd /workspace
+
+{{.ProxyScript}}
+
+# 设置 root 密码
+echo "root:{{.Password}}" | chpasswd
+
+# 生成 SSH host keys（如果不存在）
+ssh-keygen -A 2>/dev/null || true
+
+# 创建 sshd 配置
+cat > /etc/ssh/sshd_config.genet << 'SSHEOF'
+Port {{.SSHPort}}
+PermitRootLogin yes
+PasswordAuthentication yes
+PubkeyAuthentication yes
+ChallengeResponseAuthentication no
+UsePAM yes
+Subsystem sftp /usr/lib/ssh/sftp-server
+HostKey /etc/ssh/ssh_host_rsa_key
+HostKey /etc/ssh/ssh_host_ecdsa_key
+HostKey /etc/ssh/ssh_host_ed25519_key
+SSHEOF
+
+# 启动 SSH 服务
+echo "Starting sshd on port {{.SSHPort}}..."
+/usr/sbin/sshd -f /etc/ssh/sshd_config.genet -D &
+SSHD_PID=$!
+sleep 2
+
+# 检查 sshd 是否启动成功
+if kill -0 $SSHD_PID 2>/dev/null; then
+    echo "sshd started successfully (PID: $SSHD_PID)"
+else
+    echo "WARNING: sshd may have failed to start"
+fi
+
+# 显示 GPU 信息（如果有）
+if command -v nvidia-smi &> /dev/null; then
+    echo "===== GPU Information ====="
+    nvidia-smi || true
+else
+    echo "===== CPU Only Mode ====="
+fi
+
+# 显示连接信息
+echo ""
+echo "============================================"
+echo "Pod is ready!"
+echo "SSH Port: {{.SSHPort}}"
+echo "Connect: ssh root@<node-ip> -p {{.SSHPort}}"
+echo "Password: {{.Password}}"
+echo "============================================"
+
+# 保持容器运行
+tail -f /dev/null
+`,
 		},
 		OAuth: OAuthConfig{
 			Enabled:               false,
