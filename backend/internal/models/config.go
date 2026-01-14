@@ -3,21 +3,23 @@ package models
 import (
 	"os"
 
+	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/yaml"
 )
 
 // Config 系统配置
 type Config struct {
-	PodLimitPerUser int             `yaml:"podLimitPerUser" json:"podLimitPerUser"`
-	GpuLimitPerUser int             `yaml:"gpuLimitPerUser" json:"gpuLimitPerUser"`
-	GPU             GPUConfig       `yaml:"gpu" json:"gpu"`
-	UI              UIConfig        `yaml:"ui" json:"ui"`
-	Lifecycle       LifecycleConfig `yaml:"lifecycle" json:"lifecycle"`
-	Storage         StorageConfig   `yaml:"storage" json:"storage"`
-	OAuth           OAuthConfig     `yaml:"oauth" json:"oauth"`
-	Proxy           ProxyConfig     `yaml:"proxy" json:"proxy"`
-	Registry        RegistryConfig  `yaml:"registry" json:"registry"`
-	Images          ImagesConfig    `yaml:"images" json:"images"`
+	PodLimitPerUser int              `yaml:"podLimitPerUser" json:"podLimitPerUser"`
+	GpuLimitPerUser int              `yaml:"gpuLimitPerUser" json:"gpuLimitPerUser"`
+	GPU             GPUConfig        `yaml:"gpu" json:"gpu"`
+	UI              UIConfig         `yaml:"ui" json:"ui"`
+	Lifecycle       LifecycleConfig  `yaml:"lifecycle" json:"lifecycle"`
+	Storage         StorageConfig    `yaml:"storage" json:"storage"`
+	Pod             PodConfig        `yaml:"pod" json:"pod"`
+	OAuth           OAuthConfig      `yaml:"oauth" json:"oauth"`
+	Proxy           ProxyConfig      `yaml:"proxy" json:"proxy"`
+	Registry        RegistryConfig   `yaml:"registry" json:"registry"`
+	Images          ImagesConfig     `yaml:"images" json:"images"`
 	Kubernetes      KubernetesConfig `yaml:"kubernetes" json:"kubernetes"`
 }
 
@@ -78,9 +80,10 @@ type OAuthConfig struct {
 
 // StorageConfig 存储配置
 type StorageConfig struct {
-	StorageClass string        `yaml:"storageClass" json:"storageClass"`
-	Size         string        `yaml:"size" json:"size"`
-	ExtraVolumes []ExtraVolume `yaml:"extraVolumes" json:"extraVolumes"` // 额外的通用存储
+	StorageClass string `yaml:"storageClass" json:"storageClass"` // 用户 workspace PVC 的 StorageClass
+	Size         string `yaml:"size" json:"size"`                 // 用户 workspace PVC 的大小
+	// 注意：ExtraVolumes 已废弃，请使用 Pod.ExtraVolumes 和 Pod.ExtraVolumeMounts（K8s 原生格式）
+	ExtraVolumes []ExtraVolume `yaml:"extraVolumes,omitempty" json:"extraVolumes,omitempty"` // 废弃：请使用 pod.extraVolumes
 }
 
 // ExtraVolume 额外存储配置
@@ -98,6 +101,32 @@ type ExtraVolume struct {
 type NFS struct {
 	Server string `yaml:"server" json:"server"` // NFS 服务器地址
 	Path   string `yaml:"path" json:"path"`     // NFS 路径
+}
+
+// PodConfig Pod 配置（使用 K8s 原生格式）
+type PodConfig struct {
+	// Resources 资源配置（K8s 原生格式）
+	Resources *corev1.ResourceRequirements `yaml:"resources,omitempty" json:"resources,omitempty"`
+
+	// SecurityContext 安全上下文（K8s 原生格式）
+	SecurityContext *corev1.SecurityContext `yaml:"securityContext,omitempty" json:"securityContext,omitempty"`
+
+	// NodeSelector 节点选择器（K8s 原生格式）
+	NodeSelector map[string]string `yaml:"nodeSelector,omitempty" json:"nodeSelector,omitempty"`
+
+	// Affinity 亲和性调度（K8s 原生格式）
+	Affinity *corev1.Affinity `yaml:"affinity,omitempty" json:"affinity,omitempty"`
+
+	// HostNetwork 使用主机网络
+	HostNetwork bool `yaml:"hostNetwork" json:"hostNetwork"`
+
+	// ExtraVolumes 额外的 Volume 配置（K8s 原生格式）
+	// 注意：用户的 workspace PVC 会自动添加，这里配置额外的存储卷
+	ExtraVolumes []corev1.Volume `yaml:"extraVolumes,omitempty" json:"extraVolumes,omitempty"`
+
+	// ExtraVolumeMounts 额外的 VolumeMount 配置（K8s 原生格式）
+	// 需要与 ExtraVolumes 配合使用
+	ExtraVolumeMounts []corev1.VolumeMount `yaml:"extraVolumeMounts,omitempty" json:"extraVolumeMounts,omitempty"`
 }
 
 // GPUConfig GPU 相关配置
@@ -173,10 +202,10 @@ func DefaultConfig() *Config {
 			},
 		},
 		UI: UIConfig{
-			DefaultTTLHours: 4,
-			MinTTLHours:     1,
-			MaxTTLHours:     24,
-			EnableJupyter:   false,
+			DefaultTTLHours:   4,
+			MinTTLHours:       1,
+			MaxTTLHours:       24,
+			EnableJupyter:     false,
 			EnableCustomImage: true,
 		},
 		Lifecycle: LifecycleConfig{
@@ -188,6 +217,10 @@ func DefaultConfig() *Config {
 			StorageClass: "hostpath",
 			Size:         "50Gi",
 			ExtraVolumes: []ExtraVolume{},
+		},
+		Pod: PodConfig{
+			HostNetwork: true,
+			Resources:   nil, // 使用 nil 表示使用硬编码的默认值
 		},
 		OAuth: OAuthConfig{
 			Enabled:               false,

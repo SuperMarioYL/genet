@@ -35,7 +35,7 @@ func (c *Client) EnsurePVC(ctx context.Context, namespace, username, storageClas
 			},
 		},
 		Spec: corev1.PersistentVolumeClaimSpec{
-			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
 			Resources: corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
 					corev1.ResourceStorage: resource.MustParse(size),
@@ -71,4 +71,3 @@ func (c *Client) DeletePVC(ctx context.Context, namespace, name string) error {
 	}
 	return nil
 }
-

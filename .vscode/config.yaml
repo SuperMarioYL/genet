@@ -35,31 +35,116 @@ lifecycle:
   warningThresholdHours: 1
 
 storage:
+  # 用户 workspace PVC 配置
   storageClass: "hostpath" # Docker Desktop 使用 hostpath
   size: "10Gi"
-  # 额外的通用存储（会挂载到每个 Pod）
-  extraVolumes: []
+
+  # 注意：extraVolumes 已废弃，请使用下面的 pod.extraVolumes（K8s 原生格式）
+  # extraVolumes: []
+
+# ============================================
+# Pod 配置（Kubernetes 原生格式）
+# ============================================
+# 使用 K8s 标准 YAML 格式，直接参考 K8s 官方文档配置
+# 文档: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#podspec-v1-core
+pod:
+  # 使用主机网络（SSH 端口直接暴露在主机上）
+  hostNetwork: true
+
+  # 资源配置（K8s 原生格式）
+  resources:
+    requests:
+      cpu: "2"
+      memory: "4Gi"
+    limits:
+      cpu: "8"
+      memory: "16Gi"
+
+  # 安全上下文（K8s 原生格式）
+  securityContext:
+    capabilities:
+      add:
+        - SYS_ADMIN
+
+  # 节点选择器（标签匹配）
+  # nodeSelector:
+  #   disk: ssd
+  #   env: production
+
+  # 亲和性调度（高级规则，K8s 原生格式）
+  # 文档: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#affinity-and-anti-affinity
+  # affinity:
+  #   nodeAffinity:
+  #     # 必须满足的规则（硬约束）
+  #     requiredDuringSchedulingIgnoredDuringExecution:
+  #       nodeSelectorTerms:
+  #         - matchExpressions:
+  #             - key: nvidia.com/gpu
+  #               operator: Exists
+  #     # 优先满足的规则（软约束）
+  #     preferredDuringSchedulingIgnoredDuringExecution:
+  #       - weight: 80  # 权重 1-100
+  #         preference:
+  #           matchExpressions:
+  #             - key: disk
+  #               operator: In
+  #               values:
+  #                 - ssd
+  #                 - nvme
+  #       - weight: 50
+  #         preference:
+  #           matchExpressions:
+  #             - key: topology.kubernetes.io/region
+  #               operator: In
+  #               values:
+  #                 - us-west-1
+  #                 - us-west-2
+
+  # 额外的存储配置（K8s 原生格式）
+  # 注意：用户的 workspace PVC 会自动添加，这里配置额外的存储卷
+  # 文档: https://kubernetes.io/docs/concepts/storage/volumes/
+  # extraVolumes: []
+  # extraVolumeMounts: []
   # 示例配置：
   # extraVolumes:
-  #   # PVC 类型（共享数据集）
-  #   - name: "datasets"
-  #     mountPath: "/data/datasets"
-  #     readOnly: true
-  #     pvc: "shared-datasets"
-  #
-  #   # HostPath 类型（本地缓存）
-  #   - name: "cache"
-  #     mountPath: "/data/cache"
-  #     readOnly: false
-  #     hostPath: "/mnt/cache"
-  #
-  #   # NFS 类型（网络存储）
-  #   - name: "models"
-  #     mountPath: "/data/models"
-  #     readOnly: true
+  #   # PVC 存储
+  #   - name: datasets
+  #     persistentVolumeClaim:
+  #       claimName: shared-datasets
+  #       readOnly: true
+  #   # HostPath 存储
+  #   - name: cache
+  #     hostPath:
+  #       path: /mnt/cache
+  #       type: DirectoryOrCreate
+  #   # NFS 存储
+  #   - name: models
   #     nfs:
-  #       server: "nfs.example.com"
-  #       path: "/exports/models"
+  #       server: nfs.example.com
+  #       path: /exports/models
+  #       readOnly: true
+  #   # ConfigMap
+  #   - name: config
+  #     configMap:
+  #       name: my-config
+  #   # Secret
+  #   - name: credentials
+  #     secret:
+  #       secretName: my-secret
+  # extraVolumeMounts:
+  #   - name: datasets
+  #     mountPath: /data/datasets
+  #     readOnly: true
+  #   - name: cache
+  #     mountPath: /data/cache
+  #   - name: models
+  #     mountPath: /data/models
+  #     readOnly: true
+  #   - name: config
+  #     mountPath: /etc/config
+  #   - name: credentials
+  #     mountPath: /etc/credentials
+  #     readOnly: true
 
 oauth:
   # OAuth 配置说明：

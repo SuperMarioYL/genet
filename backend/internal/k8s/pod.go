@@ -198,7 +198,14 @@ tail -f /dev/null
 				MountPath: "/workspace",
 			},
 		},
-		Resources: corev1.ResourceRequirements{
+	}
+
+	// 应用资源配置（优先使用配置，否则使用默认值）
+	if c.config.Pod.Resources != nil {
+		container.Resources = *c.config.Pod.Resources
+	} else {
+		// 默认资源配置
+		container.Resources = corev1.ResourceRequirements{
 			Requests: corev1.ResourceList{
 				corev1.ResourceMemory: resource.MustParse("4Gi"),
 				corev1.ResourceCPU:    resource.MustParse("2"),
@@ -207,12 +214,19 @@ tail -f /dev/null
 				corev1.ResourceMemory: resource.MustParse("16Gi"),
 				corev1.ResourceCPU:    resource.MustParse("8"),
 			},
-		},
-		SecurityContext: &corev1.SecurityContext{
+		}
+	}
+
+	// 应用安全上下文（优先使用配置，否则使用默认值）
+	if c.config.Pod.SecurityContext != nil {
+		container.SecurityContext = c.config.Pod.SecurityContext
+	} else {
+		// 默认安全上下文
+		container.SecurityContext = &corev1.SecurityContext{
 			Capabilities: &corev1.Capabilities{
 				Add: []corev1.Capability{"SYS_ADMIN"},
 			},
-		},
+		}
 	}
 
 	// 添加代理环境变量
@@ -266,7 +280,7 @@ tail -f /dev/null
 			},
 		},
 		Spec: corev1.PodSpec{
-			HostNetwork:   true,
+			HostNetwork:   c.config.Pod.HostNetwork,
 			RestartPolicy: corev1.RestartPolicyNever,
 			Containers:    []corev1.Container{container},
 			Volumes: []corev1.Volume{
@@ -282,48 +296,75 @@ tail -f /dev/null
 		},
 	}
 
-	// 添加额外的通用存储
-	for _, extraVol := range c.config.Storage.ExtraVolumes {
-		// 添加 VolumeMount 到容器
-		pod.Spec.Containers[0].VolumeMounts = append(pod.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
-			Name:      extraVol.Name,
-			MountPath: extraVol.MountPath,
-			ReadOnly:  extraVol.ReadOnly,
-		})
-
-		// 添加 Volume 到 Pod
-		volume := corev1.Volume{Name: extraVol.Name}
-		if extraVol.PVC != "" {
-			volume.VolumeSource = corev1.VolumeSource{
-				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-					ClaimName: extraVol.PVC,
-					ReadOnly:  extraVol.ReadOnly,
-				},
-			}
-		} else if extraVol.HostPath != "" {
-			volume.VolumeSource = corev1.VolumeSource{
-				HostPath: &corev1.HostPathVolumeSource{
-					Path: extraVol.HostPath,
-				},
-			}
-		} else if extraVol.NFS != nil {
-			volume.VolumeSource = corev1.VolumeSource{
-				NFS: &corev1.NFSVolumeSource{
-					Server:   extraVol.NFS.Server,
-					Path:     extraVol.NFS.Path,
-					ReadOnly: extraVol.ReadOnly,
-				},
-			}
+	// 应用 NodeSelector（合并全局配置和 GPU 特定配置）
+	if c.config.Pod.NodeSelector != nil {
+		pod.Spec.NodeSelector = make(map[string]string)
+		// 复制全局 NodeSelector
+		for k, v := range c.config.Pod.NodeSelector {
+			pod.Spec.NodeSelector[k] = v
 		}
-		pod.Spec.Volumes = append(pod.Spec.Volumes, volume)
 	}
 
-	// 如果需要 GPU，添加节点选择器
+	// 应用 Affinity
+	if c.config.Pod.Affinity != nil {
+		pod.Spec.Affinity = c.config.Pod.Affinity
+	}
+
+	// 添加额外的通用存储（优先使用新的 K8s 原生格式）
+	if len(c.config.Pod.ExtraVolumes) > 0 || len(c.config.Pod.ExtraVolumeMounts) > 0 {
+		// 使用 K8s 原生格式配置
+		pod.Spec.Containers[0].VolumeMounts = append(pod.Spec.Containers[0].VolumeMounts, c.config.Pod.ExtraVolumeMounts...)
+		pod.Spec.Volumes = append(pod.Spec.Volumes, c.config.Pod.ExtraVolumes...)
+	} else {
+		// 向后兼容：使用旧的 Storage.ExtraVolumes 配置
+		for _, extraVol := range c.config.Storage.ExtraVolumes {
+			// 添加 VolumeMount 到容器
+			pod.Spec.Containers[0].VolumeMounts = append(pod.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
+				Name:      extraVol.Name,
+				MountPath: extraVol.MountPath,
+				ReadOnly:  extraVol.ReadOnly,
+			})
+
+			// 添加 Volume 到 Pod
+			volume := corev1.Volume{Name: extraVol.Name}
+			if extraVol.PVC != "" {
+				volume.VolumeSource = corev1.VolumeSource{
+					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+						ClaimName: extraVol.PVC,
+						ReadOnly:  extraVol.ReadOnly,
+					},
+				}
+			} else if extraVol.HostPath != "" {
+				volume.VolumeSource = corev1.VolumeSource{
+					HostPath: &corev1.HostPathVolumeSource{
+						Path: extraVol.HostPath,
+					},
+				}
+			} else if extraVol.NFS != nil {
+				volume.VolumeSource = corev1.VolumeSource{
+					NFS: &corev1.NFSVolumeSource{
+						Server:   extraVol.NFS.Server,
+						Path:     extraVol.NFS.Path,
+						ReadOnly: extraVol.ReadOnly,
+					},
+				}
+			}
+			pod.Spec.Volumes = append(pod.Spec.Volumes, volume)
+		}
+	}
+
+	// 如果需要 GPU，合并 GPU 特定的 NodeSelector（GPU 配置优先）
 	if spec.GPUCount > 0 && spec.GPUType != "" {
 		// 查找 GPU 配置
 		for _, gpuType := range c.config.GPU.AvailableTypes {
 			if gpuType.Name == spec.GPUType {
-				pod.Spec.NodeSelector = gpuType.NodeSelector
+				if pod.Spec.NodeSelector == nil {
+					pod.Spec.NodeSelector = make(map[string]string)
+				}
+				// 合并 GPU NodeSelector，GPU 配置优先
+				for k, v := range gpuType.NodeSelector {
+					pod.Spec.NodeSelector[k] = v
+				}
 				break
 			}
 		}
