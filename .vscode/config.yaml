@@ -16,7 +16,7 @@ gpu:
         gpu-type: "v100"
   presetImages:
     - name: "test"
-      image: "linuxserver/openssh-server"
+      image: "rastasheep/ubuntu-sshd:14.04"
       description: "ssh基础镜像"
     - name: "PyTorch 2.0"
       image: "pytorch/pytorch:2.0.1-cuda11.7-cudnn8-runtime"
