@@ -83,7 +83,8 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
   const downloadXshellFile = () => {
     const namespace = `user-${pod.username}`;
     const podName = pod.name;
-    window.location.href = `/api/pods/${namespace}/${podName}/xshell`;
+    // API 路径格式: /api/pods/:id/xshell，其中 id = namespace/name
+    window.location.href = `/api/pods/${namespace}%2F${podName}/xshell`;
     message.success('正在下载 Xshell 会话文件', 3);
   };
 

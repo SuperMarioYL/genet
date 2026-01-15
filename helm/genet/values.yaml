@@ -232,18 +232,18 @@ backend:
 
         # 创建 sshd 配置
         mkdir -p "$SSH_CONFIG_DIR"
-        cat > "$SSH_CONFIG_DIR/sshd_config.genet" <<EOF
-Port {{.SSHPort}}
-PermitRootLogin yes
-PasswordAuthentication yes
-PubkeyAuthentication yes
-ChallengeResponseAuthentication no
-UsePAM no
-Subsystem sftp $SFTP_BIN
-HostKey $SSH_HOST_KEY_DIR/ssh_host_rsa_key
-HostKey $SSH_HOST_KEY_DIR/ssh_host_ecdsa_key
-HostKey $SSH_HOST_KEY_DIR/ssh_host_ed25519_key
-EOF
+        {
+          echo "Port {{.SSHPort}}"
+          echo "PermitRootLogin yes"
+          echo "PasswordAuthentication yes"
+          echo "PubkeyAuthentication yes"
+          echo "ChallengeResponseAuthentication no"
+          echo "UsePAM no"
+          echo "Subsystem sftp $SFTP_BIN"
+          echo "HostKey $SSH_HOST_KEY_DIR/ssh_host_rsa_key"
+          echo "HostKey $SSH_HOST_KEY_DIR/ssh_host_ecdsa_key"
+          echo "HostKey $SSH_HOST_KEY_DIR/ssh_host_ed25519_key"
+        } > "$SSH_CONFIG_DIR/sshd_config.genet"
 
         # 启动 SSH 服务
         echo "Starting sshd on port {{.SSHPort}}..."
