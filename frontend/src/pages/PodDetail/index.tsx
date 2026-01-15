@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { Layout, Card, Tabs, Button, Space, Descriptions, message, Input, Typography, Divider, Tooltip, Table, Tag, Modal, Progress, Alert } from 'antd';
-import { ArrowLeftOutlined, CopyOutlined, EyeOutlined, EyeInvisibleOutlined, CodeOutlined, WindowsOutlined, AppleOutlined, DesktopOutlined, ReloadOutlined, SaveOutlined, CloudUploadOutlined } from '@ant-design/icons';
-import { getPod, getPodLogs, getPodEvents, getPodDescribe, commitImage, getCommitStatus, getCommitLogs, CommitStatus } from '../../services/api';
-import StatusBadge from '../../components/StatusBadge';
+import { ArrowLeftOutlined, CodeOutlined, CopyOutlined, DesktopOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
+import { Alert, Button, Card, Descriptions, Divider, Input, Layout, message, Modal, Progress, Space, Table, Tabs, Tag, Tooltip, Typography } from 'antd';
 import dayjs from 'dayjs';
+import React, { useEffect, useRef, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import StatusBadge from '../../components/StatusBadge';
+import { commitImage, CommitStatus, getCommitLogs, getCommitStatus, getPod, getPodDescribe, getPodEvents, getPodLogs } from '../../services/api';
 import './index.css';
 
 const { Header, Content } = Layout;
@@ -154,19 +154,25 @@ const PodDetail: React.FC = () => {
     message.info(`正在打开 ${appName}...`);
   };
 
-  // Xshell 无法通过 URI 打开，改为复制命令
-  const openXshell = (sshCmd: string) => {
+  // 尝试使用 ssh:// 协议打开默认 SSH 客户端
+  const openSSHClient = (sshURI: string, sshCmd: string) => {
+    // 先尝试打开 ssh:// 协议
+    const link = document.createElement('a');
+    link.href = sshURI;
+    link.click();
+    
+    // 同时复制命令到剪贴板作为备用
     copyToClipboard(sshCmd, 'SSH 命令');
-    message.info('SSH 命令已复制，请在 Xshell 中新建会话并粘贴此命令', 4);
+    message.info('正在尝试打开 SSH 客户端... 如未打开，命令已复制到剪贴板', 4);
   };
 
-  // 复制 SSH 命令到剪贴板（Mac/Windows Terminal）
+  // 复制 SSH 命令到剪贴板
   const copySSHCommand = (sshCmd: string, platform: string) => {
     copyToClipboard(sshCmd, 'SSH 命令');
     if (platform === 'mac') {
       message.info('SSH 命令已复制，请在 Terminal.app 中粘贴运行', 3);
     } else if (platform === 'windows') {
-      message.info('SSH 命令已复制，请在 PowerShell 或 CMD 中粘贴运行', 3);
+      message.info('SSH 命令已复制，请在 Windows Terminal 中粘贴运行', 3);
     } else {
       message.info('SSH 命令已复制，请在终端中粘贴运行', 3);
     }
@@ -600,41 +606,28 @@ const PodDetail: React.FC = () => {
                         </Button>
                       </Tooltip>
                       
-                      {detectOS() === 'windows' && (
-                        <Tooltip title="复制 SSH 命令，在 Xshell 中使用">
-                          <Button
-                            icon={<WindowsOutlined />}
-                            size="large"
-                            onClick={() => openXshell(connections.apps.xshellURI)}
-                          >
-                            Xshell
-                          </Button>
-                        </Tooltip>
-                      )}
+                      <Tooltip title="尝试打开默认 SSH 客户端（如 PuTTY、Termius 等）">
+                        <Button
+                          icon={<DesktopOutlined />}
+                          size="large"
+                          onClick={() => openSSHClient(
+                            connections.apps.xshellURI,
+                            connections.apps.sshCommand
+                          )}
+                        >
+                          SSH 客户端
+                        </Button>
+                      </Tooltip>
 
-                      {detectOS() === 'mac' && (
-                        <Tooltip title="复制 SSH 命令，在 Terminal.app 中使用">
-                          <Button
-                            icon={<AppleOutlined />}
-                            size="large"
-                            onClick={() => copySSHCommand(connections.apps.macTerminalCmd, 'mac')}
-                          >
-                            Terminal
-                          </Button>
-                        </Tooltip>
-                      )}
-
-                      {detectOS() === 'windows' && (
-                        <Tooltip title="复制 SSH 命令，在 PowerShell 或 CMD 中使用">
-                          <Button
-                            icon={<DesktopOutlined />}
-                            size="large"
-                            onClick={() => copySSHCommand(connections.apps.winTerminalCmd, 'windows')}
-                          >
-                            PowerShell
-                          </Button>
-                        </Tooltip>
-                      )}
+                      <Tooltip title="复制 SSH 命令到剪贴板">
+                        <Button
+                          icon={<CopyOutlined />}
+                          size="large"
+                          onClick={() => copySSHCommand(connections.apps.sshCommand, detectOS())}
+                        >
+                          复制命令
+                        </Button>
+                      </Tooltip>
                     </Space>
 
                     <Divider />
