@@ -99,9 +99,38 @@ const PodDetail: React.FC = () => {
     message.success(`${label} 已复制`);
   };
 
+  // 检测操作系统
+  const detectOS = (): 'windows' | 'mac' | 'linux' => {
+    const ua = navigator.userAgent.toLowerCase();
+    if (ua.includes('win')) return 'windows';
+    if (ua.includes('mac')) return 'mac';
+    return 'linux';
+  };
+
   const openApp = (uri: string, appName: string) => {
     window.open(uri, '_blank');
     message.info(`正在打开 ${appName}...`);
+  };
+
+  // 打开 Xshell（Windows）
+  const openXshell = (xshellURI: string) => {
+    // 尝试打开 Xshell 协议
+    const link = document.createElement('a');
+    link.href = xshellURI;
+    link.click();
+    message.info('正在打开 Xshell...');
+  };
+
+  // 复制 SSH 命令到剪贴板（Mac/Windows Terminal）
+  const copySSHCommand = (sshCmd: string, platform: string) => {
+    copyToClipboard(sshCmd, 'SSH 命令');
+    if (platform === 'mac') {
+      message.info('SSH 命令已复制，请在 Terminal.app 中粘贴运行', 3);
+    } else if (platform === 'windows') {
+      message.info('SSH 命令已复制，请在 PowerShell 或 CMD 中粘贴运行', 3);
+    } else {
+      message.info('SSH 命令已复制，请在终端中粘贴运行', 3);
+    }
   };
 
   // 加载 commit 状态
@@ -515,7 +544,7 @@ const PodDetail: React.FC = () => {
                   {/* 快捷打开 */}
                   <Card title="快捷打开">
                     <Space size="large" wrap>
-                      <Tooltip title="使用 VSCode Remote SSH 直接打开">
+                      <Tooltip title="使用 VSCode Remote SSH 直接打开（新窗口）">
                         <Button
                           type="primary"
                           icon={<CodeOutlined />}
@@ -526,25 +555,41 @@ const PodDetail: React.FC = () => {
                         </Button>
                       </Tooltip>
                       
-                      <Tooltip title="Windows 用户可使用 Xshell 打开">
-                        <Button
-                          icon={<WindowsOutlined />}
-                          size="large"
-                          onClick={() => openApp(connections.apps.xshellURI, 'Xshell')}
-                        >
-                          Xshell
-                        </Button>
-                      </Tooltip>
+                      {detectOS() === 'windows' && (
+                        <Tooltip title="使用 Xshell 打开 SSH 连接">
+                          <Button
+                            icon={<WindowsOutlined />}
+                            size="large"
+                            onClick={() => openXshell(connections.apps.xshellURI)}
+                          >
+                            Xshell
+                          </Button>
+                        </Tooltip>
+                      )}
 
-                      <Tooltip title="macOS/Linux 用户可使用系统终端打开">
-                        <Button
-                          icon={<DesktopOutlined />}
-                          size="large"
-                          onClick={() => openApp(connections.apps.terminalURI, 'Terminal')}
-                        >
-                          Terminal
-                        </Button>
-                      </Tooltip>
+                      {detectOS() === 'mac' && (
+                        <Tooltip title="复制 SSH 命令，在 Terminal.app 中使用">
+                          <Button
+                            icon={<AppleOutlined />}
+                            size="large"
+                            onClick={() => copySSHCommand(connections.apps.macTerminalCmd, 'mac')}
+                          >
+                            Terminal
+                          </Button>
+                        </Tooltip>
+                      )}
+
+                      {detectOS() === 'windows' && (
+                        <Tooltip title="复制 SSH 命令，在 PowerShell 或 CMD 中使用">
+                          <Button
+                            icon={<DesktopOutlined />}
+                            size="large"
+                            onClick={() => copySSHCommand(connections.apps.winTerminalCmd, 'windows')}
+                          >
+                            PowerShell
+                          </Button>
+                        </Tooltip>
+                      )}
                     </Space>
 
                     <Divider />

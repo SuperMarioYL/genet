@@ -632,9 +632,19 @@ func (h *PodHandler) buildConnectionInfo(nodeIP string, sshPort int32, password,
 	}
 
 	sshCommand := fmt.Sprintf("ssh root@%s -p %d", nodeIP, sshPort)
-	vscodeURI := fmt.Sprintf("vscode://vscode-remote/ssh-remote+root@%s:%d/workspace", nodeIP, sshPort)
-	xshellURI := fmt.Sprintf("ssh://root@%s:%d", nodeIP, sshPort)
-	terminalURI := fmt.Sprintf("ssh://root@%s:%d", nodeIP, sshPort)
+	
+	// VSCode Remote SSH URI - 添加 newWindow=true 参数打开新窗口
+	vscodeURI := fmt.Sprintf("vscode://vscode-remote/ssh-remote+root@%s:%d/workspace?newWindow=true", nodeIP, sshPort)
+	
+	// Xshell 协议（Windows）- 使用 Xshell 自定义协议
+	// 注意：Xshell 7+ 支持此协议格式
+	xshellURI := fmt.Sprintf("xshell://root@%s:%d/", nodeIP, sshPort)
+	
+	// Mac Terminal 命令
+	macTerminalCmd := fmt.Sprintf("ssh root@%s -p %d", nodeIP, sshPort)
+	
+	// Windows Terminal/PowerShell 命令
+	winTerminalCmd := fmt.Sprintf("ssh root@%s -p %d", nodeIP, sshPort)
 
 	return models.ConnectionInfo{
 		SSH: models.SSHConnection{
@@ -644,10 +654,11 @@ func (h *PodHandler) buildConnectionInfo(nodeIP string, sshPort int32, password,
 			Password: password,
 		},
 		Apps: models.AppConnections{
-			SSHCommand:  sshCommand,
-			VSCodeURI:   vscodeURI,
-			XshellURI:   xshellURI,
-			TerminalURI: terminalURI,
+			SSHCommand:     sshCommand,
+			VSCodeURI:      vscodeURI,
+			XshellURI:      xshellURI,
+			MacTerminalCmd: macTerminalCmd,
+			WinTerminalCmd: winTerminalCmd,
 		},
 	}
 }

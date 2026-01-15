@@ -41,10 +41,11 @@ type SSHConnection struct {
 
 // AppConnections 应用连接信息
 type AppConnections struct {
-	SSHCommand  string `json:"sshCommand"`
-	VSCodeURI   string `json:"vscodeURI"`
-	XshellURI   string `json:"xshellURI"`
-	TerminalURI string `json:"terminalURI"`
+	SSHCommand     string `json:"sshCommand"`     // 通用 SSH 命令
+	VSCodeURI      string `json:"vscodeURI"`      // VSCode Remote SSH URI
+	XshellURI      string `json:"xshellURI"`      // Windows: Xshell 协议 URI
+	MacTerminalCmd string `json:"macTerminalCmd"` // Mac: Terminal SSH 命令
+	WinTerminalCmd string `json:"winTerminalCmd"` // Windows: PowerShell/CMD SSH 命令
 }
 
 // PodListResponse Pod 列表响应

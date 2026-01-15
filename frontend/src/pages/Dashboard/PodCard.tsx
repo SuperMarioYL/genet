@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Card, Space, Button, Modal, message, Divider, Tooltip } from 'antd';
-import { ClockCircleOutlined, DeleteOutlined, EyeOutlined, CopyOutlined, CodeOutlined, WindowsOutlined, DesktopOutlined } from '@ant-design/icons';
+import { ClockCircleOutlined, DeleteOutlined, EyeOutlined, CopyOutlined, CodeOutlined, WindowsOutlined, DesktopOutlined, AppleOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import StatusBadge from '../../components/StatusBadge';
 import CountdownTimer from '../../components/CountdownTimer';
@@ -19,6 +19,34 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
     message.success(`${label} 已复制`);
+  };
+
+  // 检测操作系统
+  const detectOS = (): 'windows' | 'mac' | 'linux' => {
+    const ua = navigator.userAgent.toLowerCase();
+    if (ua.includes('win')) return 'windows';
+    if (ua.includes('mac')) return 'mac';
+    return 'linux';
+  };
+
+  // 打开 Xshell（Windows）
+  const openXshell = (xshellURI: string) => {
+    const link = document.createElement('a');
+    link.href = xshellURI;
+    link.click();
+    message.info('正在打开 Xshell...');
+  };
+
+  // 复制 SSH 命令到剪贴板（Mac/Windows Terminal）
+  const copySSHCommand = (sshCmd: string, platform: string) => {
+    copyToClipboard(sshCmd, 'SSH 命令');
+    if (platform === 'mac') {
+      message.info('SSH 命令已复制，请在 Terminal.app 中粘贴运行', 3);
+    } else if (platform === 'windows') {
+      message.info('SSH 命令已复制，请在 PowerShell 或 CMD 中粘贴运行', 3);
+    } else {
+      message.info('SSH 命令已复制，请在终端中粘贴运行', 3);
+    }
   };
 
   const handleExtend = () => {
@@ -127,7 +155,7 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
 
             <div className="connection-item" style={{ marginTop: 8 }}>
               <Space wrap>
-                <Tooltip title="使用 VSCode 打开">
+                <Tooltip title="使用 VSCode 打开（新窗口）">
                   <Button 
                     size="small"
                     type="primary"
@@ -137,24 +165,43 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
                     VSCode
                   </Button>
                 </Tooltip>
-                <Tooltip title="使用 Xshell 打开 (Windows)">
-                  <Button 
-                    size="small"
-                    icon={<WindowsOutlined />}
-                    onClick={() => window.open(connections.apps.xshellURI, '_blank')}
-                  >
-                    Xshell
-                  </Button>
-                </Tooltip>
-                <Tooltip title="使用终端打开 (macOS/Linux)">
-                  <Button 
-                    size="small"
-                    icon={<DesktopOutlined />}
-                    onClick={() => window.open(connections.apps.terminalURI, '_blank')}
-                  >
-                    Terminal
-                  </Button>
-                </Tooltip>
+                
+                {detectOS() === 'windows' && (
+                  <Tooltip title="使用 Xshell 打开">
+                    <Button 
+                      size="small"
+                      icon={<WindowsOutlined />}
+                      onClick={() => openXshell(connections.apps.xshellURI)}
+                    >
+                      Xshell
+                    </Button>
+                  </Tooltip>
+                )}
+
+                {detectOS() === 'mac' && (
+                  <Tooltip title="复制 SSH 命令">
+                    <Button 
+                      size="small"
+                      icon={<AppleOutlined />}
+                      onClick={() => copySSHCommand(connections.apps.macTerminalCmd, 'mac')}
+                    >
+                      Terminal
+                    </Button>
+                  </Tooltip>
+                )}
+
+                {detectOS() === 'windows' && (
+                  <Tooltip title="复制 SSH 命令">
+                    <Button 
+                      size="small"
+                      icon={<DesktopOutlined />}
+                      onClick={() => copySSHCommand(connections.apps.winTerminalCmd, 'windows')}
+                    >
+                      PowerShell
+                    </Button>
+                  </Tooltip>
+                )}
+
                 <Tooltip title="复制密码">
                   <Button 
                     size="small"
