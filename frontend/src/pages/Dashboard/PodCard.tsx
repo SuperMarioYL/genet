@@ -29,12 +29,19 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
     return 'linux';
   };
 
-  // 打开 Xshell（Windows）
-  const openXshell = (xshellURI: string) => {
-    const link = document.createElement('a');
-    link.href = xshellURI;
-    link.click();
-    message.info('正在打开 Xshell...');
+  // 打开 VSCode
+  const openVSCode = (uri: string) => {
+    window.location.href = uri;
+    message.info(
+      '正在打开 VSCode... 如果覆盖了当前项目，请在设置中将 window.openFoldersInNewWindow 设为 on',
+      5
+    );
+  };
+
+  // Xshell 无法通过 URI 打开，改为复制命令
+  const openXshell = (sshCmd: string) => {
+    copyToClipboard(sshCmd, 'SSH 命令');
+    message.info('SSH 命令已复制，请在 Xshell 中新建会话并粘贴此命令', 4);
   };
 
   // 复制 SSH 命令到剪贴板（Mac/Windows Terminal）
@@ -160,14 +167,14 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
                     size="small"
                     type="primary"
                     icon={<CodeOutlined />}
-                    onClick={() => window.open(connections.apps.vscodeURI, '_blank')}
+                    onClick={() => openVSCode(connections.apps.vscodeURI)}
                   >
                     VSCode
                   </Button>
                 </Tooltip>
                 
                 {detectOS() === 'windows' && (
-                  <Tooltip title="使用 Xshell 打开">
+                  <Tooltip title="复制 SSH 命令">
                     <Button 
                       size="small"
                       icon={<WindowsOutlined />}

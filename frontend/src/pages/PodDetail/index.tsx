@@ -107,18 +107,26 @@ const PodDetail: React.FC = () => {
     return 'linux';
   };
 
+  // 打开 VSCode
+  const openVSCode = (uri: string) => {
+    // 使用 window.location.href 打开 VSCode URI
+    window.location.href = uri;
+    message.info(
+      '正在打开 VSCode... 如果覆盖了当前项目，请在 VSCode 设置中将 window.openFoldersInNewWindow 设为 on',
+      5
+    );
+  };
+
+  // 打开其他应用（通用方法）
   const openApp = (uri: string, appName: string) => {
     window.open(uri, '_blank');
     message.info(`正在打开 ${appName}...`);
   };
 
-  // 打开 Xshell（Windows）
-  const openXshell = (xshellURI: string) => {
-    // 尝试打开 Xshell 协议
-    const link = document.createElement('a');
-    link.href = xshellURI;
-    link.click();
-    message.info('正在打开 Xshell...');
+  // Xshell 无法通过 URI 打开，改为复制命令
+  const openXshell = (sshCmd: string) => {
+    copyToClipboard(sshCmd, 'SSH 命令');
+    message.info('SSH 命令已复制，请在 Xshell 中新建会话并粘贴此命令', 4);
   };
 
   // 复制 SSH 命令到剪贴板（Mac/Windows Terminal）
@@ -543,20 +551,26 @@ const PodDetail: React.FC = () => {
 
                   {/* 快捷打开 */}
                   <Card title="快捷打开">
+                    <Alert 
+                      message="提示：如果 VSCode 覆盖了当前项目，请在 VSCode 设置中搜索 window.openFoldersInNewWindow 并设为 on" 
+                      type="info" 
+                      showIcon 
+                      style={{ marginBottom: 16 }}
+                    />
                     <Space size="large" wrap>
-                      <Tooltip title="使用 VSCode Remote SSH 直接打开（新窗口）">
+                      <Tooltip title="使用 VSCode Remote SSH 打开">
                         <Button
                           type="primary"
                           icon={<CodeOutlined />}
                           size="large"
-                          onClick={() => openApp(connections.apps.vscodeURI, 'VSCode')}
+                          onClick={() => openVSCode(connections.apps.vscodeURI)}
                         >
                           VSCode
                         </Button>
                       </Tooltip>
                       
                       {detectOS() === 'windows' && (
-                        <Tooltip title="使用 Xshell 打开 SSH 连接">
+                        <Tooltip title="复制 SSH 命令，在 Xshell 中使用">
                           <Button
                             icon={<WindowsOutlined />}
                             size="large"
