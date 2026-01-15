@@ -666,15 +666,13 @@ func (h *PodHandler) buildConnectionInfo(nodeIP string, sshPort int32, password,
 // DownloadXshellFile 下载 Xshell 会话文件 (.xsh)
 // GET /api/pods/:namespace/:name/xshell
 func (h *PodHandler) DownloadXshellFile(c *gin.Context) {
-	// id 格式: namespace/name
-	id := c.Param("id")
-	parts := strings.SplitN(id, "/", 2)
-	if len(parts) != 2 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 Pod ID 格式，应为 namespace/name"})
+	// 使用查询参数获取 namespace 和 name
+	namespace := c.Query("namespace")
+	name := c.Query("name")
+	if namespace == "" || name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 namespace 或 name 参数"})
 		return
 	}
-	namespace := parts[0]
-	name := parts[1]
 
 	ctx := context.Background()
 
