@@ -79,11 +79,31 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
     message.info('正在尝试打开 SSH 客户端... 如未打开，命令已复制', 4);
   };
 
-  // 下载 Xshell 会话文件
+  // 下载 Xshell 会话文件（前端直接生成）
   const downloadXshellFile = () => {
-    const namespace = `user-${pod.username}`;
-    const podName = pod.name;
-    window.location.href = `/api/pods/xshell/download?namespace=${encodeURIComponent(namespace)}&name=${encodeURIComponent(podName)}`;
+    if (!connections) return;
+    
+    // 生成 Xshell 会话文件内容
+    const xshContent = `[SESSION]
+Host=${connections.nodeIP}
+Port=${connections.sshPort}
+UserName=root
+Password=${connections.password}
+Protocol=SSH
+Version=7.0
+`;
+    
+    // 创建 Blob 并下载
+    const blob = new Blob([xshContent], { type: 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${pod.name}.xsh`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
     message.success('正在下载 Xshell 会话文件', 3);
   };
 

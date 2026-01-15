@@ -178,13 +178,32 @@ const PodDetail: React.FC = () => {
     }
   };
 
-  // 下载 Xshell 会话文件
+  // 下载 Xshell 会话文件（前端直接生成）
   const downloadXshellFile = () => {
-    if (!pod) return;
-    const namespace = `user-${pod.username}`;
-    const podName = pod.name;
-    window.location.href = `/api/pods/xshell/download?namespace=${encodeURIComponent(namespace)}&name=${encodeURIComponent(podName)}`;
-    message.success('正在下载 Xshell 会话文件，双击即可打开连接', 3);
+    if (!pod || !connections) return;
+    
+    // 生成 Xshell 会话文件内容
+    const xshContent = `[SESSION]
+Host=${connections.nodeIP}
+Port=${connections.sshPort}
+UserName=root
+Password=${connections.password}
+Protocol=SSH
+Version=7.0
+`;
+    
+    // 创建 Blob 并下载
+    const blob = new Blob([xshContent], { type: 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${pod.name}.xsh`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    message.success('Xshell 会话文件已下载，双击即可打开连接', 3);
   };
 
   // 加载 commit 状态

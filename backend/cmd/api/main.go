@@ -83,8 +83,6 @@ func main() {
 		{
 			pods.GET("", podHandler.ListPods)
 			pods.POST("", podHandler.CreatePod)
-			// Xshell 会话文件下载（放在 /:id 之前避免冲突）
-			pods.GET("/xshell/download", podHandler.DownloadXshellFile)
 			pods.GET("/:id", podHandler.GetPod)
 			pods.POST("/:id/extend", podHandler.ExtendPod)
 			pods.DELETE("/:id", podHandler.DeletePod)
