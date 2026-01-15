@@ -83,18 +83,23 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
   const downloadXshellFile = () => {
     if (!connections) return;
     
-    // 生成 Xshell 会话文件内容
-    const xshContent = `[SESSION]
+    // 生成 Xshell 会话文件内容（标准 INI 格式）
+    const xshContent = `[CONNECTION]
 Host=${connections.ssh.host}
 Port=${connections.ssh.port}
-UserName=${connections.ssh.user}
-Password=${connections.ssh.password}
 Protocol=SSH
-Version=7.0
+
+[AUTHENTICATION]
+UserName=${connections.ssh.user}
+Method=Password
+Password=${connections.ssh.password}
+
+[TERMINAL]
+Type=xterm
 `;
     
-    // 创建 Blob 并下载
-    const blob = new Blob([xshContent], { type: 'application/octet-stream' });
+    // 创建 Blob 并下载（使用 text/plain 类型）
+    const blob = new Blob([xshContent], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -104,7 +109,7 @@ Version=7.0
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     
-    message.success('正在下载 Xshell 会话文件', 3);
+    message.success('Xshell 会话文件已下载，双击打开即可连接', 3);
   };
 
   // 复制 SSH 命令到剪贴板
