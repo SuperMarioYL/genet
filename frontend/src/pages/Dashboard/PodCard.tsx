@@ -85,10 +85,10 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
     
     // 生成 Xshell 会话文件内容
     const xshContent = `[SESSION]
-Host=${connections.nodeIP}
-Port=${connections.sshPort}
-UserName=root
-Password=${connections.password}
+Host=${connections.ssh.host}
+Port=${connections.ssh.port}
+UserName=${connections.ssh.user}
+Password=${connections.ssh.password}
 Protocol=SSH
 Version=7.0
 `;
