@@ -244,6 +244,12 @@ echo "=== Starting Genet Pod ==="
 # 创建必要目录
 mkdir -p /run/sshd /workspace
 
+# 持久化 VS Code Server 目录（避免每次连接重新下载）
+mkdir -p /workspace/.vscode-server
+rm -rf /root/.vscode-server 2>/dev/null || true
+ln -sf /workspace/.vscode-server /root/.vscode-server
+echo "VS Code Server directory linked to /workspace/.vscode-server"
+
 {{.ProxyScript}}
 
 # 设置 root 密码
