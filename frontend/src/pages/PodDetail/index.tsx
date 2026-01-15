@@ -1,4 +1,4 @@
-import { ArrowLeftOutlined, CodeOutlined, CopyOutlined, DesktopOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, CodeOutlined, CopyOutlined, DesktopOutlined, DownloadOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
 import { Alert, Button, Card, Descriptions, Divider, Input, Layout, message, Modal, Progress, Space, Table, Tabs, Tag, Tooltip, Typography } from 'antd';
 import dayjs from 'dayjs';
 import React, { useEffect, useRef, useState } from 'react';
@@ -176,6 +176,15 @@ const PodDetail: React.FC = () => {
     } else {
       message.info('SSH 命令已复制，请在终端中粘贴运行', 3);
     }
+  };
+
+  // 下载 Xshell 会话文件
+  const downloadXshellFile = () => {
+    if (!pod) return;
+    const namespace = `user-${pod.username}`;
+    const podName = pod.name;
+    window.location.href = `/api/pods/${namespace}/${podName}/xshell`;
+    message.success('正在下载 Xshell 会话文件，双击即可打开连接', 3);
   };
 
   // 加载 commit 状态
@@ -603,6 +612,16 @@ const PodDetail: React.FC = () => {
                           onClick={() => openVSCode(connections.apps.vscodeURI)}
                         >
                           VSCode
+                        </Button>
+                      </Tooltip>
+
+                      <Tooltip title="下载 Xshell 会话文件（.xsh），双击即可打开连接">
+                        <Button
+                          icon={<DownloadOutlined />}
+                          size="large"
+                          onClick={downloadXshellFile}
+                        >
+                          Xshell
                         </Button>
                       </Tooltip>
                       

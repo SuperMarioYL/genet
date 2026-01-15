@@ -292,6 +292,43 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 		}
 	}
 
+	// 添加 InitContainer（如果启用）
+	// InitContainer 负责将静态编译的 SSH 工具复制到共享 PVC
+	if c.config.Pod.EnableInitContainer && c.config.Pod.SSHToolsImage != "" {
+		initContainer := corev1.Container{
+			Name:  "setup-ssh-tools",
+			Image: c.config.Pod.SSHToolsImage,
+			VolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      "workspace",
+					MountPath: "/workspace",
+				},
+			},
+		}
+
+		// 传递代理配置给 InitContainer
+		if spec.HTTPProxy != "" {
+			initContainer.Env = append(initContainer.Env,
+				corev1.EnvVar{Name: "HTTP_PROXY", Value: spec.HTTPProxy},
+				corev1.EnvVar{Name: "http_proxy", Value: spec.HTTPProxy},
+			)
+		}
+		if spec.HTTPSProxy != "" {
+			initContainer.Env = append(initContainer.Env,
+				corev1.EnvVar{Name: "HTTPS_PROXY", Value: spec.HTTPSProxy},
+				corev1.EnvVar{Name: "https_proxy", Value: spec.HTTPSProxy},
+			)
+		}
+		if spec.NoProxy != "" {
+			initContainer.Env = append(initContainer.Env,
+				corev1.EnvVar{Name: "NO_PROXY", Value: spec.NoProxy},
+				corev1.EnvVar{Name: "no_proxy", Value: spec.NoProxy},
+			)
+		}
+
+		pod.Spec.InitContainers = []corev1.Container{initContainer}
+	}
+
 	return c.clientset.CoreV1().Pods(spec.Namespace).Create(ctx, pod, metav1.CreateOptions{})
 }
 

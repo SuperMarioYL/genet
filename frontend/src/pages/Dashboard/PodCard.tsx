@@ -1,4 +1,4 @@
-import { ClockCircleOutlined, CodeOutlined, CopyOutlined, DeleteOutlined, DesktopOutlined, EyeOutlined } from '@ant-design/icons';
+import { ClockCircleOutlined, CodeOutlined, CopyOutlined, DeleteOutlined, DesktopOutlined, DownloadOutlined, EyeOutlined } from '@ant-design/icons';
 import { Button, Card, Divider, Modal, Space, Tooltip, message } from 'antd';
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -77,6 +77,14 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
     
     copyToClipboard(sshCmd, 'SSH 命令');
     message.info('正在尝试打开 SSH 客户端... 如未打开，命令已复制', 4);
+  };
+
+  // 下载 Xshell 会话文件
+  const downloadXshellFile = () => {
+    const namespace = `user-${pod.username}`;
+    const podName = pod.name;
+    window.location.href = `/api/pods/${namespace}/${podName}/xshell`;
+    message.success('正在下载 Xshell 会话文件', 3);
   };
 
   // 复制 SSH 命令到剪贴板
@@ -205,6 +213,16 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
                     onClick={() => openVSCode(connections.apps.vscodeURI)}
                   >
                     VSCode
+                  </Button>
+                </Tooltip>
+
+                <Tooltip title="下载 Xshell 会话文件">
+                  <Button 
+                    size="small"
+                    icon={<DownloadOutlined />}
+                    onClick={downloadXshellFile}
+                  >
+                    Xshell
                   </Button>
                 </Tooltip>
                 

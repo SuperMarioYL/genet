@@ -94,6 +94,8 @@ func main() {
 			pods.POST("/:id/commit", podHandler.CommitImage)
 			pods.GET("/:id/commit/status", podHandler.GetCommitStatus)
 			pods.GET("/:id/commit/logs", podHandler.GetCommitLogs)
+			// Xshell 会话文件下载
+			pods.GET("/:namespace/:name/xshell", podHandler.DownloadXshellFile)
 		}
 	}
 

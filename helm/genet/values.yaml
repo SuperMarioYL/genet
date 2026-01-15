@@ -67,6 +67,14 @@ backend:
       # 当 hostNetwork=true 时，推荐使用 ClusterFirstWithHostNet（默认值）
       dnsPolicy: ClusterFirstWithHostNet
 
+      # InitContainer 配置
+      # 启用后可支持任意基础镜像（无需镜像内置 sshd）
+      # InitContainer 会将静态编译的 SSH 工具复制到共享 PVC
+      enableInitContainer: false
+      # SSH 工具镜像（包含静态编译的 sshd, sftp-server, ssh-keygen）
+      # 需要先构建此镜像：docker build -t genet/ssh-tools:latest tools/ssh-tools/
+      sshToolsImage: "" # 例如: "your-registry/genet-ssh-tools:1.0.0"
+
       # 自定义 DNS 配置（可选，当 dnsPolicy 为 None 时必须配置）
       # dnsConfig:
       #   nameservers:
@@ -176,17 +184,21 @@ backend:
 
       # 容器启动脚本模板（必需）
       # 可用变量: {{.SSHPort}}, {{.Password}}, {{.ProxyScript}}
+      # 此脚本支持两种模式：
+      # 1. 使用 InitContainer 安装的 SSH 工具（enableInitContainer: true）
+      # 2. 使用镜像内置的 SSH 工具（enableInitContainer: false）
       startupScript: |
         #!/bin/bash
         set -e
 
         echo "=== Starting Genet Pod ==="
 
+        GENET_DIR=/workspace/.genet
+
         # 创建必要目录
         mkdir -p /run/sshd /workspace
 
         # 持久化 VS Code Server 目录（避免每次连接重新下载）
-        # VS Code Server 会保存在 /workspace/.vscode-server，Pod 重建后仍然可用
         mkdir -p /workspace/.vscode-server
         rm -rf /root/.vscode-server 2>/dev/null || true
         ln -sf /workspace/.vscode-server /root/.vscode-server
@@ -197,26 +209,43 @@ backend:
         # 设置 root 密码
         echo "root:{{.Password}}" | chpasswd
 
-        # 生成 SSH host keys（如果不存在）
-        ssh-keygen -A 2>/dev/null || true
+        # 检测使用 InitContainer 安装的 sshd 还是系统 sshd
+        if [ -x "$GENET_DIR/bin/sshd" ]; then
+            echo "Using InitContainer SSH tools from $GENET_DIR/bin/"
+            SSHD_BIN="$GENET_DIR/bin/sshd"
+            SFTP_BIN="$GENET_DIR/bin/sftp-server"
+            SSH_KEYGEN="$GENET_DIR/bin/ssh-keygen"
+            SSH_CONFIG_DIR="$GENET_DIR/etc"
+            SSH_HOST_KEY_DIR="$GENET_DIR/etc/ssh"
+        else
+            echo "Using system SSH tools"
+            SSHD_BIN="/usr/sbin/sshd"
+            SFTP_BIN="/usr/lib/ssh/sftp-server"
+            SSH_KEYGEN="ssh-keygen"
+            SSH_CONFIG_DIR="/etc/ssh"
+            SSH_HOST_KEY_DIR="/etc/ssh"
+            # 生成 SSH host keys（如果不存在）
+            $SSH_KEYGEN -A 2>/dev/null || true
+        fi
 
         # 创建 sshd 配置
-        cat > /etc/ssh/sshd_config.genet << 'SSHEOF'
-        Port {{.SSHPort}}
-        PermitRootLogin yes
-        PasswordAuthentication yes
-        PubkeyAuthentication yes
-        ChallengeResponseAuthentication no
-        UsePAM yes
-        Subsystem sftp /usr/lib/ssh/sftp-server
-        HostKey /etc/ssh/ssh_host_rsa_key
-        HostKey /etc/ssh/ssh_host_ecdsa_key
-        HostKey /etc/ssh/ssh_host_ed25519_key
-        SSHEOF
+        mkdir -p "$SSH_CONFIG_DIR"
+        cat > "$SSH_CONFIG_DIR/sshd_config.genet" <<EOF
+Port {{.SSHPort}}
+PermitRootLogin yes
+PasswordAuthentication yes
+PubkeyAuthentication yes
+ChallengeResponseAuthentication no
+UsePAM no
+Subsystem sftp $SFTP_BIN
+HostKey $SSH_HOST_KEY_DIR/ssh_host_rsa_key
+HostKey $SSH_HOST_KEY_DIR/ssh_host_ecdsa_key
+HostKey $SSH_HOST_KEY_DIR/ssh_host_ed25519_key
+EOF
 
         # 启动 SSH 服务
         echo "Starting sshd on port {{.SSHPort}}..."
-        /usr/sbin/sshd -f /etc/ssh/sshd_config.genet -D &
+        $SSHD_BIN -f "$SSH_CONFIG_DIR/sshd_config.genet" -D &
         SSHD_PID=$!
         sleep 2
 
