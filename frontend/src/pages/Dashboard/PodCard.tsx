@@ -16,9 +16,40 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
   const navigate = useNavigate();
   const [deleting, setDeleting] = useState(false);
 
-  const copyToClipboard = (text: string, label: string) => {
-    navigator.clipboard.writeText(text);
-    message.success(`${label} 已复制`);
+  const copyToClipboard = async (text: string, label: string) => {
+    try {
+      // 优先使用 Clipboard API
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        message.success(`${label} 已复制`);
+      } else {
+        // 降级方案：使用 execCommand
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        message.success(`${label} 已复制`);
+      }
+    } catch (err) {
+      // 如果都失败，使用降级方案
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-9999px';
+      document.body.appendChild(textArea);
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        message.success(`${label} 已复制`);
+      } catch (e) {
+        message.error(`复制失败，请手动复制: ${text}`);
+      }
+      document.body.removeChild(textArea);
+    }
   };
 
   // 检测操作系统
