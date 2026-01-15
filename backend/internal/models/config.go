@@ -120,6 +120,15 @@ type PodConfig struct {
 	// HostNetwork 使用主机网络
 	HostNetwork bool `yaml:"hostNetwork" json:"hostNetwork"`
 
+	// DNSPolicy DNS 策略（K8s 原生格式）
+	// 可选值: ClusterFirst, ClusterFirstWithHostNet, Default, None
+	// 当 hostNetwork=true 时，推荐使用 ClusterFirstWithHostNet
+	DNSPolicy corev1.DNSPolicy `yaml:"dnsPolicy,omitempty" json:"dnsPolicy,omitempty"`
+
+	// DNSConfig 自定义 DNS 配置（K8s 原生格式）
+	// 当 DNSPolicy 为 None 时必须配置
+	DNSConfig *corev1.PodDNSConfig `yaml:"dnsConfig,omitempty" json:"dnsConfig,omitempty"`
+
 	// ExtraVolumes 额外的 Volume 配置（K8s 原生格式）
 	// 注意：用户的 workspace PVC 会自动添加，这里配置额外的存储卷
 	ExtraVolumes []corev1.Volume `yaml:"extraVolumes,omitempty" json:"extraVolumes,omitempty"`
@@ -225,7 +234,8 @@ func DefaultConfig() *Config {
 		},
 		Pod: PodConfig{
 			HostNetwork: true,
-			Resources:   nil, // 使用 nil 表示使用硬编码的默认值
+			DNSPolicy:   corev1.DNSClusterFirstWithHostNet, // hostNetwork=true 时推荐
+			Resources:   nil,                               // 使用 nil 表示使用硬编码的默认值
 			StartupScript: `#!/bin/bash
 set -e
 

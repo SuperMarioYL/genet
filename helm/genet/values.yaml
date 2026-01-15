@@ -62,6 +62,22 @@ backend:
       # 使用主机网络（SSH 端口直接暴露在主机上）
       hostNetwork: true
 
+      # DNS 策略（K8s 原生格式）
+      # 可选值: ClusterFirst, ClusterFirstWithHostNet, Default, None
+      # 当 hostNetwork=true 时，推荐使用 ClusterFirstWithHostNet（默认值）
+      dnsPolicy: ClusterFirstWithHostNet
+
+      # 自定义 DNS 配置（可选，当 dnsPolicy 为 None 时必须配置）
+      # dnsConfig:
+      #   nameservers:
+      #     - 8.8.8.8
+      #     - 8.8.4.4
+      #   searches:
+      #     - cluster.local
+      #   options:
+      #     - name: ndots
+      #       value: "5"
+
       # 资源配置（K8s 原生格式）
       resources:
         requests:

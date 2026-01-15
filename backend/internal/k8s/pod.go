@@ -208,6 +208,16 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 		},
 	}
 
+	// 应用 DNS Policy
+	if c.config.Pod.DNSPolicy != "" {
+		pod.Spec.DNSPolicy = c.config.Pod.DNSPolicy
+	}
+
+	// 应用 DNS Config
+	if c.config.Pod.DNSConfig != nil {
+		pod.Spec.DNSConfig = c.config.Pod.DNSConfig
+	}
+
 	// 应用 NodeSelector（合并全局配置和 GPU 特定配置）
 	if c.config.Pod.NodeSelector != nil {
 		pod.Spec.NodeSelector = make(map[string]string)
