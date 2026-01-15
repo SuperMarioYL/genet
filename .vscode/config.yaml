@@ -200,6 +200,8 @@ pod:
     # 检测使用 InitContainer 安装的 sshd 还是系统 sshd
     if [ -x "$GENET_DIR/bin/sshd" ]; then
         echo "Using InitContainer SSH tools from $GENET_DIR/bin/"
+        # 设置库路径（InitContainer 复制的依赖库）
+        export LD_LIBRARY_PATH="$GENET_DIR/lib:$LD_LIBRARY_PATH"
         SSHD_BIN="$GENET_DIR/bin/sshd"
         SFTP_BIN="$GENET_DIR/bin/sftp-server"
         SSH_KEYGEN="$GENET_DIR/bin/ssh-keygen"
