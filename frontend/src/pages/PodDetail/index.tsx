@@ -337,7 +337,7 @@ Type=xterm
             返回
           </Button>
           <h2>{pod.name}</h2>
-          <StatusBadge status={pod.status} phase={pod.phase} />
+          <StatusBadge status={pod.status} />
         </Space>
       </Header>
 
@@ -348,7 +348,7 @@ Type=xterm
               <Descriptions bordered column={2}>
                 <Descriptions.Item label="Pod 名称">{pod.name}</Descriptions.Item>
                 <Descriptions.Item label="状态">
-                  <StatusBadge status={pod.status} phase={pod.phase} />
+                  <StatusBadge status={pod.status} />
                 </Descriptions.Item>
                 <Descriptions.Item label="镜像">{pod.image}</Descriptions.Item>
                 <Descriptions.Item label="GPU 类型">{pod.gpuType || '无 (CPU Only)'}</Descriptions.Item>

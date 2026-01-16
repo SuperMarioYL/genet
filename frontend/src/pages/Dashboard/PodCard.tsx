@@ -189,7 +189,7 @@ Type=xterm
     <Card className="pod-card" hoverable>
       <div className="pod-header">
         <Space>
-          <StatusBadge status={pod.status} phase={pod.phase} />
+          <StatusBadge status={pod.status} />
           <span className="pod-name">{pod.name}</span>
         </Space>
       </div>

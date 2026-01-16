@@ -617,11 +617,43 @@ func (h *PodHandler) getNodeIP(ctx context.Context, nodeName string) string {
 	return ""
 }
 
-// getPodStatus 获取 Pod 状态
+// getPodStatus 获取 Pod 状态（模拟 kubectl get pod 的 STATUS 列）
 func (h *PodHandler) getPodStatus(pod *corev1.Pod) string {
+	// 如果正在删除
 	if pod.DeletionTimestamp != nil {
-		return "terminating"
+		return "Terminating"
 	}
+
+	// 检查容器状态
+	for _, cs := range pod.Status.ContainerStatuses {
+		if cs.State.Waiting != nil {
+			reason := cs.State.Waiting.Reason
+			if reason != "" {
+				return reason // ContainerCreating, CrashLoopBackOff, ImagePullBackOff, etc.
+			}
+		}
+		if cs.State.Terminated != nil {
+			reason := cs.State.Terminated.Reason
+			if reason != "" {
+				return reason // Error, Completed, OOMKilled, etc.
+			}
+		}
+	}
+
+	// 检查 Init 容器状态
+	for _, cs := range pod.Status.InitContainerStatuses {
+		if cs.State.Waiting != nil {
+			reason := cs.State.Waiting.Reason
+			if reason != "" {
+				return "Init:" + reason
+			}
+		}
+		if cs.State.Terminated != nil && cs.State.Terminated.ExitCode != 0 {
+			return "Init:Error"
+		}
+	}
+
+	// 默认返回 Phase
 	return string(pod.Status.Phase)
 }
 
