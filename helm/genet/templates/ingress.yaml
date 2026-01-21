@@ -5,7 +5,19 @@ metadata:
   name: genet-ingress
   namespace: {{ .Release.Namespace }}
   annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /
+    {{- if .Values.ingress.certManager.enabled }}
+    {{- if .Values.ingress.certManager.clusterIssuer }}
+    cert-manager.io/cluster-issuer: {{ .Values.ingress.certManager.clusterIssuer | quote }}
+    {{- else if .Values.ingress.certManager.issuer }}
+    cert-manager.io/issuer: {{ .Values.ingress.certManager.issuer | quote }}
+    {{- else if and .Values.certManager.createClusterIssuer (eq .Values.certManager.type "selfsigned") }}
+    # 自签名证书使用 CA issuer
+    cert-manager.io/cluster-issuer: "genet-ca-issuer"
+    {{- end }}
+    {{- end }}
+    {{- with .Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
 spec:
   {{- if .Values.ingress.className }}
   ingressClassName: {{ .Values.ingress.className }}
@@ -14,12 +26,32 @@ spec:
   tls:
   - hosts:
     - {{ .Values.ingress.host }}
+    {{- if .Values.ingress.tls.secretName }}
     secretName: {{ .Values.ingress.tls.secretName }}
+    {{- else }}
+    secretName: genet-tls
+    {{- end }}
   {{- end }}
   rules:
   - host: {{ .Values.ingress.host }}
     http:
       paths:
+      # OIDC Discovery 端点（必须在 /api 之前匹配）
+      - path: /.well-known
+        pathType: Prefix
+        backend:
+          service:
+            name: genet-backend
+            port:
+              number: 8080
+      # OIDC 端点
+      - path: /oidc
+        pathType: Prefix
+        backend:
+          service:
+            name: genet-backend
+            port:
+              number: 8080
       # API 请求转发到后端
       - path: /api
         pathType: Prefix

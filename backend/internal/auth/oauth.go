@@ -14,7 +14,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/uc-package/genet/internal/logger"
 	"github.com/uc-package/genet/internal/models"
+	"go.uber.org/zap"
 )
 
 const (
@@ -40,6 +42,7 @@ type OAuthHandler struct {
 	config     *models.Config
 	oidcConfig *OIDCConfig
 	endpoints  *OAuthEndpoints
+	log        *zap.Logger
 }
 
 // OIDCConfig OIDC 发现配置
@@ -86,6 +89,7 @@ type SessionClaims struct {
 func NewOAuthHandler(config *models.Config) *OAuthHandler {
 	return &OAuthHandler{
 		config: config,
+		log:    logger.Named("oauth"),
 	}
 }
 
@@ -116,6 +120,9 @@ func (h *OAuthHandler) getEndpoints() (*OAuthEndpoints, error) {
 			TokenEndpoint:         h.config.OAuth.TokenEndpoint,
 			UserinfoEndpoint:      h.config.OAuth.UserinfoEndpoint,
 		}
+		h.log.Debug("Using OAuth mode with manual endpoints",
+			zap.String("authEndpoint", h.config.OAuth.AuthorizationEndpoint),
+			zap.String("tokenEndpoint", h.config.OAuth.TokenEndpoint))
 	} else {
 		// OIDC 模式：自动发现端点
 		if h.oidcConfig == nil {
@@ -140,22 +147,36 @@ func (h *OAuthHandler) DiscoverOIDC() error {
 	}
 
 	discoveryURL := strings.TrimSuffix(h.config.OAuth.ProviderURL, "/") + "/.well-known/openid-configuration"
+	h.log.Info("Discovering OIDC configuration",
+		zap.String("discoveryURL", discoveryURL))
+
 	resp, err := http.Get(discoveryURL)
 	if err != nil {
+		h.log.Error("Failed to fetch OIDC discovery",
+			zap.String("url", discoveryURL),
+			zap.Error(err))
 		return fmt.Errorf("failed to fetch OIDC discovery: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		h.log.Error("OIDC discovery returned non-200 status",
+			zap.Int("status", resp.StatusCode))
 		return fmt.Errorf("OIDC discovery returned status %d", resp.StatusCode)
 	}
 
 	var oidcConfig OIDCConfig
 	if err := json.NewDecoder(resp.Body).Decode(&oidcConfig); err != nil {
+		h.log.Error("Failed to decode OIDC config", zap.Error(err))
 		return fmt.Errorf("failed to decode OIDC config: %w", err)
 	}
 
 	h.oidcConfig = &oidcConfig
+	h.log.Info("OIDC discovery successful",
+		zap.String("issuer", oidcConfig.Issuer),
+		zap.String("authEndpoint", oidcConfig.AuthorizationEndpoint),
+		zap.String("tokenEndpoint", oidcConfig.TokenEndpoint))
+
 	return nil
 }
 
@@ -171,13 +192,18 @@ func generateState() (string, error) {
 // Login 处理登录请求，重定向到 OAuth Provider
 func (h *OAuthHandler) Login(c *gin.Context) {
 	if !h.config.OAuth.Enabled {
+		h.log.Warn("OAuth login attempted but OAuth is disabled")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "OAuth 未启用"})
 		return
 	}
 
+	h.log.Info("OAuth login initiated",
+		zap.String("clientIP", c.ClientIP()))
+
 	// 获取端点
 	endpoints, err := h.getEndpoints()
 	if err != nil {
+		h.log.Error("Failed to get OAuth endpoints", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取 OAuth 端点失败: %v", err)})
 		return
 	}
@@ -185,6 +211,7 @@ func (h *OAuthHandler) Login(c *gin.Context) {
 	// 生成 state
 	state, err := generateState()
 	if err != nil {
+		h.log.Error("Failed to generate state", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成 state 失败"})
 		return
 	}
@@ -209,19 +236,29 @@ func (h *OAuthHandler) Login(c *gin.Context) {
 	params.Set("state", state)
 
 	authURL := endpoints.AuthorizationEndpoint + "?" + params.Encode()
+	h.log.Debug("Redirecting to OAuth provider",
+		zap.String("authURL", authURL))
+
 	c.Redirect(http.StatusFound, authURL)
 }
 
 // Callback 处理 OAuth 回调
 func (h *OAuthHandler) Callback(c *gin.Context) {
 	if !h.config.OAuth.Enabled {
+		h.log.Warn("OAuth callback received but OAuth is disabled")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "OAuth 未启用"})
 		return
 	}
 
+	h.log.Info("OAuth callback received",
+		zap.String("clientIP", c.ClientIP()))
+
 	// 检查错误
 	if errParam := c.Query("error"); errParam != "" {
 		errDesc := c.Query("error_description")
+		h.log.Error("OAuth callback error",
+			zap.String("error", errParam),
+			zap.String("description", errDesc))
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("OAuth 错误: %s - %s", errParam, errDesc)})
 		return
 	}
@@ -240,20 +277,27 @@ func (h *OAuthHandler) Callback(c *gin.Context) {
 	// 获取 authorization code
 	code := c.Query("code")
 	if code == "" {
+		h.log.Warn("OAuth callback missing authorization code")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 authorization code"})
 		return
 	}
 
+	h.log.Debug("Exchanging authorization code for token")
+
 	// 用 code 换取 token
 	token, err := h.exchangeToken(c.Request.Context(), code)
 	if err != nil {
+		h.log.Error("Token exchange failed", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Token 交换失败: %v", err)})
 		return
 	}
 
+	h.log.Debug("Token exchange successful, fetching user info")
+
 	// 获取用户信息
 	userInfo, err := h.fetchUserInfo(c.Request.Context(), token)
 	if err != nil {
+		h.log.Error("Failed to fetch user info", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取用户信息失败: %v", err)})
 		return
 	}
@@ -267,9 +311,15 @@ func (h *OAuthHandler) Callback(c *gin.Context) {
 		username = userInfo.Sub
 	}
 
+	h.log.Info("User authenticated via OAuth",
+		zap.String("username", username),
+		zap.String("email", userInfo.Email),
+		zap.String("sub", userInfo.Sub))
+
 	// 生成 session JWT
 	sessionToken, err := h.createSessionToken(username, userInfo.Email)
 	if err != nil {
+		h.log.Error("Failed to create session token", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建 session 失败"})
 		return
 	}
@@ -284,6 +334,10 @@ func (h *OAuthHandler) Callback(c *gin.Context) {
 		h.config.OAuth.CookieSecure,
 		true, // HttpOnly
 	)
+
+	h.log.Info("Session created for user",
+		zap.String("username", username),
+		zap.Duration("duration", SessionDuration))
 
 	// 重定向到前端
 	frontendURL := h.config.OAuth.FrontendURL
@@ -307,6 +361,9 @@ func (h *OAuthHandler) exchangeToken(ctx context.Context, code string) (*TokenRe
 	data.Set("client_id", h.config.OAuth.ClientID)
 	data.Set("client_secret", h.config.OAuth.ClientSecret)
 
+	h.log.Debug("Sending token exchange request",
+		zap.String("tokenEndpoint", endpoints.TokenEndpoint))
+
 	req, err := http.NewRequestWithContext(ctx, "POST", endpoints.TokenEndpoint, strings.NewReader(data.Encode()))
 	if err != nil {
 		return nil, err
@@ -321,6 +378,9 @@ func (h *OAuthHandler) exchangeToken(ctx context.Context, code string) (*TokenRe
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		h.log.Error("Token endpoint returned error",
+			zap.Int("status", resp.StatusCode),
+			zap.String("body", string(body)))
 		return nil, fmt.Errorf("token endpoint returned %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -328,6 +388,12 @@ func (h *OAuthHandler) exchangeToken(ctx context.Context, code string) (*TokenRe
 	if err := json.NewDecoder(resp.Body).Decode(&token); err != nil {
 		return nil, err
 	}
+
+	h.log.Debug("Token exchange response received",
+		zap.String("tokenType", token.TokenType),
+		zap.Int("expiresIn", token.ExpiresIn),
+		zap.Bool("hasIDToken", token.IDToken != ""),
+		zap.Bool("hasRefreshToken", token.RefreshToken != ""))
 
 	return &token, nil
 }
@@ -338,6 +404,9 @@ func (h *OAuthHandler) fetchUserInfo(ctx context.Context, token *TokenResponse) 
 	if source == "" {
 		source = UserinfoSourceEndpoint // 默认从 endpoint 获取
 	}
+
+	h.log.Debug("Fetching user info",
+		zap.String("source", source))
 
 	var userInfo *UserInfo
 	var tokenErr, endpointErr error
@@ -354,6 +423,8 @@ func (h *OAuthHandler) fetchUserInfo(ctx context.Context, token *TokenResponse) 
 		// 优先从 token 解析，失败则从 endpoint 获取
 		userInfo, tokenErr = h.parseTokenClaims(token)
 		if tokenErr != nil || userInfo.PreferredUsername == "" {
+			h.log.Debug("Token parsing failed or incomplete, trying endpoint",
+				zap.Error(tokenErr))
 			userInfo, endpointErr = h.getUserInfoFromEndpoint(ctx, token.AccessToken)
 			if endpointErr != nil {
 				if tokenErr != nil {
@@ -369,6 +440,11 @@ func (h *OAuthHandler) fetchUserInfo(ctx context.Context, token *TokenResponse) 
 			return nil, fmt.Errorf("从 endpoint 获取用户信息失败: %v", endpointErr)
 		}
 	}
+
+	h.log.Debug("User info fetched",
+		zap.String("username", userInfo.PreferredUsername),
+		zap.String("email", userInfo.Email),
+		zap.String("sub", userInfo.Sub))
 
 	return userInfo, nil
 }
@@ -486,6 +562,10 @@ func (h *OAuthHandler) getUserInfoFromEndpoint(ctx context.Context, accessToken 
 		method = "GET"
 	}
 
+	h.log.Debug("Fetching user info from endpoint",
+		zap.String("endpoint", endpoints.UserinfoEndpoint),
+		zap.String("method", method))
+
 	var req *http.Request
 
 	if method == "POST" {
@@ -522,6 +602,9 @@ func (h *OAuthHandler) getUserInfoFromEndpoint(ctx context.Context, accessToken 
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		h.log.Error("Userinfo endpoint returned error",
+			zap.Int("status", resp.StatusCode),
+			zap.String("body", string(body)))
 		return nil, fmt.Errorf("userinfo endpoint returned %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -554,6 +637,11 @@ func (h *OAuthHandler) createSessionToken(username, email string) (string, error
 
 // Logout 处理登出请求
 func (h *OAuthHandler) Logout(c *gin.Context) {
+	username, _ := GetUsername(c)
+	h.log.Info("User logging out",
+		zap.String("username", username),
+		zap.String("clientIP", c.ClientIP()))
+
 	// 清除 session cookie
 	c.SetCookie(
 		SessionCookieName,

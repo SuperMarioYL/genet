@@ -1,0 +1,77 @@
+{{- if and .Values.ingress.enabled .Values.ingress.certManager.enabled }}
+{{- if .Values.certManager.createClusterIssuer }}
+---
+{{- if eq .Values.certManager.type "selfsigned" }}
+# ============================================
+# 自签名证书 ClusterIssuer（内网环境）
+# ============================================
+# 需要先安装 cert-manager: kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ .Values.certManager.clusterIssuerName | default "selfsigned-issuer" }}
+spec:
+  selfSigned: {}
+---
+# 自签名 CA 证书
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: genet-ca
+  namespace: {{ .Release.Namespace }}
+spec:
+  isCA: true
+  commonName: genet-ca
+  secretName: genet-ca-secret
+  duration: 87600h  # 10 年
+  renewBefore: 8760h  # 1 年前续期
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  issuerRef:
+    name: {{ .Values.certManager.clusterIssuerName | default "selfsigned-issuer" }}
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+# 使用 CA 签发证书的 ClusterIssuer
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: genet-ca-issuer
+spec:
+  ca:
+    secretName: genet-ca-secret
+{{- else }}
+# ============================================
+# Let's Encrypt ClusterIssuer（公网环境）
+# ============================================
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ .Values.certManager.clusterIssuerName | default "letsencrypt-prod" }}
+spec:
+  acme:
+    # Let's Encrypt 服务器
+    # 生产环境: https://acme-v02.api.letsencrypt.org/directory
+    # 测试环境: https://acme-staging-v02.api.letsencrypt.org/directory
+    server: {{ .Values.certManager.acmeServer | default "https://acme-v02.api.letsencrypt.org/directory" }}
+    # 用于接收证书过期通知的邮箱
+    email: {{ .Values.certManager.email | required "certManager.email is required when type is acme" }}
+    # 存储 ACME 账户私钥的 Secret
+    privateKeySecretRef:
+      name: {{ .Values.certManager.clusterIssuerName | default "letsencrypt-prod" }}-key
+    # 域名验证方式
+    solvers:
+    {{- if .Values.certManager.dns01 }}
+    # DNS-01 验证（支持通配符证书）
+    - dns01:
+        {{- toYaml .Values.certManager.dns01 | nindent 8 }}
+    {{- else }}
+    # HTTP-01 验证（默认）
+    - http01:
+        ingress:
+          class: {{ .Values.ingress.className | default "nginx" }}
+    {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

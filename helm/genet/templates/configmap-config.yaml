@@ -17,6 +17,12 @@ data:
 {{ toYaml .Values.backend.config.storage | indent 6 }}
     oauth:
 {{ toYaml .Values.backend.config.oauth | indent 6 }}
+    oidcProvider:
+{{ toYaml .Values.backend.config.oidcProvider | indent 6 }}
+    cluster:
+{{ toYaml .Values.backend.config.cluster | indent 6 }}
+    userRBAC:
+{{ toYaml .Values.backend.config.userRBAC | indent 6 }}
     proxy:
 {{ toYaml .Values.backend.config.proxy | indent 6 }}
     registry:

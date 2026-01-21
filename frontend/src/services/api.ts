@@ -112,5 +112,37 @@ export const getCommitLogs = (id: string): Promise<{ logs: string }> => {
   return api.get(`/pods/${id}/commit/logs`);
 };
 
+// Kubeconfig 相关
+export interface ClusterInfo {
+  oidcEnabled: boolean;
+  clusterName?: string;
+  issuerURL?: string;
+}
+
+export interface KubeconfigInstructions {
+  installKubelogin: Record<string, string>;
+  usage: string[];
+}
+
+export interface KubeconfigResponse {
+  kubeconfig: string;
+  namespace: string;
+  clusterName: string;
+  instructions: KubeconfigInstructions;
+}
+
+export const getClusterInfo = (): Promise<ClusterInfo> => {
+  return api.get('/cluster/info');
+};
+
+export const getKubeconfig = (): Promise<KubeconfigResponse> => {
+  return api.get('/kubeconfig');
+};
+
+export const downloadKubeconfig = () => {
+  // 使用 window.location 触发文件下载
+  window.location.href = '/api/kubeconfig/download';
+};
+
 export default api;
 

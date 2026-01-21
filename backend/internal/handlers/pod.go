@@ -12,7 +12,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/uc-package/genet/internal/auth"
 	"github.com/uc-package/genet/internal/k8s"
+	"github.com/uc-package/genet/internal/logger"
 	"github.com/uc-package/genet/internal/models"
+	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -21,6 +23,7 @@ import (
 type PodHandler struct {
 	k8sClient *k8s.Client
 	config    *models.Config
+	log       *zap.Logger
 }
 
 // NewPodHandler 创建 Pod 处理器
@@ -28,6 +31,7 @@ func NewPodHandler(k8sClient *k8s.Client, config *models.Config) *PodHandler {
 	return &PodHandler{
 		k8sClient: k8sClient,
 		config:    config,
+		log:       logger.Named("pod"),
 	}
 }
 
@@ -36,11 +40,19 @@ func (h *PodHandler) ListPods(c *gin.Context) {
 	username, _ := auth.GetUsername(c)
 	namespace := k8s.GetNamespaceForUser(username)
 
+	h.log.Debug("Listing pods",
+		zap.String("user", username),
+		zap.String("namespace", namespace))
+
 	ctx := context.Background()
 
 	// 列出用户的 Pod
 	pods, err := h.k8sClient.ListPods(ctx, namespace)
 	if err != nil {
+		h.log.Debug("No pods found or namespace not exists",
+			zap.String("user", username),
+			zap.String("namespace", namespace),
+			zap.Error(err))
 		// 如果命名空间不存在，返回空列表
 		c.JSON(http.StatusOK, models.PodListResponse{
 			Pods: []models.PodResponse{},
@@ -113,6 +125,11 @@ func (h *PodHandler) ListPods(c *gin.Context) {
 		},
 	}
 
+	h.log.Info("Pods listed",
+		zap.String("user", username),
+		zap.Int("count", len(podResponses)),
+		zap.Int("totalGPU", totalGPU))
+
 	c.JSON(http.StatusOK, response)
 }
 
@@ -120,6 +137,7 @@ func (h *PodHandler) ListPods(c *gin.Context) {
 func (h *PodHandler) CreatePod(c *gin.Context) {
 	var req models.PodRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		h.log.Warn("Invalid pod creation request", zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("无效的请求参数: %v", err)})
 		return
 	}
@@ -128,8 +146,19 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 	namespace := k8s.GetNamespaceForUser(username)
 	ctx := context.Background()
 
+	h.log.Info("Creating pod",
+		zap.String("user", username),
+		zap.String("namespace", namespace),
+		zap.String("image", req.Image),
+		zap.Int("gpuCount", req.GPUCount),
+		zap.String("gpuType", req.GPUType),
+		zap.Int("ttlHours", req.TTLHours))
+
 	// 检查配额
 	if err := h.checkQuota(ctx, username, req.GPUCount); err != nil {
+		h.log.Warn("Quota exceeded",
+			zap.String("user", username),
+			zap.Error(err))
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return
 	}
@@ -144,13 +173,20 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 			}
 		}
 		if !valid {
+			h.log.Warn("Invalid GPU type",
+				zap.String("user", username),
+				zap.String("gpuType", req.GPUType))
 			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 GPU 类型"})
 			return
 		}
 	}
 
 	// 确保命名空间存在
+	h.log.Debug("Ensuring namespace exists", zap.String("namespace", namespace))
 	if err := h.k8sClient.EnsureNamespace(ctx, namespace); err != nil {
+		h.log.Error("Failed to create namespace",
+			zap.String("namespace", namespace),
+			zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("创建命名空间失败: %v", err)})
 		return
 	}
@@ -161,7 +197,14 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 	if storageSize == "" {
 		storageSize = "50Gi"
 	}
+	h.log.Debug("Ensuring PVC exists",
+		zap.String("namespace", namespace),
+		zap.String("storageClass", storageClass),
+		zap.String("size", storageSize))
 	if err := h.k8sClient.EnsurePVC(ctx, namespace, username, storageClass, storageSize); err != nil {
+		h.log.Error("Failed to create PVC",
+			zap.String("namespace", namespace),
+			zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("创建存储失败: %v", err)})
 		return
 	}
@@ -188,11 +231,27 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 		NoProxy:    h.config.Proxy.NoProxy,
 	}
 
+	h.log.Debug("Creating pod resource",
+		zap.String("podName", podName),
+		zap.Int32("sshPort", sshPort))
+
 	_, err := h.k8sClient.CreatePod(ctx, spec)
 	if err != nil {
+		h.log.Error("Failed to create pod",
+			zap.String("user", username),
+			zap.String("podName", podName),
+			zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("创建 Pod 失败: %v", err)})
 		return
 	}
+
+	h.log.Info("Pod created successfully",
+		zap.String("user", username),
+		zap.String("podName", podName),
+		zap.String("image", req.Image),
+		zap.Int("gpuCount", req.GPUCount),
+		zap.Int32("sshPort", sshPort),
+		zap.Time("expiresAt", expiresAt))
 
 	c.JSON(http.StatusCreated, gin.H{
 		"message": "Pod 创建成功",
@@ -209,9 +268,17 @@ func (h *PodHandler) GetPod(c *gin.Context) {
 	namespace := k8s.GetNamespaceForUser(username)
 	ctx := context.Background()
 
+	h.log.Debug("Getting pod details",
+		zap.String("user", username),
+		zap.String("podID", podID))
+
 	// 获取 Pod
 	pod, err := h.k8sClient.GetPod(ctx, namespace, podID)
 	if err != nil {
+		h.log.Warn("Pod not found",
+			zap.String("user", username),
+			zap.String("podID", podID),
+			zap.Error(err))
 		c.JSON(http.StatusNotFound, gin.H{"error": "Pod 不存在"})
 		return
 	}
@@ -263,6 +330,7 @@ func (h *PodHandler) GetPod(c *gin.Context) {
 func (h *PodHandler) ExtendPod(c *gin.Context) {
 	var req models.ExtendPodRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		h.log.Warn("Invalid extend request", zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求参数"})
 		return
 	}
@@ -272,9 +340,18 @@ func (h *PodHandler) ExtendPod(c *gin.Context) {
 	namespace := k8s.GetNamespaceForUser(username)
 	ctx := context.Background()
 
+	h.log.Info("Extending pod TTL",
+		zap.String("user", username),
+		zap.String("podID", podID),
+		zap.Int("hours", req.Hours))
+
 	// 获取 Pod
 	pod, err := h.k8sClient.GetPod(ctx, namespace, podID)
 	if err != nil {
+		h.log.Warn("Pod not found for extension",
+			zap.String("user", username),
+			zap.String("podID", podID),
+			zap.Error(err))
 		c.JSON(http.StatusNotFound, gin.H{"error": "Pod 不存在"})
 		return
 	}
@@ -292,9 +369,19 @@ func (h *PodHandler) ExtendPod(c *gin.Context) {
 	clientset := h.k8sClient.GetClientset()
 	_, err = clientset.CoreV1().Pods(namespace).Update(ctx, pod, metav1.UpdateOptions{})
 	if err != nil {
+		h.log.Error("Failed to extend pod TTL",
+			zap.String("user", username),
+			zap.String("podID", podID),
+			zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("延长时间失败: %v", err)})
 		return
 	}
+
+	h.log.Info("Pod TTL extended",
+		zap.String("user", username),
+		zap.String("podID", podID),
+		zap.Time("oldExpiresAt", currentExpiresAt),
+		zap.Time("newExpiresAt", newExpiresAt))
 
 	c.JSON(http.StatusOK, gin.H{
 		"message":   "延长时间成功",
@@ -309,12 +396,25 @@ func (h *PodHandler) DeletePod(c *gin.Context) {
 	namespace := k8s.GetNamespaceForUser(username)
 	ctx := context.Background()
 
+	h.log.Info("Deleting pod",
+		zap.String("user", username),
+		zap.String("podID", podID),
+		zap.String("namespace", namespace))
+
 	// 删除 Pod（保留 PVC）
 	err := h.k8sClient.DeletePod(ctx, namespace, podID)
 	if err != nil {
+		h.log.Error("Failed to delete pod",
+			zap.String("user", username),
+			zap.String("podID", podID),
+			zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("删除 Pod 失败: %v", err)})
 		return
 	}
+
+	h.log.Info("Pod deleted successfully",
+		zap.String("user", username),
+		zap.String("podID", podID))
 
 	c.JSON(http.StatusOK, gin.H{"message": "Pod 删除成功"})
 }
@@ -326,6 +426,10 @@ func (h *PodHandler) GetPodLogs(c *gin.Context) {
 	namespace := k8s.GetNamespaceForUser(username)
 	ctx := context.Background()
 
+	h.log.Debug("Getting pod logs",
+		zap.String("user", username),
+		zap.String("podID", podID))
+
 	// 获取日志
 	clientset := h.k8sClient.GetClientset()
 	tailLines := int64(100)
@@ -335,6 +439,10 @@ func (h *PodHandler) GetPodLogs(c *gin.Context) {
 
 	logs, err := req.Stream(ctx)
 	if err != nil {
+		h.log.Error("Failed to get pod logs",
+			zap.String("user", username),
+			zap.String("podID", podID),
+			zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取日志失败: %v", err)})
 		return
 	}
@@ -344,6 +452,10 @@ func (h *PodHandler) GetPodLogs(c *gin.Context) {
 	buf := new(strings.Builder)
 	_, err = io.Copy(buf, logs)
 	if err != nil {
+		h.log.Error("Failed to read pod logs",
+			zap.String("user", username),
+			zap.String("podID", podID),
+			zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("读取日志失败: %v", err)})
 		return
 	}
@@ -366,19 +478,33 @@ func (h *PodHandler) CommitImage(c *gin.Context) {
 	// 解析请求
 	var req CommitImageRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		h.log.Warn("Invalid commit request", zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请指定目标镜像名称"})
 		return
 	}
 
+	h.log.Info("Committing pod to image",
+		zap.String("user", username),
+		zap.String("podID", podID),
+		zap.String("targetImage", req.ImageName))
+
 	// 获取 Pod 信息
 	pod, err := h.k8sClient.GetPod(ctx, namespace, podID)
 	if err != nil {
+		h.log.Warn("Pod not found for commit",
+			zap.String("user", username),
+			zap.String("podID", podID),
+			zap.Error(err))
 		c.JSON(http.StatusNotFound, gin.H{"error": "Pod 不存在"})
 		return
 	}
 
 	// 检查 Pod 是否在运行
 	if pod.Status.Phase != "Running" {
+		h.log.Warn("Pod not running, cannot commit",
+			zap.String("user", username),
+			zap.String("podID", podID),
+			zap.String("phase", string(pod.Status.Phase)))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "只能对运行中的 Pod 进行镜像保存"})
 		return
 	}
@@ -395,9 +521,19 @@ func (h *PodHandler) CommitImage(c *gin.Context) {
 	// 创建 commit job
 	job, err := h.k8sClient.CreateCommitJob(ctx, spec)
 	if err != nil {
+		h.log.Error("Failed to create commit job",
+			zap.String("user", username),
+			zap.String("podID", podID),
+			zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("创建 commit 任务失败: %v", err)})
 		return
 	}
+
+	h.log.Info("Commit job created",
+		zap.String("user", username),
+		zap.String("podID", podID),
+		zap.String("jobName", job.Name),
+		zap.String("targetImage", req.ImageName))
 
 	c.JSON(http.StatusOK, gin.H{
 		"message":     "镜像保存任务已创建",
@@ -413,15 +549,23 @@ func (h *PodHandler) GetCommitStatus(c *gin.Context) {
 	namespace := k8s.GetNamespaceForUser(username)
 	ctx := c.Request.Context()
 
+	h.log.Debug("Getting commit status",
+		zap.String("user", username),
+		zap.String("podID", podID))
+
 	status, err := h.k8sClient.GetCommitJobStatus(ctx, namespace, podID)
 	if err != nil {
+		h.log.Error("Failed to get commit status",
+			zap.String("user", username),
+			zap.String("podID", podID),
+			zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取状态失败: %v", err)})
 		return
 	}
 
 	if status == nil {
 		c.JSON(http.StatusOK, gin.H{
-			"hasJob": false,
+			"hasJob":  false,
 			"message": "没有进行中的镜像保存任务",
 		})
 		return
@@ -444,8 +588,16 @@ func (h *PodHandler) GetCommitLogs(c *gin.Context) {
 	namespace := k8s.GetNamespaceForUser(username)
 	ctx := c.Request.Context()
 
+	h.log.Debug("Getting commit logs",
+		zap.String("user", username),
+		zap.String("podID", podID))
+
 	logs, err := h.k8sClient.GetCommitJobLogs(ctx, namespace, podID)
 	if err != nil {
+		h.log.Error("Failed to get commit logs",
+			zap.String("user", username),
+			zap.String("podID", podID),
+			zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取日志失败: %v", err)})
 		return
 	}
@@ -464,6 +616,10 @@ func (h *PodHandler) GetPodEvents(c *gin.Context) {
 	podID := c.Param("id")
 	namespace := k8s.GetNamespaceForUser(username)
 
+	h.log.Debug("Getting pod events",
+		zap.String("user", username),
+		zap.String("podID", podID))
+
 	ctx := c.Request.Context()
 	clientset := h.k8sClient.GetClientset()
 
@@ -472,6 +628,10 @@ func (h *PodHandler) GetPodEvents(c *gin.Context) {
 		FieldSelector: fmt.Sprintf("involvedObject.name=%s,involvedObject.kind=Pod", podID),
 	})
 	if err != nil {
+		h.log.Error("Failed to get pod events",
+			zap.String("user", username),
+			zap.String("podID", podID),
+			zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取事件失败: %v", err)})
 		return
 	}
@@ -499,26 +659,34 @@ func (h *PodHandler) GetPodDescribe(c *gin.Context) {
 	podID := c.Param("id")
 	namespace := k8s.GetNamespaceForUser(username)
 
+	h.log.Debug("Getting pod description",
+		zap.String("user", username),
+		zap.String("podID", podID))
+
 	ctx := c.Request.Context()
 	clientset := h.k8sClient.GetClientset()
 
 	// 获取 Pod
 	pod, err := clientset.CoreV1().Pods(namespace).Get(ctx, podID, metav1.GetOptions{})
 	if err != nil {
+		h.log.Warn("Pod not found for describe",
+			zap.String("user", username),
+			zap.String("podID", podID),
+			zap.Error(err))
 		c.JSON(http.StatusNotFound, gin.H{"error": fmt.Sprintf("Pod 不存在: %v", err)})
 		return
 	}
 
 	// 构建描述信息
 	describe := map[string]interface{}{
-		"name":      pod.Name,
-		"namespace": pod.Namespace,
-		"node":      pod.Spec.NodeName,
-		"status":    string(pod.Status.Phase),
-		"ip":        pod.Status.PodIP,
-		"hostIP":    pod.Status.HostIP,
-		"startTime": pod.Status.StartTime,
-		"labels":    pod.Labels,
+		"name":        pod.Name,
+		"namespace":   pod.Namespace,
+		"node":        pod.Spec.NodeName,
+		"status":      string(pod.Status.Phase),
+		"ip":          pod.Status.PodIP,
+		"hostIP":      pod.Status.HostIP,
+		"startTime":   pod.Status.StartTime,
+		"labels":      pod.Labels,
 		"annotations": pod.Annotations,
 	}
 
@@ -571,6 +739,9 @@ func (h *PodHandler) checkQuota(ctx context.Context, username string, requestGPU
 	pods, err := h.k8sClient.ListPods(ctx, namespace)
 	if err != nil {
 		// 如果命名空间不存在，视为没有 Pod
+		h.log.Debug("Namespace not exists, quota check passed",
+			zap.String("user", username),
+			zap.String("namespace", namespace))
 		return nil
 	}
 
@@ -593,6 +764,14 @@ func (h *PodHandler) checkQuota(ctx context.Context, username string, requestGPU
 			totalGPU, requestGPUCount, h.config.GpuLimitPerUser)
 	}
 
+	h.log.Debug("Quota check passed",
+		zap.String("user", username),
+		zap.Int("currentPods", len(pods)),
+		zap.Int("podLimit", h.config.PodLimitPerUser),
+		zap.Int("currentGPU", totalGPU),
+		zap.Int("requestGPU", requestGPUCount),
+		zap.Int("gpuLimit", h.config.GpuLimitPerUser))
+
 	return nil
 }
 
@@ -605,6 +784,9 @@ func (h *PodHandler) getNodeIP(ctx context.Context, nodeName string) string {
 	clientset := h.k8sClient.GetClientset()
 	node, err := clientset.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
 	if err != nil {
+		h.log.Debug("Failed to get node IP",
+			zap.String("nodeName", nodeName),
+			zap.Error(err))
 		return ""
 	}
 
@@ -664,17 +846,17 @@ func (h *PodHandler) buildConnectionInfo(nodeIP string, sshPort int32, password,
 	}
 
 	sshCommand := fmt.Sprintf("ssh root@%s -p %d", nodeIP, sshPort)
-	
+
 	// VSCode Remote SSH URI
 	// 注意：是否在新窗口打开取决于用户的 VSCode 设置 (window.openFoldersInNewWindow)
 	vscodeURI := fmt.Sprintf("vscode://vscode-remote/ssh-remote+root@%s:%d/workspace", nodeIP, sshPort)
-	
+
 	// SSH URI - 某些系统会关联到默认 SSH 客户端（如 PuTTY、Termius 等）
 	sshURI := fmt.Sprintf("ssh://root@%s:%d", nodeIP, sshPort)
-	
+
 	// Mac Terminal 命令
 	macTerminalCmd := fmt.Sprintf("ssh root@%s -p %d", nodeIP, sshPort)
-	
+
 	// Windows Terminal 命令
 	winTerminalCmd := fmt.Sprintf("ssh root@%s -p %d", nodeIP, sshPort)
 
@@ -694,4 +876,3 @@ func (h *PodHandler) buildConnectionInfo(nodeIP string, sshPort int32, password,
 		},
 	}
 }
-

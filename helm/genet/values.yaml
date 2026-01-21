@@ -323,6 +323,39 @@ backend:
       cookieDomain: ""
       cookieSecure: true # 生产环境使用 HTTPS
 
+    # ============================================
+    # OIDC Provider 配置（Genet 作为 OIDC Provider）
+    # ============================================
+    # 启用后，Genet 会作为 OIDC Provider，将企业 OAuth 转换为标准 OIDC
+    # K8s API Server 可以直接信任 Genet，用户可以使用 kubectl 访问集群
+    oidcProvider:
+      enabled: false
+      # Issuer URL，必须是外部可访问的地址
+      # 例如: https://genet.example.com
+      issuerURL: ""
+      # RSA 密钥（用于签名 JWT，生产环境应配置固定密钥）
+      # 如果留空，会自动生成（但重启后已签发的 Token 会失效）
+      rsaPrivateKey: ""
+      rsaPublicKey: ""
+      # Kubernetes 客户端配置
+      kubernetesClientID: "kubernetes"
+      kubernetesClientSecret: ""
+
+    # ============================================
+    # K8s 集群配置（用于生成 kubeconfig）
+    # ============================================
+    cluster:
+      name: "" # 集群名称，如: my-cluster
+      server: "" # K8s API Server 地址，如: https://k8s-api.example.com:6443
+      caData: "" # CA 证书（base64 编码）
+
+    # ============================================
+    # 用户 RBAC 配置
+    # ============================================
+    userRBAC:
+      enabled: false # 是否启用用户 RBAC 管理
+      autoCreate: true # 登录时自动创建用户 Namespace 和 RBAC
+
     # 代理配置（会注入到用户 Pod 的环境变量和 ~/.bashrc 中）
     proxy:
       httpProxy: "" # HTTP 代理地址，如: http://proxy.example.com:8080
@@ -360,9 +393,25 @@ ingress:
   enabled: true
   className: "nginx"
   host: "genet.example.com"
+
+  # 额外的 Ingress 注解
+  annotations: {}
+    # nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    # nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+
+  # TLS 配置
   tls:
     enabled: false
+    # 证书 Secret 名称（如果使用 cert-manager，可留空自动生成）
     secretName: ""
+
+  # cert-manager 配置（自动申请 TLS 证书）
+  certManager:
+    enabled: false
+    # 使用 ClusterIssuer（集群级别）
+    clusterIssuer: "" # 如: "letsencrypt-prod"
+    # 或使用 Issuer（Namespace 级别）
+    issuer: "" # 如: "letsencrypt-staging"
 
 # Service configuration
 service:
@@ -372,3 +421,39 @@ service:
   frontend:
     type: ClusterIP
     port: 80
+
+# ============================================
+# cert-manager 配置（可选，用于自动申请 TLS 证书）
+# ============================================
+# 前提：需要先安装 cert-manager
+# kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
+certManager:
+  # 是否创建 ClusterIssuer（如果已有可设为 false）
+  createClusterIssuer: false
+
+  # 证书类型: "selfsigned" 或 "acme"
+  # - selfsigned: 自签名证书（内网环境推荐）
+  # - acme: Let's Encrypt 证书（公网环境）
+  type: "selfsigned"
+
+  # ClusterIssuer 名称
+  # selfsigned 模式: 默认 "selfsigned-issuer"，实际签发使用 "genet-ca-issuer"
+  # acme 模式: 默认 "letsencrypt-prod"
+  clusterIssuerName: "selfsigned-issuer"
+
+  # ============================================
+  # ACME 模式配置（type: "acme" 时使用）
+  # ============================================
+  # ACME 服务器地址
+  # 生产环境: https://acme-v02.api.letsencrypt.org/directory
+  # 测试环境: https://acme-staging-v02.api.letsencrypt.org/directory
+  acmeServer: "https://acme-v02.api.letsencrypt.org/directory"
+  # 接收证书过期通知的邮箱（ACME 模式必填）
+  email: ""
+  # DNS-01 验证配置（可选，用于通配符证书）
+  # 如果不配置，默认使用 HTTP-01 验证
+  # dns01:
+  #   cloudflare:
+  #     apiTokenSecretRef:
+  #       name: cloudflare-api-token
+  #       key: api-token

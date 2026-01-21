@@ -9,18 +9,21 @@ import (
 
 // Config 系统配置
 type Config struct {
-	PodLimitPerUser int              `yaml:"podLimitPerUser" json:"podLimitPerUser"`
-	GpuLimitPerUser int              `yaml:"gpuLimitPerUser" json:"gpuLimitPerUser"`
-	GPU             GPUConfig        `yaml:"gpu" json:"gpu"`
-	UI              UIConfig         `yaml:"ui" json:"ui"`
-	Lifecycle       LifecycleConfig  `yaml:"lifecycle" json:"lifecycle"`
-	Storage         StorageConfig    `yaml:"storage" json:"storage"`
-	Pod             PodConfig        `yaml:"pod" json:"pod"`
-	OAuth           OAuthConfig      `yaml:"oauth" json:"oauth"`
-	Proxy           ProxyConfig      `yaml:"proxy" json:"proxy"`
-	Registry        RegistryConfig   `yaml:"registry" json:"registry"`
-	Images          ImagesConfig     `yaml:"images" json:"images"`
-	Kubernetes      KubernetesConfig `yaml:"kubernetes" json:"kubernetes"`
+	PodLimitPerUser int                `yaml:"podLimitPerUser" json:"podLimitPerUser"`
+	GpuLimitPerUser int                `yaml:"gpuLimitPerUser" json:"gpuLimitPerUser"`
+	GPU             GPUConfig          `yaml:"gpu" json:"gpu"`
+	UI              UIConfig           `yaml:"ui" json:"ui"`
+	Lifecycle       LifecycleConfig    `yaml:"lifecycle" json:"lifecycle"`
+	Storage         StorageConfig      `yaml:"storage" json:"storage"`
+	Pod             PodConfig          `yaml:"pod" json:"pod"`
+	OAuth           OAuthConfig        `yaml:"oauth" json:"oauth"`
+	OIDCProvider    OIDCProviderConfig `yaml:"oidcProvider" json:"oidcProvider"`
+	Cluster         ClusterConfig      `yaml:"cluster" json:"cluster"`
+	UserRBAC        UserRBACConfig     `yaml:"userRBAC" json:"userRBAC"`
+	Proxy           ProxyConfig        `yaml:"proxy" json:"proxy"`
+	Registry        RegistryConfig     `yaml:"registry" json:"registry"`
+	Images          ImagesConfig       `yaml:"images" json:"images"`
+	Kubernetes      KubernetesConfig   `yaml:"kubernetes" json:"kubernetes"`
 }
 
 // ImagesConfig 系统依赖镜像配置
@@ -48,7 +51,7 @@ type ProxyConfig struct {
 	NoProxy    string   `yaml:"noProxy" json:"noProxy"`       // 不使用代理的地址列表
 }
 
-// OAuthConfig OAuth 认证配置
+// OAuthConfig OAuth 认证配置（用于 Web UI 登录和作为上游 OAuth）
 type OAuthConfig struct {
 	Enabled bool   `yaml:"enabled" json:"enabled"`
 	Mode    string `yaml:"mode" json:"mode"` // "oidc" 或 "oauth"，默认 "oidc"
@@ -76,6 +79,33 @@ type OAuthConfig struct {
 	JWTSecret    string   `yaml:"jwtSecret" json:"jwtSecret"`         // JWT 签名密钥
 	CookieDomain string   `yaml:"cookieDomain" json:"cookieDomain"`   // Cookie Domain
 	CookieSecure bool     `yaml:"cookieSecure" json:"cookieSecure"`   // Cookie Secure 标志
+}
+
+// OIDCProviderConfig OIDC Provider 配置（Genet 作为 OIDC Provider）
+type OIDCProviderConfig struct {
+	Enabled  bool   `yaml:"enabled" json:"enabled"`   // 是否启用 OIDC Provider
+	IssuerURL string `yaml:"issuerURL" json:"issuerURL"` // OIDC Issuer URL，必须是外部可访问的地址
+
+	// RSA 密钥配置（用于签名 JWT）
+	RSAPrivateKey string `yaml:"rsaPrivateKey" json:"rsaPrivateKey"` // RSA 私钥（PEM 格式）
+	RSAPublicKey  string `yaml:"rsaPublicKey" json:"rsaPublicKey"`   // RSA 公钥（PEM 格式）
+
+	// Kubernetes 客户端配置
+	KubernetesClientID     string `yaml:"kubernetesClientID" json:"kubernetesClientID"`         // K8s 使用的 Client ID
+	KubernetesClientSecret string `yaml:"kubernetesClientSecret" json:"kubernetesClientSecret"` // K8s 使用的 Client Secret
+}
+
+// ClusterConfig K8s 集群配置（用于生成 kubeconfig）
+type ClusterConfig struct {
+	Name   string `yaml:"name" json:"name"`     // 集群名称
+	Server string `yaml:"server" json:"server"` // K8s API Server 地址
+	CAData string `yaml:"caData" json:"caData"` // CA 证书（base64 编码）
+}
+
+// UserRBACConfig 用户 RBAC 配置
+type UserRBACConfig struct {
+	Enabled    bool `yaml:"enabled" json:"enabled"`       // 是否启用用户 RBAC 管理
+	AutoCreate bool `yaml:"autoCreate" json:"autoCreate"` // 登录时自动创建 RBAC
 }
 
 // StorageConfig 存储配置
@@ -356,6 +386,23 @@ tail -f /dev/null
 			JWTSecret:             "genet-jwt-secret-change-in-production",
 			CookieDomain:          "",
 			CookieSecure:          false,
+		},
+		OIDCProvider: OIDCProviderConfig{
+			Enabled:                false,
+			IssuerURL:              "",
+			RSAPrivateKey:          "",
+			RSAPublicKey:           "",
+			KubernetesClientID:     "kubernetes",
+			KubernetesClientSecret: "",
+		},
+		Cluster: ClusterConfig{
+			Name:   "",
+			Server: "",
+			CAData: "",
+		},
+		UserRBAC: UserRBACConfig{
+			Enabled:    false,
+			AutoCreate: true,
 		},
 		Proxy: ProxyConfig{
 			HTTPProxy:  "",

@@ -5,21 +5,30 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/uc-package/genet/internal/logger"
 	"github.com/uc-package/genet/internal/models"
+	"go.uber.org/zap"
 )
 
 // oauthHandler 用于验证 session 的 OAuth 处理器
 var oauthHandler *OAuthHandler
 
+// authLog 认证模块日志
+var authLog *zap.Logger
+
 // InitAuthMiddleware 初始化认证中间件（需要在应用启动时调用）
 func InitAuthMiddleware(config *models.Config) {
 	oauthHandler = NewOAuthHandler(config)
+	authLog = logger.Named("auth")
+	authLog.Debug("Auth middleware initialized",
+		zap.Bool("oauthEnabled", config.OAuth.Enabled))
 }
 
 // AuthMiddleware 认证中间件
 func AuthMiddleware(config *models.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var username, email string
+		var authMethod string
 
 		// 1. 首先尝试从 session cookie 获取用户信息（OAuth 登录后）
 		if sessionToken, err := c.Cookie(SessionCookieName); err == nil && sessionToken != "" {
@@ -27,6 +36,13 @@ func AuthMiddleware(config *models.Config) gin.HandlerFunc {
 			if err == nil {
 				username = claims.Username
 				email = claims.Email
+				authMethod = "session"
+				authLog.Debug("User authenticated via session",
+					zap.String("username", username),
+					zap.String("email", email))
+			} else {
+				authLog.Debug("Session token validation failed",
+					zap.Error(err))
 			}
 		}
 
@@ -37,6 +53,12 @@ func AuthMiddleware(config *models.Config) gin.HandlerFunc {
 				username = c.GetHeader("X-Auth-Request-Preferred-Username")
 			}
 			email = c.GetHeader("X-Auth-Request-Email")
+			if username != "" {
+				authMethod = "proxy-header"
+				authLog.Debug("User authenticated via proxy header",
+					zap.String("username", username),
+					zap.String("email", email))
+			}
 		}
 
 		// 3. 如果还是没有用户信息，使用默认开发用户（仅在 OAuth 未启用时）
@@ -48,6 +70,12 @@ func AuthMiddleware(config *models.Config) gin.HandlerFunc {
 					username = "dev-user" // 默认开发用户
 				}
 				email = username + "@example.com"
+				authMethod = "dev-mode"
+				authLog.Debug("Using dev mode authentication",
+					zap.String("username", username))
+			} else {
+				authLog.Debug("No authentication found",
+					zap.String("path", c.Request.URL.Path))
 			}
 		}
 
@@ -55,6 +83,7 @@ func AuthMiddleware(config *models.Config) gin.HandlerFunc {
 		c.Set("username", username)
 		c.Set("email", email)
 		c.Set("authenticated", username != "" && username != "dev-user")
+		c.Set("authMethod", authMethod)
 
 		c.Next()
 	}
@@ -102,9 +131,11 @@ func GetEmail(c *gin.Context) (string, bool) {
 func RequireAuth(c *gin.Context) {
 	username, exists := GetUsername(c)
 	if !exists || username == "" {
+		authLog.Warn("Unauthorized access attempt",
+			zap.String("path", c.Request.URL.Path),
+			zap.String("ip", c.ClientIP()))
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权：缺少用户信息"})
 		c.Abort()
 		return
 	}
 }
-

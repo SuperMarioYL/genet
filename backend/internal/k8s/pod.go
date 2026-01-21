@@ -8,6 +8,7 @@ import (
 	"text/template"
 	"time"
 
+	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -45,9 +46,20 @@ func GeneratePodName(username string) string {
 
 // CreatePod 创建 Pod
 func (c *Client) CreatePod(ctx context.Context, spec *PodSpec) (*corev1.Pod, error) {
+	c.log.Info("Creating pod",
+		zap.String("name", spec.Name),
+		zap.String("namespace", spec.Namespace),
+		zap.String("user", spec.Username),
+		zap.String("image", spec.Image),
+		zap.Int("gpuCount", spec.GPUCount),
+		zap.String("gpuType", spec.GPUType))
+
 	// 构建代理配置脚本片段
 	proxySetupScript := ""
 	if spec.HTTPProxy != "" || spec.HTTPSProxy != "" {
+		c.log.Debug("Configuring proxy for pod",
+			zap.String("httpProxy", spec.HTTPProxy),
+			zap.String("httpsProxy", spec.HTTPSProxy))
 		proxySetupScript = fmt.Sprintf(`
 # 配置代理到 ~/.bashrc
 cat >> /root/.bashrc << 'PROXYEOF'
@@ -77,12 +89,14 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 	// 使用配置的启动脚本模板
 	scriptTemplate := c.config.Pod.StartupScript
 	if scriptTemplate == "" {
+		c.log.Error("Pod startup script not configured")
 		return nil, fmt.Errorf("pod.startupScript 未配置")
 	}
 
 	// 渲染启动脚本
 	tmpl, err := template.New("startup").Parse(scriptTemplate)
 	if err != nil {
+		c.log.Error("Failed to parse startup script template", zap.Error(err))
 		return nil, fmt.Errorf("解析启动脚本模板失败: %w", err)
 	}
 
@@ -93,6 +107,7 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 		"ProxyScript": proxySetupScript,
 	})
 	if err != nil {
+		c.log.Error("Failed to render startup script", zap.Error(err))
 		return nil, fmt.Errorf("渲染启动脚本失败: %w", err)
 	}
 
@@ -163,6 +178,9 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 
 	// 如果需要 GPU
 	if spec.GPUCount > 0 {
+		c.log.Debug("Configuring GPU resources",
+			zap.Int("count", spec.GPUCount),
+			zap.String("type", spec.GPUType))
 		container.Resources.Requests["nvidia.com/gpu"] = resource.MustParse(fmt.Sprintf("%d", spec.GPUCount))
 		container.Resources.Limits["nvidia.com/gpu"] = resource.MustParse(fmt.Sprintf("%d", spec.GPUCount))
 		container.Env = append(container.Env,
@@ -287,6 +305,9 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 				for k, v := range gpuType.NodeSelector {
 					pod.Spec.NodeSelector[k] = v
 				}
+				c.log.Debug("Applied GPU node selector",
+					zap.String("gpuType", spec.GPUType),
+					zap.Any("nodeSelector", gpuType.NodeSelector))
 				break
 			}
 		}
@@ -295,6 +316,8 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 	// 添加 InitContainer（如果启用）
 	// InitContainer 负责将静态编译的 SSH 工具复制到共享 PVC
 	if c.config.Pod.EnableInitContainer && c.config.Pod.SSHToolsImage != "" {
+		c.log.Debug("Adding init container",
+			zap.String("image", c.config.Pod.SSHToolsImage))
 		initContainer := corev1.Container{
 			Name:  "setup-ssh-tools",
 			Image: c.config.Pod.SSHToolsImage,
@@ -329,21 +352,62 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 		pod.Spec.InitContainers = []corev1.Container{initContainer}
 	}
 
-	return c.clientset.CoreV1().Pods(spec.Namespace).Create(ctx, pod, metav1.CreateOptions{})
+	createdPod, err := c.clientset.CoreV1().Pods(spec.Namespace).Create(ctx, pod, metav1.CreateOptions{})
+	if err != nil {
+		c.log.Error("Failed to create pod",
+			zap.String("name", spec.Name),
+			zap.String("namespace", spec.Namespace),
+			zap.Error(err))
+		return nil, err
+	}
+
+	c.log.Info("Pod created successfully",
+		zap.String("name", createdPod.Name),
+		zap.String("namespace", createdPod.Namespace),
+		zap.String("uid", string(createdPod.UID)))
+
+	return createdPod, nil
 }
 
 // DeletePod 删除 Pod
 func (c *Client) DeletePod(ctx context.Context, namespace, name string) error {
+	c.log.Info("Deleting pod",
+		zap.String("name", name),
+		zap.String("namespace", namespace))
+
 	err := c.clientset.CoreV1().Pods(namespace).Delete(ctx, name, metav1.DeleteOptions{})
 	if err != nil && !errors.IsNotFound(err) {
+		c.log.Error("Failed to delete pod",
+			zap.String("name", name),
+			zap.String("namespace", namespace),
+			zap.Error(err))
 		return fmt.Errorf("删除 Pod 失败: %w", err)
 	}
+
+	if errors.IsNotFound(err) {
+		c.log.Debug("Pod not found, already deleted",
+			zap.String("name", name),
+			zap.String("namespace", namespace))
+	} else {
+		c.log.Info("Pod deleted successfully",
+			zap.String("name", name),
+			zap.String("namespace", namespace))
+	}
+
 	return nil
 }
 
 // GetPod 获取 Pod
 func (c *Client) GetPod(ctx context.Context, namespace, name string) (*corev1.Pod, error) {
-	return c.clientset.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
+	pod, err := c.clientset.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		c.log.Debug("Failed to get pod",
+			zap.String("name", name),
+			zap.String("namespace", namespace),
+			zap.Error(err))
+		return nil, err
+	}
+	return pod, nil
 }
 
 // ListPods 列出用户的所有 Pod
@@ -352,19 +416,36 @@ func (c *Client) ListPods(ctx context.Context, namespace string) ([]corev1.Pod, 
 		LabelSelector: "genet.io/managed=true",
 	})
 	if err != nil {
+		c.log.Debug("Failed to list pods",
+			zap.String("namespace", namespace),
+			zap.Error(err))
 		return nil, err
 	}
+
+	c.log.Debug("Listed pods",
+		zap.String("namespace", namespace),
+		zap.Int("count", len(list.Items)))
+
 	return list.Items, nil
 }
 
 // GetPodLogs 获取 Pod 日志
 func (c *Client) GetPodLogs(ctx context.Context, namespace, name string, tailLines int64) (string, error) {
+	c.log.Debug("Getting pod logs",
+		zap.String("name", name),
+		zap.String("namespace", namespace),
+		zap.Int64("tailLines", tailLines))
+
 	req := c.clientset.CoreV1().Pods(namespace).GetLogs(name, &corev1.PodLogOptions{
 		TailLines: &tailLines,
 	})
 
 	logs, err := req.Do(ctx).Raw()
 	if err != nil {
+		c.log.Error("Failed to get pod logs",
+			zap.String("name", name),
+			zap.String("namespace", namespace),
+			zap.Error(err))
 		return "", err
 	}
 

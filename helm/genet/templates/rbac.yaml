@@ -30,6 +30,11 @@ rules:
   resources: ["jobs"]
   verbs: ["get", "list", "watch", "create", "delete"]
 
+# RBAC management (for auto-creating user roles)
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["roles", "rolebindings"]
+  verbs: ["get", "list", "watch", "create", "delete", "patch", "update"]
+
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

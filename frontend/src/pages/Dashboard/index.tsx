@@ -1,10 +1,12 @@
-import { PlusOutlined, ReloadOutlined } from '@ant-design/icons';
-import { Button, Card, Col, Empty, Layout, message, Row, Space, Statistic } from 'antd';
+import { CloudDownloadOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Button, Card, Col, Empty, Layout, message, Modal, Row, Space, Statistic, Typography } from 'antd';
 import React, { useEffect, useState } from 'react';
-import { listPods } from '../../services/api';
+import { downloadKubeconfig, getClusterInfo, getKubeconfig, listPods } from '../../services/api';
 import CreatePodModal from './CreatePodModal';
 import './index.css';
 import PodCard from './PodCard';
+
+const { Text, Paragraph } = Typography;
 
 const { Header, Content } = Layout;
 
@@ -13,6 +15,9 @@ const Dashboard: React.FC = () => {
   const [quota, setQuota] = useState<any>({ podUsed: 0, podLimit: 5, gpuUsed: 0, gpuLimit: 8 });
   const [loading, setLoading] = useState(false);
   const [createModalVisible, setCreateModalVisible] = useState(false);
+  const [kubeconfigModalVisible, setKubeconfigModalVisible] = useState(false);
+  const [kubeconfigData, setKubeconfigData] = useState<any>(null);
+  const [oidcEnabled, setOidcEnabled] = useState(false);
 
   const loadPods = async () => {
     setLoading(true);
@@ -29,10 +34,36 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     loadPods();
+    // 检查是否启用 OIDC
+    getClusterInfo().then((info) => {
+      setOidcEnabled(info.oidcEnabled);
+    }).catch(() => {});
     // 每 30 秒自动刷新
     const timer = setInterval(loadPods, 30000);
     return () => clearInterval(timer);
   }, []);
+
+  const handleShowKubeconfig = async () => {
+    try {
+      const data = await getKubeconfig();
+      setKubeconfigData(data);
+      setKubeconfigModalVisible(true);
+    } catch (error: any) {
+      message.error(`获取 Kubeconfig 失败: ${error.message}`);
+    }
+  };
+
+  const handleDownloadKubeconfig = () => {
+    downloadKubeconfig();
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      message.success('已复制到剪贴板');
+    }).catch(() => {
+      message.error('复制失败');
+    });
+  };
 
   const handleCreateSuccess = () => {
     setCreateModalVisible(false);
@@ -53,6 +84,14 @@ const Dashboard: React.FC = () => {
             >
               创建新 Pod
             </Button>
+            {oidcEnabled && (
+              <Button
+                icon={<CloudDownloadOutlined />}
+                onClick={handleShowKubeconfig}
+              >
+                获取 Kubeconfig
+              </Button>
+            )}
             <Button
               icon={<ReloadOutlined />}
               onClick={loadPods}
@@ -120,6 +159,74 @@ const Dashboard: React.FC = () => {
         onSuccess={handleCreateSuccess}
         currentQuota={quota}
       />
+
+      {/* Kubeconfig 对话框 */}
+      <Modal
+        title="Kubeconfig 配置"
+        open={kubeconfigModalVisible}
+        onCancel={() => setKubeconfigModalVisible(false)}
+        width={800}
+        footer={[
+          <Button key="close" onClick={() => setKubeconfigModalVisible(false)}>
+            关闭
+          </Button>,
+          <Button key="download" type="primary" icon={<CloudDownloadOutlined />} onClick={handleDownloadKubeconfig}>
+            下载 Kubeconfig
+          </Button>,
+        ]}
+      >
+        {kubeconfigData && (
+          <div>
+            <Card size="small" title="你的 Namespace" style={{ marginBottom: 16 }}>
+              <Text code copyable>{kubeconfigData.namespace}</Text>
+            </Card>
+
+            <Card size="small" title="安装 kubelogin" style={{ marginBottom: 16 }}>
+              <Paragraph>
+                <Text strong>macOS:</Text>
+                <br />
+                <Text code copyable>{kubeconfigData.instructions?.installKubelogin?.macOS}</Text>
+              </Paragraph>
+              <Paragraph>
+                <Text strong>Linux:</Text>
+                <br />
+                <Text code copyable style={{ fontSize: 12 }}>{kubeconfigData.instructions?.installKubelogin?.Linux}</Text>
+              </Paragraph>
+              <Paragraph>
+                <Text strong>Windows:</Text>
+                <br />
+                <Text code copyable>{kubeconfigData.instructions?.installKubelogin?.Windows}</Text>
+              </Paragraph>
+            </Card>
+
+            <Card size="small" title="使用说明" style={{ marginBottom: 16 }}>
+              <ol style={{ paddingLeft: 20, margin: 0 }}>
+                {kubeconfigData.instructions?.usage?.map((step: string, index: number) => (
+                  <li key={index}>{step}</li>
+                ))}
+              </ol>
+            </Card>
+
+            <Card 
+              size="small" 
+              title="Kubeconfig 内容" 
+              extra={<Button size="small" onClick={() => copyToClipboard(kubeconfigData.kubeconfig)}>复制</Button>}
+            >
+              <pre style={{ 
+                background: '#f5f5f5', 
+                padding: 12, 
+                borderRadius: 4, 
+                overflow: 'auto', 
+                maxHeight: 300,
+                fontSize: 12,
+                margin: 0
+              }}>
+                {kubeconfigData.kubeconfig}
+              </pre>
+            </Card>
+          </div>
+        )}
+      </Modal>
     </Layout>
   );
 };

@@ -398,3 +398,35 @@ kubernetes:
 
   # API 请求超时时间（秒）
   timeout: 30
+
+# ============================================
+# OIDC Provider 配置（Genet 作为 OIDC Provider）
+# ============================================
+# 启用后，Genet 会作为 OIDC Provider，将企业 OAuth 转换为标准 OIDC
+# K8s API Server 可以直接信任 Genet，用户可以使用 kubectl 访问集群
+oidcProvider:
+  enabled: true # 本地开发时可设为 true 进行测试
+  # Issuer URL，必须是外部可访问的地址
+  # 本地开发时使用: http://localhost:8080
+  issuerURL: "http://localhost:8080"
+  # RSA 密钥（留空则自动生成）
+  rsaPrivateKey: ""
+  rsaPublicKey: ""
+  # Kubernetes 客户端配置
+  kubernetesClientID: "kubernetes"
+  kubernetesClientSecret: "kubernetes-secret"
+
+# ============================================
+# K8s 集群配置（用于生成 kubeconfig）
+# ============================================
+cluster:
+  name: "local-cluster" # 集群名称
+  server: "https://127.0.0.1:6443" # K8s API Server 地址，如: https://localhost:6443
+  caData: "" # CA 证书（base64 编码）
+
+# ============================================
+# 用户 RBAC 配置
+# ============================================
+userRBAC:
+  enabled: true # 是否启用用户 RBAC 管理
+  autoCreate: true # 登录时自动创建用户 Namespace 和 RBAC
