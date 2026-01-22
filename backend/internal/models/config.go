@@ -196,18 +196,14 @@ type PresetImage struct {
 
 // UIConfig UI 相关配置
 type UIConfig struct {
-	DefaultTTLHours   int  `yaml:"defaultTTLHours" json:"defaultTTLHours"`
-	MinTTLHours       int  `yaml:"minTTLHours" json:"minTTLHours"`
-	MaxTTLHours       int  `yaml:"maxTTLHours" json:"maxTTLHours"`
 	EnableJupyter     bool `yaml:"enableJupyter" json:"enableJupyter"`
 	EnableCustomImage bool `yaml:"enableCustomImage" json:"enableCustomImage"`
 }
 
 // LifecycleConfig 生命周期配置
 type LifecycleConfig struct {
-	AutoDeleteTime string `yaml:"autoDeleteTime"`
-	Timezone       string `yaml:"timezone"`
-	WarningThresholdHours int `yaml:"warningThresholdHours"`
+	AutoDeleteTime string `yaml:"autoDeleteTime"` // 每日自动删除时间（如 "23:00"）
+	Timezone       string `yaml:"timezone"`       // 时区（如 "Asia/Shanghai"）
 }
 
 // LoadConfig 从文件加载配置
@@ -247,16 +243,12 @@ func DefaultConfig() *Config {
 			},
 		},
 		UI: UIConfig{
-			DefaultTTLHours:   4,
-			MinTTLHours:       1,
-			MaxTTLHours:       24,
 			EnableJupyter:     false,
 			EnableCustomImage: true,
 		},
 		Lifecycle: LifecycleConfig{
-			AutoDeleteTime:        "23:00",
-			Timezone:              "Asia/Shanghai",
-			WarningThresholdHours: 1,
+			AutoDeleteTime: "23:00",
+			Timezone:       "Asia/Shanghai",
 		},
 		Storage: StorageConfig{
 			StorageClass: "hostpath",

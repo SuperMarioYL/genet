@@ -150,7 +150,6 @@ func main() {
 			pods.GET("", podHandler.ListPods)
 			pods.POST("", podHandler.CreatePod)
 			pods.GET("/:id", podHandler.GetPod)
-			pods.POST("/:id/extend", podHandler.ExtendPod)
 			pods.DELETE("/:id", podHandler.DeletePod)
 			pods.GET("/:id/logs", podHandler.GetPodLogs)
 			pods.GET("/:id/events", podHandler.GetPodEvents)

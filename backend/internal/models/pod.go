@@ -5,9 +5,8 @@ import "time"
 // PodRequest 创建 Pod 请求
 type PodRequest struct {
 	Image    string `json:"image" binding:"required"`
-	GPUType  string `json:"gpuType"` // GPU 数量为 0 时可选
+	GPUType  string `json:"gpuType"`                        // GPU 数量为 0 时可选
 	GPUCount int    `json:"gpuCount" binding:"min=0,max=8"` // 支持 0 GPU，不使用 required（0 会被认为是空值）
-	TTLHours int    `json:"ttlHours" binding:"required,min=1,max=24"`
 }
 
 // PodResponse Pod 响应
@@ -22,7 +21,6 @@ type PodResponse struct {
 	GPUType   string    `json:"gpuType"`
 	GPUCount  int       `json:"gpuCount"`
 	CreatedAt time.Time `json:"createdAt"`
-	ExpiresAt time.Time `json:"expiresAt"`
 	NodeIP    string    `json:"nodeIP"`
 }
 
@@ -40,10 +38,6 @@ type QuotaInfo struct {
 	GpuLimit  int `json:"gpuLimit"`
 }
 
-// ExtendPodRequest 延长 Pod TTL 请求
-type ExtendPodRequest struct {
-	Hours int `json:"hours" binding:"required,min=1,max=24"`
-}
 
 // ConfigResponse 配置响应
 type ConfigResponse struct {

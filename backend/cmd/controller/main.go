@@ -3,7 +3,6 @@ package main
 import (
 	"log"
 	"os"
-	"time"
 
 	"github.com/uc-package/genet/internal/controller"
 	"github.com/uc-package/genet/internal/k8s"
@@ -31,22 +30,13 @@ func main() {
 	// 创建控制器
 	ctrl := controller.NewLifecycleController(k8sClient, config)
 
-	log.Println("Starting Genet lifecycle controller")
+	log.Println("Genet lifecycle controller - one-shot mode (for CronJob)")
 	log.Printf("Auto-delete time: %s %s", config.Lifecycle.AutoDeleteTime, config.Lifecycle.Timezone)
 
-	// 每分钟运行一次
-	ticker := time.NewTicker(1 * time.Minute)
-	defer ticker.Stop()
-
-	// 启动时立即运行一次
+	// 运行一次协调（CronJob 模式）
 	if err := ctrl.ReconcileAll(); err != nil {
-		log.Printf("Error during initial reconciliation: %v", err)
+		log.Fatalf("Error during reconciliation: %v", err)
 	}
 
-	// 定时循环
-	for range ticker.C {
-		if err := ctrl.ReconcileAll(); err != nil {
-			log.Printf("Error during reconciliation: %v", err)
-		}
-	}
+	log.Println("Reconciliation completed successfully")
 }

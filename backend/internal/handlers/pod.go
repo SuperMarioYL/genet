@@ -80,7 +80,6 @@ func (h *PodHandler) ListPods(c *gin.Context) {
 
 		// 解析时间
 		createdAt, _ := time.Parse(time.RFC3339, pod.Annotations["genet.io/created-at"])
-		expiresAt, _ := time.Parse(time.RFC3339, pod.Annotations["genet.io/expires-at"])
 
 		// 获取节点 IP
 		nodeIP := h.getNodeIP(ctx, pod.Spec.NodeName)
@@ -102,7 +101,6 @@ func (h *PodHandler) ListPods(c *gin.Context) {
 			GPUType:   pod.Annotations["genet.io/gpu-type"],
 			GPUCount:  gpuCount,
 			CreatedAt: createdAt,
-			ExpiresAt: expiresAt,
 			NodeIP:    nodeIP,
 		})
 	}
@@ -143,8 +141,7 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 		zap.String("namespace", namespace),
 		zap.String("image", req.Image),
 		zap.Int("gpuCount", req.GPUCount),
-		zap.String("gpuType", req.GPUType),
-		zap.Int("ttlHours", req.TTLHours))
+		zap.String("gpuType", req.GPUType))
 
 	// 检查配额
 	if err := h.checkQuota(ctx, username, req.GPUCount); err != nil {
@@ -203,7 +200,6 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 
 	// 生成 Pod 名称
 	podName := k8s.GeneratePodName(username)
-	expiresAt := time.Now().Add(time.Duration(req.TTLHours) * time.Hour)
 
 	// 创建 Pod
 	spec := &k8s.PodSpec{
@@ -213,8 +209,6 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 		Image:      req.Image,
 		GPUCount:   req.GPUCount,
 		GPUType:    req.GPUType,
-		TTLHours:   req.TTLHours,
-		ExpiresAt:  expiresAt,
 		HTTPProxy:  h.config.Proxy.HTTPProxy,
 		HTTPSProxy: h.config.Proxy.HTTPSProxy,
 		NoProxy:    h.config.Proxy.NoProxy,
@@ -237,8 +231,7 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 		zap.String("user", username),
 		zap.String("podName", podName),
 		zap.String("image", req.Image),
-		zap.Int("gpuCount", req.GPUCount),
-		zap.Time("expiresAt", expiresAt))
+		zap.Int("gpuCount", req.GPUCount))
 
 	c.JSON(http.StatusCreated, gin.H{
 		"message": "Pod 创建成功",
@@ -278,7 +271,6 @@ func (h *PodHandler) GetPod(c *gin.Context) {
 
 	// 解析时间
 	createdAt, _ := time.Parse(time.RFC3339, pod.Annotations["genet.io/created-at"])
-	expiresAt, _ := time.Parse(time.RFC3339, pod.Annotations["genet.io/expires-at"])
 
 	// 获取节点 IP
 	nodeIP := h.getNodeIP(ctx, pod.Spec.NodeName)
@@ -300,74 +292,10 @@ func (h *PodHandler) GetPod(c *gin.Context) {
 		GPUType:   pod.Annotations["genet.io/gpu-type"],
 		GPUCount:  gpuCount,
 		CreatedAt: createdAt,
-		ExpiresAt: expiresAt,
 		NodeIP:    nodeIP,
 	}
 
 	c.JSON(http.StatusOK, response)
-}
-
-// ExtendPod 延长 Pod TTL
-func (h *PodHandler) ExtendPod(c *gin.Context) {
-	var req models.ExtendPodRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		h.log.Warn("Invalid extend request", zap.Error(err))
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求参数"})
-		return
-	}
-
-	username, _ := auth.GetUsername(c)
-	podID := c.Param("id")
-	namespace := k8s.GetNamespaceForUser(username)
-	ctx := context.Background()
-
-	h.log.Info("Extending pod TTL",
-		zap.String("user", username),
-		zap.String("podID", podID),
-		zap.Int("hours", req.Hours))
-
-	// 获取 Pod
-	pod, err := h.k8sClient.GetPod(ctx, namespace, podID)
-	if err != nil {
-		h.log.Warn("Pod not found for extension",
-			zap.String("user", username),
-			zap.String("podID", podID),
-			zap.Error(err))
-		c.JSON(http.StatusNotFound, gin.H{"error": "Pod 不存在"})
-		return
-	}
-
-	// 计算新的过期时间
-	currentExpiresAt, _ := time.Parse(time.RFC3339, pod.Annotations["genet.io/expires-at"])
-	newExpiresAt := currentExpiresAt.Add(time.Duration(req.Hours) * time.Hour)
-
-	// 更新 Pod 注解
-	if pod.Annotations == nil {
-		pod.Annotations = make(map[string]string)
-	}
-	pod.Annotations["genet.io/expires-at"] = newExpiresAt.Format(time.RFC3339)
-
-	clientset := h.k8sClient.GetClientset()
-	_, err = clientset.CoreV1().Pods(namespace).Update(ctx, pod, metav1.UpdateOptions{})
-	if err != nil {
-		h.log.Error("Failed to extend pod TTL",
-			zap.String("user", username),
-			zap.String("podID", podID),
-			zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("延长时间失败: %v", err)})
-		return
-	}
-
-	h.log.Info("Pod TTL extended",
-		zap.String("user", username),
-		zap.String("podID", podID),
-		zap.Time("oldExpiresAt", currentExpiresAt),
-		zap.Time("newExpiresAt", newExpiresAt))
-
-	c.JSON(http.StatusOK, gin.H{
-		"message":   "延长时间成功",
-		"expiresAt": newExpiresAt.Format(time.RFC3339),
-	})
 }
 
 // DeletePod 删除 Pod

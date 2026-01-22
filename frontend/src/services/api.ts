@@ -62,10 +62,6 @@ export const getPod = (id: string) => {
   return api.get(`/pods/${id}`);
 };
 
-export const extendPod = (id: string, hours: number) => {
-  return api.post(`/pods/${id}/extend`, { hours });
-};
-
 export const deletePod = (id: string) => {
   return api.delete(`/pods/${id}`);
 };

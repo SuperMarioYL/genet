@@ -41,7 +41,6 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
       }
       form.setFieldsValue({
         gpuCount: 1, // 默认为 1，可以改为 0
-        ttlHours: data.ui?.defaultTTLHours || 4,
       });
     } catch (error: any) {
       message.error(`加载配置失败: ${error.message}`);
@@ -104,7 +103,6 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
         layout="vertical"
         initialValues={{
           gpuCount: 1,
-          ttlHours: 4,
         }}
       >
         <Form.Item
@@ -179,19 +177,6 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
               </Select.Option>
             ))}
           </Select>
-        </Form.Item>
-
-        <Form.Item
-          label="生命周期（小时）"
-          name="ttlHours"
-          rules={[{ required: true, message: '请设置生命周期' }]}
-          extra={`建议: ${config?.ui?.minTTLHours}-${config?.ui?.maxTTLHours} 小时`}
-        >
-          <InputNumber
-            min={config?.ui?.minTTLHours || 1}
-            max={config?.ui?.maxTTLHours || 24}
-            style={{ width: '100%' }}
-          />
         </Form.Item>
 
         {/* 配额预测 */}

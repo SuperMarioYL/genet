@@ -91,28 +91,11 @@ func (c *LifecycleController) ReconcileAll() error {
 }
 
 // shouldDeletePod 判断是否应该删除 Pod
+// 只在每日自动删除时间（23:00）删除所有 Pod
 func (c *LifecycleController) shouldDeletePod(pod *corev1.Pod) (bool, string) {
 	// 检查是否到达自动删除时间（晚上11点）
 	if c.isAutoDeleteTime() {
 		return true, "reached auto-delete time (23:00)"
-	}
-
-	// 检查 TTL 是否过期
-	expiresAtStr := pod.Annotations["genet.io/expires-at"]
-	if expiresAtStr == "" {
-		// 没有设置过期时间，跳过
-		return false, ""
-	}
-
-	expiresAt, err := time.Parse(time.RFC3339, expiresAtStr)
-	if err != nil {
-		log.Printf("Warning: Failed to parse expires-at for pod %s: %v", pod.Name, err)
-		return false, ""
-	}
-
-	if time.Now().After(expiresAt) {
-		remainingTime := time.Since(expiresAt)
-		return true, fmt.Sprintf("expired %v ago", remainingTime.Round(time.Minute))
 	}
 
 	return false, ""
@@ -134,10 +117,17 @@ func (c *LifecycleController) isAutoDeleteTime() bool {
 	var hour, minute int
 	fmt.Sscanf(autoDeleteTime, "%d:%d", &hour, &minute)
 
-	// 检查当前时间是否在自动删除时间窗口内（1分钟容差）
+	// 检查当前时间是否在自动删除时间窗口内
 	deleteTime := time.Date(now.Year(), now.Month(), now.Day(), hour, minute, 0, 0, c.location)
 	diff := now.Sub(deleteTime)
 
-	// 如果在删除时间后的 2 分钟内，认为应该删除
-	return diff >= 0 && diff < 2*time.Minute
+	// 如果在删除时间后的 5 分钟内，认为应该删除
+	// 扩大窗口从 2 分钟到 5 分钟，以应对 CronJob 可能的延迟
+	if diff >= 0 && diff < 5*time.Minute {
+		log.Printf("Auto-delete time reached: now=%s, deleteTime=%s, diff=%v",
+			now.Format("15:04:05"), deleteTime.Format("15:04:05"), diff)
+		return true
+	}
+
+	return false
 }

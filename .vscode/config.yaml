@@ -23,16 +23,13 @@ gpu:
       description: "PyTorch 2.0 with CUDA 11.7"
 
 ui:
-  defaultTTLHours: 4
-  minTTLHours: 1
-  maxTTLHours: 24
   enableJupyter: false
   enableCustomImage: true
 
 lifecycle:
+  # 每日自动删除所有 Pod 的时间
   autoDeleteTime: "23:00"
   timezone: "Asia/Shanghai"
-  warningThresholdHours: 1
 
 storage:
   # 用户 workspace PVC 配置

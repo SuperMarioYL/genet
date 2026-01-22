@@ -1,10 +1,9 @@
-import { ClockCircleOutlined, CloudServerOutlined, CodeOutlined, CopyOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons';
+import { CloudServerOutlined, CodeOutlined, CopyOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons';
 import { Button, Card, Divider, Modal, Space, Tooltip, Typography, message } from 'antd';
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import CountdownTimer from '../../components/CountdownTimer';
 import StatusBadge from '../../components/StatusBadge';
-import { deletePod, extendPod } from '../../services/api';
+import { deletePod } from '../../services/api';
 import './PodCard.css';
 
 const { Text, Paragraph } = Typography;
@@ -112,35 +111,6 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
     copyToClipboard(cmd, 'kubectl exec 命令');
   };
 
-  const handleExtend = () => {
-    Modal.confirm({
-      title: '延长 Pod 生命周期',
-      content: (
-        <div>
-          <p>选择延长时间：</p>
-          <Space direction="vertical" style={{ width: '100%' }}>
-            <Button block onClick={() => doExtend(2)}>延长 2 小时</Button>
-            <Button block onClick={() => doExtend(4)}>延长 4 小时</Button>
-            <Button block onClick={() => doExtend(8)}>延长 8 小时</Button>
-          </Space>
-        </div>
-      ),
-      okButtonProps: { style: { display: 'none' } },
-      cancelText: '取消',
-    });
-  };
-
-  const doExtend = async (hours: number) => {
-    try {
-      await extendPod(pod.id, hours);
-      message.success(`已延长 ${hours} 小时`);
-      onUpdate();
-      Modal.destroyAll();
-    } catch (error: any) {
-      message.error(`延长失败: ${error.message}`);
-    }
-  };
-
   const handleDelete = () => {
     Modal.confirm({
       title: '确认删除 Pod？',
@@ -186,11 +156,8 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
         <div className="info-item">
           GPU: {pod.gpuType || '无'} x{pod.gpuCount}
         </div>
-        <div className="info-item">
-          <CountdownTimer expiresAt={pod.expiresAt} />
-        </div>
         <div className="info-item warning-text">
-          将在今晚11点自动删除
+          将在今晚 23:00 自动删除
         </div>
       </div>
 
@@ -241,13 +208,6 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
       )}
 
       <Space className="pod-actions">
-        <Button
-          size="small"
-          icon={<ClockCircleOutlined />}
-          onClick={handleExtend}
-        >
-          延长
-        </Button>
         <Button
           size="small"
           icon={<EyeOutlined />}

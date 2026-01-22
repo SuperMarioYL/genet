@@ -22,8 +22,6 @@ type PodSpec struct {
 	Image      string
 	GPUCount   int
 	GPUType    string
-	TTLHours   int
-	ExpiresAt  time.Time
 	HTTPProxy  string // HTTP 代理
 	HTTPSProxy string // HTTPS 代理
 	NoProxy    string // 不代理列表
@@ -189,7 +187,6 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 			},
 			Annotations: map[string]string{
 				"genet.io/created-at": time.Now().Format(time.RFC3339),
-				"genet.io/expires-at": spec.ExpiresAt.Format(time.RFC3339),
 				"genet.io/gpu-type":   spec.GPUType,
 				"genet.io/gpu-count":  fmt.Sprintf("%d", spec.GPUCount),
 				"genet.io/image":      spec.Image,
