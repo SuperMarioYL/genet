@@ -48,21 +48,13 @@ storage:
 # 使用 K8s 标准 YAML 格式，直接参考 K8s 官方文档配置
 # 文档: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#podspec-v1-core
 pod:
-  # 使用主机网络（SSH 端口直接暴露在主机上）
+  # 使用主机网络
   hostNetwork: true
 
   # DNS 策略（K8s 原生格式）
   # 可选值: ClusterFirst, ClusterFirstWithHostNet, Default, None
   # 当 hostNetwork=true 时，推荐使用 ClusterFirstWithHostNet（默认值）
   dnsPolicy: ClusterFirstWithHostNet
-
-  # InitContainer 配置
-  # 启用后可支持任意基础镜像（无需镜像内置 sshd）
-  # InitContainer 会将静态编译的 SSH 工具复制到共享 PVC
-  enableInitContainer: true
-  # SSH 工具镜像（包含静态编译的 sshd, sftp-server, ssh-keygen）
-  # 需要先构建此镜像：docker build -t genet/ssh-tools:latest tools/ssh-tools/
-  sshToolsImage: "genet/ssh-tools:1.0.0"
 
   # 自定义 DNS 配置（可选，当 dnsPolicy 为 None 时必须配置）
   # dnsConfig:
@@ -170,21 +162,16 @@ pod:
   #     mountPath: /etc/credentials
   #     readOnly: true
 
-  # 容器启动脚本模板（必需）
-  # 可用变量: {{.SSHPort}}, {{.Password}}, {{.ProxyScript}}
-  # 此脚本支持两种模式：
-  # 1. 使用 InitContainer 安装的 SSH 工具（enableInitContainer: true）
-  # 2. 使用镜像内置的 SSH 工具（enableInitContainer: false）
+  # 容器启动脚本模板
+  # 可用变量: {{.ProxyScript}}
   startupScript: |
     #!/bin/bash
     set -e
 
     echo "=== Starting Genet Pod ==="
 
-    GENET_DIR=/workspace/.genet
-
     # 创建必要目录
-    mkdir -p /run/sshd /workspace
+    mkdir -p /workspace
 
     # 持久化 VS Code Server 目录（避免每次连接重新下载）
     mkdir -p /workspace/.vscode-server
@@ -194,60 +181,6 @@ pod:
 
     {{.ProxyScript}}
 
-    # 设置 root 密码
-    echo "root:{{.Password}}" | chpasswd
-
-    # 检测使用 InitContainer 安装的 sshd 还是系统 sshd
-    if [ -x "$GENET_DIR/bin/sshd" ]; then
-        echo "Using InitContainer SSH tools from $GENET_DIR/bin/"
-        # 设置库路径（InitContainer 复制的依赖库）
-        export LD_LIBRARY_PATH="$GENET_DIR/lib:$LD_LIBRARY_PATH"
-        SSHD_BIN="$GENET_DIR/bin/sshd"
-        SSH_KEYGEN="$GENET_DIR/bin/ssh-keygen"
-        SSH_CONFIG_DIR="$GENET_DIR/etc"
-        SSH_HOST_KEY_DIR="$GENET_DIR/etc/ssh"
-        # SFTP: 优先使用 internal-sftp（内置，无需外部二进制）
-        SFTP_BIN="internal-sftp"
-    else
-        echo "Using system SSH tools"
-        SSHD_BIN="/usr/sbin/sshd"
-        SSH_KEYGEN="ssh-keygen"
-        SSH_CONFIG_DIR="/etc/ssh"
-        SSH_HOST_KEY_DIR="/etc/ssh"
-        # SFTP: 使用 internal-sftp（更通用）
-        SFTP_BIN="internal-sftp"
-        # 生成 SSH host keys（如果不存在）
-        $SSH_KEYGEN -A 2>/dev/null || true
-    fi
-
-    # 创建 sshd 配置
-    mkdir -p "$SSH_CONFIG_DIR"
-    {
-      echo "Port {{.SSHPort}}"
-      echo "PermitRootLogin yes"
-      echo "PasswordAuthentication yes"
-      echo "PubkeyAuthentication yes"
-      echo "ChallengeResponseAuthentication no"
-      echo "UsePAM no"
-      echo "Subsystem sftp $SFTP_BIN"
-      echo "HostKey $SSH_HOST_KEY_DIR/ssh_host_rsa_key"
-      echo "HostKey $SSH_HOST_KEY_DIR/ssh_host_ecdsa_key"
-      echo "HostKey $SSH_HOST_KEY_DIR/ssh_host_ed25519_key"
-    } > "$SSH_CONFIG_DIR/sshd_config.genet"
-
-    # 启动 SSH 服务
-    echo "Starting sshd on port {{.SSHPort}}..."
-    $SSHD_BIN -f "$SSH_CONFIG_DIR/sshd_config.genet" -D &
-    SSHD_PID=$!
-    sleep 2
-
-    # 检查 sshd 是否启动成功
-    if kill -0 $SSHD_PID 2>/dev/null; then
-        echo "sshd started successfully (PID: $SSHD_PID)"
-    else
-        echo "WARNING: sshd may have failed to start"
-    fi
-
     # 显示 GPU 信息（如果有）
     if command -v nvidia-smi &> /dev/null; then
         echo "===== GPU Information ====="
@@ -256,13 +189,9 @@ pod:
         echo "===== CPU Only Mode ====="
     fi
 
-    # 显示连接信息
     echo ""
     echo "============================================"
     echo "Pod is ready!"
-    echo "SSH Port: {{.SSHPort}}"
-    echo "Connect: ssh root@<node-ip> -p {{.SSHPort}}"
-    echo "Password: {{.Password}}"
     echo "============================================"
 
     # 保持容器运行

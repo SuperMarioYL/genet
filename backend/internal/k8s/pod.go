@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"hash/fnv"
 	"text/template"
 	"time"
 
@@ -23,20 +22,11 @@ type PodSpec struct {
 	Image      string
 	GPUCount   int
 	GPUType    string
-	SSHPort    int32
-	Password   string
 	TTLHours   int
 	ExpiresAt  time.Time
 	HTTPProxy  string // HTTP 代理
 	HTTPSProxy string // HTTPS 代理
 	NoProxy    string // 不代理列表
-}
-
-// GenerateSSHPort 基于用户名生成固定的 SSH 端口 (2200-3199)
-func GenerateSSHPort(username string) int32 {
-	hasher := fnv.New32a()
-	hasher.Write([]byte(username))
-	return int32(2200 + (hasher.Sum32() % 1000))
 }
 
 // GeneratePodName 生成 Pod 名称
@@ -102,8 +92,6 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 
 	var scriptBuf bytes.Buffer
 	err = tmpl.Execute(&scriptBuf, map[string]interface{}{
-		"SSHPort":     spec.SSHPort,
-		"Password":    spec.Password,
 		"ProxyScript": proxySetupScript,
 	})
 	if err != nil {
@@ -205,14 +193,13 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 				"genet.io/gpu-type":   spec.GPUType,
 				"genet.io/gpu-count":  fmt.Sprintf("%d", spec.GPUCount),
 				"genet.io/image":      spec.Image,
-				"genet.io/ssh-port":   fmt.Sprintf("%d", spec.SSHPort),
-				"genet.io/password":   spec.Password,
 			},
 		},
 		Spec: corev1.PodSpec{
-			HostNetwork:   c.config.Pod.HostNetwork,
-			RestartPolicy: corev1.RestartPolicyNever,
-			Containers:    []corev1.Container{container},
+			AutomountServiceAccountToken: boolPtr(false),
+			HostNetwork:                  c.config.Pod.HostNetwork,
+			RestartPolicy:                corev1.RestartPolicyNever,
+			Containers:                   []corev1.Container{container},
 			Volumes: []corev1.Volume{
 				{
 					Name: "workspace",
@@ -311,45 +298,6 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 				break
 			}
 		}
-	}
-
-	// 添加 InitContainer（如果启用）
-	// InitContainer 负责将静态编译的 SSH 工具复制到共享 PVC
-	if c.config.Pod.EnableInitContainer && c.config.Pod.SSHToolsImage != "" {
-		c.log.Debug("Adding init container",
-			zap.String("image", c.config.Pod.SSHToolsImage))
-		initContainer := corev1.Container{
-			Name:  "setup-ssh-tools",
-			Image: c.config.Pod.SSHToolsImage,
-			VolumeMounts: []corev1.VolumeMount{
-				{
-					Name:      "workspace",
-					MountPath: "/workspace",
-				},
-			},
-		}
-
-		// 传递代理配置给 InitContainer
-		if spec.HTTPProxy != "" {
-			initContainer.Env = append(initContainer.Env,
-				corev1.EnvVar{Name: "HTTP_PROXY", Value: spec.HTTPProxy},
-				corev1.EnvVar{Name: "http_proxy", Value: spec.HTTPProxy},
-			)
-		}
-		if spec.HTTPSProxy != "" {
-			initContainer.Env = append(initContainer.Env,
-				corev1.EnvVar{Name: "HTTPS_PROXY", Value: spec.HTTPSProxy},
-				corev1.EnvVar{Name: "https_proxy", Value: spec.HTTPSProxy},
-			)
-		}
-		if spec.NoProxy != "" {
-			initContainer.Env = append(initContainer.Env,
-				corev1.EnvVar{Name: "NO_PROXY", Value: spec.NoProxy},
-				corev1.EnvVar{Name: "no_proxy", Value: spec.NoProxy},
-			)
-		}
-
-		pod.Spec.InitContainers = []corev1.Container{initContainer}
 	}
 
 	createdPod, err := c.clientset.CoreV1().Pods(spec.Namespace).Create(ctx, pod, metav1.CreateOptions{})

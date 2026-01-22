@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -86,32 +85,25 @@ func (h *PodHandler) ListPods(c *gin.Context) {
 		// 获取节点 IP
 		nodeIP := h.getNodeIP(ctx, pod.Spec.NodeName)
 
-		// 获取 SSH 端口
-		sshPort := int32(0)
-		if portStr, ok := pod.Annotations["genet.io/ssh-port"]; ok {
-			if port, err := strconv.ParseInt(portStr, 10, 32); err == nil {
-				sshPort = int32(port)
-			}
+		// 获取容器名称（默认为 workspace）
+		containerName := "workspace"
+		if len(pod.Spec.Containers) > 0 {
+			containerName = pod.Spec.Containers[0].Name
 		}
 
-		// 获取密码
-		password := pod.Annotations["genet.io/password"]
-
-		// 构建连接信息
-		connections := h.buildConnectionInfo(nodeIP, sshPort, password, pod.Name)
-
 		podResponses = append(podResponses, models.PodResponse{
-			ID:          pod.Name,
-			Name:        pod.Name,
-			Status:      h.getPodStatus(&pod),
-			Phase:       string(pod.Status.Phase),
-			Image:       pod.Annotations["genet.io/image"],
-			GPUType:     pod.Annotations["genet.io/gpu-type"],
-			GPUCount:    gpuCount,
-			CreatedAt:   createdAt,
-			ExpiresAt:   expiresAt,
-			NodeIP:      nodeIP,
-			Connections: connections,
+			ID:        pod.Name,
+			Name:      pod.Name,
+			Namespace: namespace,
+			Container: containerName,
+			Status:    h.getPodStatus(&pod),
+			Phase:     string(pod.Status.Phase),
+			Image:     pod.Annotations["genet.io/image"],
+			GPUType:   pod.Annotations["genet.io/gpu-type"],
+			GPUCount:  gpuCount,
+			CreatedAt: createdAt,
+			ExpiresAt: expiresAt,
+			NodeIP:    nodeIP,
 		})
 	}
 
@@ -209,9 +201,8 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 		return
 	}
 
-	// 生成 Pod 名称和 SSH 端口
+	// 生成 Pod 名称
 	podName := k8s.GeneratePodName(username)
-	sshPort := k8s.GenerateSSHPort(username)
 	expiresAt := time.Now().Add(time.Duration(req.TTLHours) * time.Hour)
 
 	// 创建 Pod
@@ -222,8 +213,6 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 		Image:      req.Image,
 		GPUCount:   req.GPUCount,
 		GPUType:    req.GPUType,
-		SSHPort:    sshPort,
-		Password:   "genetpod2024",
 		TTLHours:   req.TTLHours,
 		ExpiresAt:  expiresAt,
 		HTTPProxy:  h.config.Proxy.HTTPProxy,
@@ -232,8 +221,7 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 	}
 
 	h.log.Debug("Creating pod resource",
-		zap.String("podName", podName),
-		zap.Int32("sshPort", sshPort))
+		zap.String("podName", podName))
 
 	_, err := h.k8sClient.CreatePod(ctx, spec)
 	if err != nil {
@@ -250,14 +238,12 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 		zap.String("podName", podName),
 		zap.String("image", req.Image),
 		zap.Int("gpuCount", req.GPUCount),
-		zap.Int32("sshPort", sshPort),
 		zap.Time("expiresAt", expiresAt))
 
 	c.JSON(http.StatusCreated, gin.H{
 		"message": "Pod 创建成功",
 		"id":      podName,
 		"name":    podName,
-		"sshPort": sshPort,
 	})
 }
 
@@ -297,30 +283,25 @@ func (h *PodHandler) GetPod(c *gin.Context) {
 	// 获取节点 IP
 	nodeIP := h.getNodeIP(ctx, pod.Spec.NodeName)
 
-	// 获取 SSH 端口和密码
-	sshPort := int32(0)
-	if portStr, ok := pod.Annotations["genet.io/ssh-port"]; ok {
-		if port, err := strconv.ParseInt(portStr, 10, 32); err == nil {
-			sshPort = int32(port)
-		}
+	// 获取容器名称（默认为 workspace）
+	containerName := "workspace"
+	if len(pod.Spec.Containers) > 0 {
+		containerName = pod.Spec.Containers[0].Name
 	}
-	password := pod.Annotations["genet.io/password"]
-
-	// 构建连接信息
-	connections := h.buildConnectionInfo(nodeIP, sshPort, password, pod.Name)
 
 	response := models.PodResponse{
-		ID:          pod.Name,
-		Name:        pod.Name,
-		Status:      h.getPodStatus(pod),
-		Phase:       string(pod.Status.Phase),
-		Image:       pod.Annotations["genet.io/image"],
-		GPUType:     pod.Annotations["genet.io/gpu-type"],
-		GPUCount:    gpuCount,
-		CreatedAt:   createdAt,
-		ExpiresAt:   expiresAt,
-		NodeIP:      nodeIP,
-		Connections: connections,
+		ID:        pod.Name,
+		Name:      pod.Name,
+		Namespace: namespace,
+		Container: containerName,
+		Status:    h.getPodStatus(pod),
+		Phase:     string(pod.Status.Phase),
+		Image:     pod.Annotations["genet.io/image"],
+		GPUType:   pod.Annotations["genet.io/gpu-type"],
+		GPUCount:  gpuCount,
+		CreatedAt: createdAt,
+		ExpiresAt: expiresAt,
+		NodeIP:    nodeIP,
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -837,42 +818,4 @@ func (h *PodHandler) getPodStatus(pod *corev1.Pod) string {
 
 	// 默认返回 Phase
 	return string(pod.Status.Phase)
-}
-
-// buildConnectionInfo 构建连接信息
-func (h *PodHandler) buildConnectionInfo(nodeIP string, sshPort int32, password, podName string) models.ConnectionInfo {
-	if nodeIP == "" || sshPort == 0 {
-		return models.ConnectionInfo{}
-	}
-
-	sshCommand := fmt.Sprintf("ssh root@%s -p %d", nodeIP, sshPort)
-
-	// VSCode Remote SSH URI
-	// 注意：是否在新窗口打开取决于用户的 VSCode 设置 (window.openFoldersInNewWindow)
-	vscodeURI := fmt.Sprintf("vscode://vscode-remote/ssh-remote+root@%s:%d/workspace", nodeIP, sshPort)
-
-	// SSH URI - 某些系统会关联到默认 SSH 客户端（如 PuTTY、Termius 等）
-	sshURI := fmt.Sprintf("ssh://root@%s:%d", nodeIP, sshPort)
-
-	// Mac Terminal 命令
-	macTerminalCmd := fmt.Sprintf("ssh root@%s -p %d", nodeIP, sshPort)
-
-	// Windows Terminal 命令
-	winTerminalCmd := fmt.Sprintf("ssh root@%s -p %d", nodeIP, sshPort)
-
-	return models.ConnectionInfo{
-		SSH: models.SSHConnection{
-			Host:     nodeIP,
-			Port:     sshPort,
-			User:     "root",
-			Password: password,
-		},
-		Apps: models.AppConnections{
-			SSHCommand:     sshCommand,
-			VSCodeURI:      vscodeURI,
-			XshellURI:      sshURI, // ssh:// 协议，可能打开默认 SSH 客户端
-			MacTerminalCmd: macTerminalCmd,
-			WinTerminalCmd: winTerminalCmd,
-		},
-	}
 }

@@ -1,4 +1,4 @@
-import { ClockCircleOutlined, CodeOutlined, CopyOutlined, DeleteOutlined, DesktopOutlined, DownloadOutlined, EyeOutlined } from '@ant-design/icons';
+import { ClockCircleOutlined, CloudServerOutlined, CodeOutlined, CopyOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons';
 import { Button, Card, Divider, Modal, Space, Tooltip, message } from 'antd';
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -52,76 +52,31 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
     }
   };
 
-  // 检测操作系统
-  const detectOS = (): 'windows' | 'mac' | 'linux' => {
-    const ua = navigator.userAgent.toLowerCase();
-    if (ua.includes('win')) return 'windows';
-    if (ua.includes('mac')) return 'mac';
-    return 'linux';
-  };
-
-  // 打开 VSCode
-  const openVSCode = (uri: string) => {
+  // 使用 VSCode Kubernetes 插件附加到 Pod
+  const attachVSCodeK8s = () => {
+    const namespace = pod.namespace;
+    const podName = pod.name;
+    const container = pod.container || 'workspace';
+    
+    // 构建 VSCode Kubernetes 插件的附加 URI
+    // 文档: https://github.com/vscode-kubernetes-tools/vscode-kubernetes-tools
+    const uri = `vscode://ms-kubernetes-tools.vscode-kubernetes-tools/attach?namespace=${encodeURIComponent(namespace)}&pod=${encodeURIComponent(podName)}&container=${encodeURIComponent(container)}`;
+    
     window.location.href = uri;
     message.info(
-      '正在打开 VSCode... 如果覆盖了当前项目，请在设置中将 window.openFoldersInNewWindow 设为 on',
+      '正在打开 VSCode Kubernetes 插件... 请确保已安装 Kubernetes 插件',
       5
     );
   };
 
-  // 尝试使用 ssh:// 协议打开默认 SSH 客户端
-  const openSSHClient = (sshURI: string, sshCmd: string) => {
-    const link = document.createElement('a');
-    link.href = sshURI;
-    link.click();
+  // 复制 kubectl exec 命令
+  const copyKubectlExecCommand = () => {
+    const namespace = pod.namespace;
+    const podName = pod.name;
+    const container = pod.container || 'workspace';
     
-    copyToClipboard(sshCmd, 'SSH 命令');
-    message.info('正在尝试打开 SSH 客户端... 如未打开，命令已复制', 4);
-  };
-
-  // 下载 Xshell 会话文件（前端直接生成）
-  const downloadXshellFile = () => {
-    if (!connections) return;
-    
-    // 生成 Xshell 会话文件内容（标准 INI 格式）
-    const xshContent = `[CONNECTION]
-Host=${connections.ssh.host}
-Port=${connections.ssh.port}
-Protocol=SSH
-
-[AUTHENTICATION]
-UserName=${connections.ssh.user}
-Method=Password
-Password=${connections.ssh.password}
-
-[TERMINAL]
-Type=xterm
-`;
-    
-    // 创建 Blob 并下载（使用 text/plain 类型）
-    const blob = new Blob([xshContent], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${pod.name}.xsh`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    
-    message.success('Xshell 会话文件已下载，双击打开即可连接', 3);
-  };
-
-  // 复制 SSH 命令到剪贴板
-  const copySSHCommand = (sshCmd: string, platform: string) => {
-    copyToClipboard(sshCmd, 'SSH 命令');
-    if (platform === 'mac') {
-      message.info('SSH 命令已复制，请在 Terminal.app 中粘贴运行', 3);
-    } else if (platform === 'windows') {
-      message.info('SSH 命令已复制，请在 Windows Terminal 中粘贴运行', 3);
-    } else {
-      message.info('SSH 命令已复制，请在终端中粘贴运行', 3);
-    }
+    const cmd = `kubectl exec -it -n ${namespace} ${podName} -c ${container} -- /bin/bash`;
+    copyToClipboard(cmd, 'kubectl exec 命令');
   };
 
   const handleExtend = () => {
@@ -182,8 +137,8 @@ Type=xterm
     });
   };
 
-  const connections = pod.connections;
-  const hasConnections = connections?.ssh?.host && connections?.ssh?.port;
+  // Pod 是否处于运行状态
+  const isRunning = pod.status === 'Running';
 
   return (
     <Card className="pod-card" hoverable>
@@ -208,79 +163,41 @@ Type=xterm
 
       <Divider />
 
-      {hasConnections && (
+      {/* 连接按钮区域 */}
+      {isRunning && (
         <>
           <div className="connection-info">
-            <div className="connection-title">连接信息</div>
-            
-            <div className="connection-item">
-              <div className="connection-label">SSH:</div>
-              <div className="connection-value">
-                <code style={{ fontSize: '12px' }}>{connections.apps.sshCommand}</code>
-                <Tooltip title="复制 SSH 命令">
-                  <Button 
-                    size="small" 
-                    icon={<CopyOutlined />} 
-                    onClick={() => copyToClipboard(connections.apps.sshCommand, 'SSH 命令')}
-                    style={{ marginLeft: 8 }}
-                  />
-                </Tooltip>
-              </div>
-            </div>
-
+            <div className="connection-title">连接方式</div>
             <div className="connection-item" style={{ marginTop: 8 }}>
               <Space wrap>
-                <Tooltip title="使用 VSCode 打开（新窗口）">
+                <Tooltip title="使用 VSCode Kubernetes 插件附加到 Pod（需要安装插件）">
                   <Button 
                     size="small"
                     type="primary"
                     icon={<CodeOutlined />}
-                    onClick={() => openVSCode(connections.apps.vscodeURI)}
+                    onClick={attachVSCodeK8s}
                   >
-                    VSCode
+                    VSCode K8s
                   </Button>
                 </Tooltip>
 
-                <Tooltip title="下载 Xshell 会话文件">
-                  <Button 
-                    size="small"
-                    icon={<DownloadOutlined />}
-                    onClick={downloadXshellFile}
-                  >
-                    Xshell
-                  </Button>
-                </Tooltip>
-                
-                <Tooltip title="尝试打开默认 SSH 客户端">
-                  <Button 
-                    size="small"
-                    icon={<DesktopOutlined />}
-                    onClick={() => openSSHClient(
-                      connections.apps.xshellURI,
-                      connections.apps.sshCommand
-                    )}
-                  >
-                    SSH
-                  </Button>
-                </Tooltip>
-
-                <Tooltip title="复制 SSH 命令">
+                <Tooltip title="复制 kubectl exec 命令">
                   <Button 
                     size="small"
                     icon={<CopyOutlined />}
-                    onClick={() => copySSHCommand(connections.apps.sshCommand, detectOS())}
+                    onClick={copyKubectlExecCommand}
                   >
-                    命令
+                    kubectl exec
                   </Button>
                 </Tooltip>
 
-                <Tooltip title="复制密码">
+                <Tooltip title="复制 Namespace">
                   <Button 
                     size="small"
-                    icon={<CopyOutlined />}
-                    onClick={() => copyToClipboard(connections.ssh.password, '密码')}
+                    icon={<CloudServerOutlined />}
+                    onClick={() => copyToClipboard(pod.namespace, 'Namespace')}
                   >
-                    密码
+                    Namespace
                   </Button>
                 </Tooltip>
               </Space>

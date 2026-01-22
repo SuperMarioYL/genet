@@ -12,40 +12,18 @@ type PodRequest struct {
 
 // PodResponse Pod 响应
 type PodResponse struct {
-	ID          string         `json:"id"`
-	Name        string         `json:"name"`
-	Status      string         `json:"status"`
-	Phase       string         `json:"phase"`
-	Image       string         `json:"image"`
-	GPUType     string         `json:"gpuType"`
-	GPUCount    int            `json:"gpuCount"`
-	CreatedAt   time.Time      `json:"createdAt"`
-	ExpiresAt   time.Time      `json:"expiresAt"`
-	NodeIP      string         `json:"nodeIP"`
-	Connections ConnectionInfo `json:"connections"`
-}
-
-// ConnectionInfo 连接信息
-type ConnectionInfo struct {
-	SSH  SSHConnection  `json:"ssh"`
-	Apps AppConnections `json:"apps"`
-}
-
-// SSHConnection SSH 连接信息
-type SSHConnection struct {
-	Host     string `json:"host"`
-	Port     int32  `json:"port"`
-	User     string `json:"user"`
-	Password string `json:"password"`
-}
-
-// AppConnections 应用连接信息
-type AppConnections struct {
-	SSHCommand     string `json:"sshCommand"`     // 通用 SSH 命令
-	VSCodeURI      string `json:"vscodeURI"`      // VSCode Remote SSH URI
-	XshellURI      string `json:"xshellURI"`      // Windows: Xshell 协议 URI
-	MacTerminalCmd string `json:"macTerminalCmd"` // Mac: Terminal SSH 命令
-	WinTerminalCmd string `json:"winTerminalCmd"` // Windows: PowerShell/CMD SSH 命令
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Namespace string    `json:"namespace"` // Pod 所在的 namespace
+	Container string    `json:"container"` // 主容器名称
+	Status    string    `json:"status"`
+	Phase     string    `json:"phase"`
+	Image     string    `json:"image"`
+	GPUType   string    `json:"gpuType"`
+	GPUCount  int       `json:"gpuCount"`
+	CreatedAt time.Time `json:"createdAt"`
+	ExpiresAt time.Time `json:"expiresAt"`
+	NodeIP    string    `json:"nodeIP"`
 }
 
 // PodListResponse Pod 列表响应
