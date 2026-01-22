@@ -22,6 +22,8 @@ type PodSpec struct {
 	Image      string
 	GPUCount   int
 	GPUType    string
+	CPU        string // CPU 核数，如 "4"
+	Memory     string // 内存大小，如 "8Gi"
 	HTTPProxy  string // HTTP 代理
 	HTTPSProxy string // HTTPS 代理
 	NoProxy    string // 不代理列表
@@ -113,22 +115,30 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 		},
 	}
 
-	// 应用资源配置（优先使用配置，否则使用默认值）
-	if c.config.Pod.Resources != nil {
-		container.Resources = *c.config.Pod.Resources
-	} else {
-		// 默认资源配置
-		container.Resources = corev1.ResourceRequirements{
-			Requests: corev1.ResourceList{
-				corev1.ResourceMemory: resource.MustParse("4Gi"),
-				corev1.ResourceCPU:    resource.MustParse("2"),
-			},
-			Limits: corev1.ResourceList{
-				corev1.ResourceMemory: resource.MustParse("16Gi"),
-				corev1.ResourceCPU:    resource.MustParse("8"),
-			},
-		}
+	// 应用资源配置（优先使用用户指定的值）
+	cpuRequest := "2"
+	memoryRequest := "4Gi"
+	if spec.CPU != "" {
+		cpuRequest = spec.CPU
 	}
+	if spec.Memory != "" {
+		memoryRequest = spec.Memory
+	}
+
+	container.Resources = corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceMemory: resource.MustParse(memoryRequest),
+			corev1.ResourceCPU:    resource.MustParse(cpuRequest),
+		},
+		Limits: corev1.ResourceList{
+			corev1.ResourceMemory: resource.MustParse(memoryRequest),
+			corev1.ResourceCPU:    resource.MustParse(cpuRequest),
+		},
+	}
+
+	c.log.Debug("Pod resources configured",
+		zap.String("cpu", cpuRequest),
+		zap.String("memory", memoryRequest))
 
 	// 应用安全上下文（优先使用配置，否则使用默认值）
 	if c.config.Pod.SecurityContext != nil {
@@ -189,6 +199,8 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 				"genet.io/created-at": time.Now().Format(time.RFC3339),
 				"genet.io/gpu-type":   spec.GPUType,
 				"genet.io/gpu-count":  fmt.Sprintf("%d", spec.GPUCount),
+				"genet.io/cpu":        cpuRequest,
+				"genet.io/memory":     memoryRequest,
 				"genet.io/image":      spec.Image,
 			},
 		},

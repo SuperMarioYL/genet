@@ -38,6 +38,20 @@ backend:
     ui:
       enableJupyter: false
       enableCustomImage: true
+      # CPU 和内存选项配置
+      cpuOptions:
+        - "2"
+        - "4"
+        - "8"
+        - "16"
+      memoryOptions:
+        - "4Gi"
+        - "8Gi"
+        - "16Gi"
+        - "32Gi"
+        - "64Gi"
+      defaultCPU: "4"
+      defaultMemory: "8Gi"
 
     lifecycle:
       # 每日自动删除所有 Pod 的时间

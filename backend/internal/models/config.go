@@ -196,8 +196,12 @@ type PresetImage struct {
 
 // UIConfig UI 相关配置
 type UIConfig struct {
-	EnableJupyter     bool `yaml:"enableJupyter" json:"enableJupyter"`
-	EnableCustomImage bool `yaml:"enableCustomImage" json:"enableCustomImage"`
+	EnableJupyter     bool           `yaml:"enableJupyter" json:"enableJupyter"`
+	EnableCustomImage bool           `yaml:"enableCustomImage" json:"enableCustomImage"`
+	CPUOptions        []string       `yaml:"cpuOptions" json:"cpuOptions"`       // CPU 选项，如 ["2", "4", "8"]
+	MemoryOptions     []string       `yaml:"memoryOptions" json:"memoryOptions"` // 内存选项，如 ["4Gi", "8Gi", "16Gi"]
+	DefaultCPU        string         `yaml:"defaultCPU" json:"defaultCPU"`       // 默认 CPU
+	DefaultMemory     string         `yaml:"defaultMemory" json:"defaultMemory"` // 默认内存
 }
 
 // LifecycleConfig 生命周期配置
@@ -245,6 +249,10 @@ func DefaultConfig() *Config {
 		UI: UIConfig{
 			EnableJupyter:     false,
 			EnableCustomImage: true,
+			CPUOptions:        []string{"2", "4", "8", "16"},
+			MemoryOptions:     []string{"4Gi", "8Gi", "16Gi", "32Gi"},
+			DefaultCPU:        "4",
+			DefaultMemory:     "8Gi",
 		},
 		Lifecycle: LifecycleConfig{
 			AutoDeleteTime: "23:00",

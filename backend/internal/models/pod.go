@@ -7,6 +7,8 @@ type PodRequest struct {
 	Image    string `json:"image" binding:"required"`
 	GPUType  string `json:"gpuType"`                        // GPU 数量为 0 时可选
 	GPUCount int    `json:"gpuCount" binding:"min=0,max=8"` // 支持 0 GPU，不使用 required（0 会被认为是空值）
+	CPU      string `json:"cpu"`                            // CPU 核数，如 "2", "4"
+	Memory   string `json:"memory"`                         // 内存大小，如 "4Gi", "8Gi"
 }
 
 // PodResponse Pod 响应
@@ -20,6 +22,8 @@ type PodResponse struct {
 	Image     string    `json:"image"`
 	GPUType   string    `json:"gpuType"`
 	GPUCount  int       `json:"gpuCount"`
+	CPU       string    `json:"cpu"`    // CPU 核数
+	Memory    string    `json:"memory"` // 内存大小
 	CreatedAt time.Time `json:"createdAt"`
 	NodeIP    string    `json:"nodeIP"`
 }

@@ -154,6 +154,9 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
 
       <div className="pod-info">
         <div className="info-item">
+          CPU: {pod.cpu || '-'} 核 | 内存: {pod.memory || '-'}
+        </div>
+        <div className="info-item">
           GPU: {pod.gpuType || '无'} x{pod.gpuCount}
         </div>
         <div className="info-item warning-text">

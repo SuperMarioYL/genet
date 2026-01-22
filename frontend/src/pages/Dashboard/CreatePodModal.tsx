@@ -41,6 +41,8 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
       }
       form.setFieldsValue({
         gpuCount: 1, // 默认为 1，可以改为 0
+        cpu: data.ui?.defaultCPU || '4',
+        memory: data.ui?.defaultMemory || '8Gi',
       });
     } catch (error: any) {
       message.error(`加载配置失败: ${error.message}`);
@@ -103,6 +105,8 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
         layout="vertical"
         initialValues={{
           gpuCount: 1,
+          cpu: '4',
+          memory: '8Gi',
         }}
       >
         <Form.Item
@@ -177,6 +181,54 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
               </Select.Option>
             ))}
           </Select>
+        </Form.Item>
+
+        <Form.Item
+          label="CPU 核数"
+          name="cpu"
+          rules={[
+            { required: true, message: '请输入 CPU 核数' },
+            {
+              pattern: /^[0-9]+(\.[0-9]+)?$/,
+              message: '请输入有效的数字（如 2, 4, 0.5）',
+            },
+          ]}
+          help="可从列表选择或输入自定义值（如 0.5, 2, 4）"
+        >
+          <AutoComplete
+            placeholder="选择或输入 CPU 核数"
+            options={(config?.ui?.cpuOptions || ['2', '4', '8', '16']).map((cpu: string) => ({
+              value: cpu,
+              label: `${cpu} 核`,
+            }))}
+            filterOption={(inputValue, option) =>
+              option?.value ? String(option.value).indexOf(inputValue) !== -1 : false
+            }
+          />
+        </Form.Item>
+
+        <Form.Item
+          label="内存大小"
+          name="memory"
+          rules={[
+            { required: true, message: '请输入内存大小' },
+            {
+              pattern: /^[0-9]+(\.[0-9]+)?(Mi|Gi)$/,
+              message: '请输入有效的内存值（如 512Mi, 4Gi, 16Gi）',
+            },
+          ]}
+          help="可从列表选择或输入自定义值（如 512Mi, 4Gi）"
+        >
+          <AutoComplete
+            placeholder="选择或输入内存大小"
+            options={(config?.ui?.memoryOptions || ['4Gi', '8Gi', '16Gi', '32Gi']).map((mem: string) => ({
+              value: mem,
+              label: mem,
+            }))}
+            filterOption={(inputValue, option) =>
+              option?.value ? String(option.value).toUpperCase().indexOf(inputValue.toUpperCase()) !== -1 : false
+            }
+          />
         </Form.Item>
 
         {/* 配额预测 */}

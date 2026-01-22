@@ -100,6 +100,8 @@ func (h *PodHandler) ListPods(c *gin.Context) {
 			Image:     pod.Annotations["genet.io/image"],
 			GPUType:   pod.Annotations["genet.io/gpu-type"],
 			GPUCount:  gpuCount,
+			CPU:       pod.Annotations["genet.io/cpu"],
+			Memory:    pod.Annotations["genet.io/memory"],
 			CreatedAt: createdAt,
 			NodeIP:    nodeIP,
 		})
@@ -201,6 +203,22 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 	// 生成 Pod 名称
 	podName := k8s.GeneratePodName(username)
 
+	// 使用默认值（如果用户未指定）
+	cpu := req.CPU
+	memory := req.Memory
+	if cpu == "" {
+		cpu = h.config.UI.DefaultCPU
+		if cpu == "" {
+			cpu = "4"
+		}
+	}
+	if memory == "" {
+		memory = h.config.UI.DefaultMemory
+		if memory == "" {
+			memory = "8Gi"
+		}
+	}
+
 	// 创建 Pod
 	spec := &k8s.PodSpec{
 		Name:       podName,
@@ -209,6 +227,8 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 		Image:      req.Image,
 		GPUCount:   req.GPUCount,
 		GPUType:    req.GPUType,
+		CPU:        cpu,
+		Memory:     memory,
 		HTTPProxy:  h.config.Proxy.HTTPProxy,
 		HTTPSProxy: h.config.Proxy.HTTPSProxy,
 		NoProxy:    h.config.Proxy.NoProxy,
@@ -291,6 +311,8 @@ func (h *PodHandler) GetPod(c *gin.Context) {
 		Image:     pod.Annotations["genet.io/image"],
 		GPUType:   pod.Annotations["genet.io/gpu-type"],
 		GPUCount:  gpuCount,
+		CPU:       pod.Annotations["genet.io/cpu"],
+		Memory:    pod.Annotations["genet.io/memory"],
 		CreatedAt: createdAt,
 		NodeIP:    nodeIP,
 	}
