@@ -95,14 +95,8 @@ backend:
       #     - name: ndots
       #       value: "5"
 
-      # 资源配置（K8s 原生格式）
-      resources:
-        requests:
-          cpu: "2"
-          memory: "4Gi"
-        limits:
-          cpu: "8"
-          memory: "16Gi"
+      # 资源配置由用户在 UI 上自定义选择（CPU 和内存）
+      # 预设选项在 ui.cpuOptions 和 ui.memoryOptions 中配置
 
       # 安全上下文（K8s 原生格式）
       securityContext:

@@ -136,9 +136,6 @@ type NFS struct {
 
 // PodConfig Pod 配置（使用 K8s 原生格式）
 type PodConfig struct {
-	// Resources 资源配置（K8s 原生格式）
-	Resources *corev1.ResourceRequirements `yaml:"resources,omitempty" json:"resources,omitempty"`
-
 	// SecurityContext 安全上下文（K8s 原生格式）
 	SecurityContext *corev1.SecurityContext `yaml:"securityContext,omitempty" json:"securityContext,omitempty"`
 
@@ -267,7 +264,6 @@ func DefaultConfig() *Config {
 		Pod: PodConfig{
 			HostNetwork: true,
 			DNSPolicy:   corev1.DNSClusterFirstWithHostNet, // hostNetwork=true 时推荐
-			Resources:   nil,                               // 使用 nil 表示使用硬编码的默认值
 			StartupScript: `#!/bin/bash
 set -e
 
