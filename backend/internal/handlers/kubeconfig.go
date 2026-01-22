@@ -90,10 +90,10 @@ func (h *KubeconfigHandler) GetKubeconfig(c *gin.Context) {
 				"Windows": "choco install kubelogin",
 			},
 			Usage: []string{
-				"1. 安装 kubelogin（见上方安装命令）",
-				"2. 将 kubeconfig 保存到 ~/.kube/config 或使用 KUBECONFIG 环境变量",
-				"3. 运行 kubectl get pods，首次会打开浏览器进行登录",
-				"4. 登录成功后，Token 会被缓存，后续命令无需重复登录",
+				"安装 kubelogin（见上方安装命令）",
+				"将 kubeconfig 保存到 ~/.kube/config 或使用 KUBECONFIG 环境变量",
+				"运行 kubectl get pods，首次会打开浏览器进行登录",
+				"登录成功后，Token 会被缓存，后续命令无需重复登录",
 			},
 		},
 	}
@@ -134,9 +134,8 @@ func (h *KubeconfigHandler) DownloadKubeconfig(c *gin.Context) {
 	// 生成 kubeconfig
 	kubeconfig := h.generateKubeconfig(username, namespace)
 
-	// 设置下载头
-	filename := fmt.Sprintf("kubeconfig-%s.yaml", username)
-	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+	// 设置下载头（文件名为 config，与 kubectl 默认配置文件名一致）
+	c.Header("Content-Disposition", "attachment; filename=config")
 	c.Header("Content-Type", "application/x-yaml")
 	c.String(http.StatusOK, kubeconfig)
 }
