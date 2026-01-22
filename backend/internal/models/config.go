@@ -112,6 +112,7 @@ type UserRBACConfig struct {
 type StorageConfig struct {
 	StorageClass string `yaml:"storageClass" json:"storageClass"` // 用户 workspace PVC 的 StorageClass
 	Size         string `yaml:"size" json:"size"`                 // 用户 workspace PVC 的大小
+	AccessMode   string `yaml:"accessMode" json:"accessMode"`     // PVC 访问模式: ReadWriteOnce (RWO) 或 ReadWriteMany (RWX)
 	// 注意：ExtraVolumes 已废弃，请使用 Pod.ExtraVolumes 和 Pod.ExtraVolumeMounts（K8s 原生格式）
 	ExtraVolumes []ExtraVolume `yaml:"extraVolumes,omitempty" json:"extraVolumes,omitempty"` // 废弃：请使用 pod.extraVolumes
 }
@@ -260,6 +261,7 @@ func DefaultConfig() *Config {
 		Storage: StorageConfig{
 			StorageClass: "hostpath",
 			Size:         "50Gi",
+			AccessMode:   "ReadWriteMany", // 默认 RWX
 			ExtraVolumes: []ExtraVolume{},
 		},
 		Pod: PodConfig{

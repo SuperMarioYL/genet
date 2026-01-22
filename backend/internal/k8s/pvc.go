@@ -3,6 +3,7 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -24,6 +25,9 @@ func (c *Client) EnsurePVC(ctx context.Context, namespace, username, storageClas
 		return fmt.Errorf("获取 PVC 失败: %w", err)
 	}
 
+	// 解析访问模式
+	accessMode := c.parseAccessMode(c.config.Storage.AccessMode)
+
 	// 创建新 PVC
 	pvc := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
@@ -35,7 +39,7 @@ func (c *Client) EnsurePVC(ctx context.Context, namespace, username, storageClas
 			},
 		},
 		Spec: corev1.PersistentVolumeClaimSpec{
-			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteMany},
+			AccessModes: []corev1.PersistentVolumeAccessMode{accessMode},
 			Resources: corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
 					corev1.ResourceStorage: resource.MustParse(size),
@@ -55,6 +59,23 @@ func (c *Client) EnsurePVC(ctx context.Context, namespace, username, storageClas
 	}
 
 	return nil
+}
+
+// parseAccessMode 解析 PVC 访问模式字符串
+func (c *Client) parseAccessMode(mode string) corev1.PersistentVolumeAccessMode {
+	switch strings.ToLower(mode) {
+	case "readwriteonce", "rwo":
+		return corev1.ReadWriteOnce
+	case "readonlymany", "rox":
+		return corev1.ReadOnlyMany
+	case "readwritemany", "rwx":
+		return corev1.ReadWriteMany
+	case "readwriteoncepod", "rwop":
+		return corev1.ReadWriteOncePod
+	default:
+		// 默认使用 ReadWriteMany
+		return corev1.ReadWriteMany
+	}
 }
 
 // PVCExists 检查 PVC 是否存在

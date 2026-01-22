@@ -52,19 +52,27 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
     }
   };
 
-  // 使用 VSCode Kubernetes 插件附加到 Pod
+  // 使用 VSCode Kubernetes 插件附加到 Pod（新窗口）
   const attachVSCodeK8s = () => {
     const namespace = pod.namespace;
     const podName = pod.name;
     const container = pod.container || 'workspace';
     
     // 构建 VSCode Kubernetes 插件的附加 URI
+    // 添加 windowId=_blank 参数强制在新窗口打开
     // 文档: https://github.com/vscode-kubernetes-tools/vscode-kubernetes-tools
-    const uri = `vscode://ms-kubernetes-tools.vscode-kubernetes-tools/attach?namespace=${encodeURIComponent(namespace)}&pod=${encodeURIComponent(podName)}&container=${encodeURIComponent(container)}`;
+    const uri = `vscode://ms-kubernetes-tools.vscode-kubernetes-tools/attach?namespace=${encodeURIComponent(namespace)}&pod=${encodeURIComponent(podName)}&container=${encodeURIComponent(container)}&windowId=_blank`;
     
-    window.location.href = uri;
+    // 使用 window.open 尝试在新窗口打开
+    const newWindow = window.open(uri, '_blank');
+    
+    // 如果 window.open 被阻止，回退到 location.href
+    if (!newWindow) {
+      window.location.href = uri;
+    }
+    
     message.info(
-      '正在打开 VSCode Kubernetes 插件... 请确保已安装 Kubernetes 插件',
+      '正在打开 VSCode Kubernetes 插件（新窗口）... 请确保已安装 Kubernetes 插件',
       5
     );
   };
