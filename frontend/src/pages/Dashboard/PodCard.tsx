@@ -1,11 +1,13 @@
 import { ClockCircleOutlined, CloudServerOutlined, CodeOutlined, CopyOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons';
-import { Button, Card, Divider, Modal, Space, Tooltip, message } from 'antd';
+import { Button, Card, Divider, Modal, Space, Tooltip, Typography, message } from 'antd';
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import CountdownTimer from '../../components/CountdownTimer';
 import StatusBadge from '../../components/StatusBadge';
 import { deletePod, extendPod } from '../../services/api';
 import './PodCard.css';
+
+const { Text, Paragraph } = Typography;
 
 interface PodCardProps {
   pod: any;
@@ -52,29 +54,52 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
     }
   };
 
-  // 使用 VSCode Kubernetes 插件附加到 Pod（新窗口）
-  const attachVSCodeK8s = () => {
+  // 显示 VSCode 连接指南
+  const showVSCodeGuide = () => {
     const namespace = pod.namespace;
     const podName = pod.name;
     const container = pod.container || 'workspace';
-    
-    // 构建 VSCode Kubernetes 插件的附加 URI
-    // 添加 windowId=_blank 参数强制在新窗口打开
-    // 文档: https://github.com/vscode-kubernetes-tools/vscode-kubernetes-tools
-    const uri = `vscode://ms-kubernetes-tools.vscode-kubernetes-tools/attach?namespace=${encodeURIComponent(namespace)}&pod=${encodeURIComponent(podName)}&container=${encodeURIComponent(container)}&windowId=_blank`;
-    
-    // 使用 window.open 尝试在新窗口打开
-    const newWindow = window.open(uri, '_blank');
-    
-    // 如果 window.open 被阻止，回退到 location.href
-    if (!newWindow) {
-      window.location.href = uri;
-    }
-    
-    message.info(
-      '正在打开 VSCode Kubernetes 插件（新窗口）... 请确保已安装 Kubernetes 插件',
-      5
-    );
+    const kubectlCmd = `kubectl exec -it -n ${namespace} ${podName} -c ${container} -- /bin/bash`;
+
+    Modal.info({
+      title: '使用 VSCode 连接到 Pod',
+      width: 600,
+      content: (
+        <div style={{ marginTop: 16 }}>
+          <Paragraph>
+            <Text strong>方法 1: 使用 Kubernetes 插件（推荐）</Text>
+          </Paragraph>
+          <ol style={{ paddingLeft: 20 }}>
+            <li>安装 VSCode 扩展: <Text code>ms-kubernetes-tools.vscode-kubernetes-tools</Text></li>
+            <li>在 VSCode 左侧边栏点击 Kubernetes 图标</li>
+            <li>展开集群 → Namespaces → <Text code>{namespace}</Text> → Pods</li>
+            <li>右键点击 <Text code>{podName}</Text></li>
+            <li>选择 <Text strong>"Attach Visual Studio Code"</Text></li>
+          </ol>
+
+          <Divider />
+
+          <Paragraph>
+            <Text strong>方法 2: 使用 kubectl exec</Text>
+          </Paragraph>
+          <Paragraph copyable={{ text: kubectlCmd }}>
+            <Text code style={{ wordBreak: 'break-all' }}>{kubectlCmd}</Text>
+          </Paragraph>
+
+          <Divider />
+
+          <Paragraph>
+            <Text strong>Pod 信息</Text>
+          </Paragraph>
+          <ul style={{ paddingLeft: 20 }}>
+            <li>Namespace: <Text code copyable>{namespace}</Text></li>
+            <li>Pod: <Text code copyable>{podName}</Text></li>
+            <li>Container: <Text code copyable>{container}</Text></li>
+          </ul>
+        </div>
+      ),
+      okText: '知道了',
+    });
   };
 
   // 复制 kubectl exec 命令
@@ -178,14 +203,14 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
             <div className="connection-title">连接方式</div>
             <div className="connection-item" style={{ marginTop: 8 }}>
               <Space wrap>
-                <Tooltip title="使用 VSCode Kubernetes 插件附加到 Pod（需要安装插件）">
+                <Tooltip title="查看 VSCode 连接指南">
                   <Button 
                     size="small"
                     type="primary"
                     icon={<CodeOutlined />}
-                    onClick={attachVSCodeK8s}
+                    onClick={showVSCodeGuide}
                   >
-                    VSCode K8s
+                    VSCode 连接
                   </Button>
                 </Tooltip>
 
