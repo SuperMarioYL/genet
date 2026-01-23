@@ -4,6 +4,44 @@ backend:
   imagePullPolicy: IfNotPresent
   replicas: 2
 
+  # 节点选择器（K8s 原生格式）
+  # 用于将 Genet 后端调度到特定节点
+  nodeSelector: {}
+  # 示例:
+  #   kubernetes.io/os: linux
+  #   node-role: management
+
+  # 亲和性调度（K8s 原生格式）
+  affinity: {}
+  # 示例 - 节点亲和性（优先调度到特定节点）:
+  #   nodeAffinity:
+  #     preferredDuringSchedulingIgnoredDuringExecution:
+  #       - weight: 100
+  #         preference:
+  #           matchExpressions:
+  #             - key: node-role
+  #               operator: In
+  #               values:
+  #                 - management
+  # 示例 - Pod 反亲和性（分散部署到不同节点）:
+  #   podAntiAffinity:
+  #     preferredDuringSchedulingIgnoredDuringExecution:
+  #       - weight: 100
+  #         podAffinityTerm:
+  #           labelSelector:
+  #             matchLabels:
+  #               app: genet-backend
+  #           topologyKey: kubernetes.io/hostname
+
+  # 容忍度（K8s 原生格式）
+  # 用于调度到带有 taint 的节点
+  tolerations: []
+  # 示例:
+  #   - key: "node-role"
+  #     operator: "Equal"
+  #     value: "management"
+  #     effect: "NoSchedule"
+
   # Backend configuration (injected via ConfigMap)
   config:
     podLimitPerUser: 5
@@ -323,6 +361,15 @@ frontend:
   image: genet-frontend:latest
   imagePullPolicy: IfNotPresent
   replicas: 2
+
+  # 节点选择器（K8s 原生格式）
+  nodeSelector: {}
+
+  # 亲和性调度（K8s 原生格式）
+  affinity: {}
+
+  # 容忍度（K8s 原生格式）
+  tolerations: []
 
 # CronJob configuration (lifecycle controller)
 cronjob:
