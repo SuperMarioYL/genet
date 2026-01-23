@@ -57,7 +57,8 @@ func main() {
 
 	// 初始化 OAuth Handler
 	oauthHandler := auth.NewOAuthHandler(config)
-	if config.OAuth.Enabled {
+	if config.OAuth.Enabled && config.OAuth.Mode == "oidc" {
+		// 仅在 OIDC 模式下自动发现端点
 		if err := oauthHandler.DiscoverOIDC(); err != nil {
 			log.Warn("Failed to discover OIDC", zap.Error(err))
 		} else {
