@@ -12,13 +12,18 @@ metadata:
 rules:
 # Helm needs core permissions
 - apiGroups: [""]
-  resources: ["pods", "services", "namespaces", "persistentvolumeclaims", "configmaps", "secrets"]
+  resources: ["pods", "services", "namespaces", "persistentvolumeclaims", "configmaps", "secrets", "events"]
   verbs: ["get", "list", "watch", "create", "delete", "patch", "update"]
 
 # Pod logs access
 - apiGroups: [""]
   resources: ["pods/log"]
   verbs: ["get", "list"]
+
+# Events (for monitoring pod status)
+- apiGroups: ["events.k8s.io"]
+  resources: ["events"]
+  verbs: ["get", "list", "watch"]
 
 # Nodes (for getting node IPs)
 - apiGroups: [""]
@@ -34,6 +39,18 @@ rules:
 - apiGroups: ["rbac.authorization.k8s.io"]
   resources: ["roles", "rolebindings"]
   verbs: ["get", "list", "watch", "create", "delete", "patch", "update"]
+
+# CSR management (for generating user certificates)
+- apiGroups: ["certificates.k8s.io"]
+  resources: ["certificatesigningrequests"]
+  verbs: ["create", "get", "list", "watch", "delete"]
+- apiGroups: ["certificates.k8s.io"]
+  resources: ["certificatesigningrequests/approval"]
+  verbs: ["update"]
+- apiGroups: ["certificates.k8s.io"]
+  resourceNames: ["kubernetes.io/kube-apiserver-client"]
+  resources: ["signers"]
+  verbs: ["approve"]
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1

@@ -24,6 +24,7 @@ type Config struct {
 	Registry        RegistryConfig     `yaml:"registry" json:"registry"`
 	Images          ImagesConfig       `yaml:"images" json:"images"`
 	Kubernetes      KubernetesConfig   `yaml:"kubernetes" json:"kubernetes"`
+	Kubeconfig      KubeconfigConfig   `yaml:"kubeconfig" json:"kubeconfig"`
 }
 
 // ImagesConfig 系统依赖镜像配置
@@ -46,9 +47,9 @@ type RegistryConfig struct {
 
 // ProxyConfig 代理配置
 type ProxyConfig struct {
-	HTTPProxy  string   `yaml:"httpProxy" json:"httpProxy"`   // HTTP 代理地址
-	HTTPSProxy string   `yaml:"httpsProxy" json:"httpsProxy"` // HTTPS 代理地址
-	NoProxy    string   `yaml:"noProxy" json:"noProxy"`       // 不使用代理的地址列表
+	HTTPProxy  string `yaml:"httpProxy" json:"httpProxy"`   // HTTP 代理地址
+	HTTPSProxy string `yaml:"httpsProxy" json:"httpsProxy"` // HTTPS 代理地址
+	NoProxy    string `yaml:"noProxy" json:"noProxy"`       // 不使用代理的地址列表
 }
 
 // OAuthConfig OAuth 认证配置（用于 Web UI 登录和作为上游 OAuth）
@@ -71,19 +72,19 @@ type OAuthConfig struct {
 	TokenEmailClaim    string `yaml:"tokenEmailClaim" json:"tokenEmailClaim"`       // Token 中邮箱字段，默认 "email"
 
 	// 公共配置
-	ClientID     string   `yaml:"clientID" json:"clientID"`           // OAuth Client ID
-	ClientSecret string   `yaml:"clientSecret" json:"clientSecret"`   // OAuth Client Secret
-	RedirectURL  string   `yaml:"redirectURL" json:"redirectURL"`     // Callback URL
-	FrontendURL  string   `yaml:"frontendURL" json:"frontendURL"`     // 登录成功后重定向的前端 URL
-	Scopes       []string `yaml:"scopes" json:"scopes"`               // OAuth Scopes
-	JWTSecret    string   `yaml:"jwtSecret" json:"jwtSecret"`         // JWT 签名密钥
-	CookieDomain string   `yaml:"cookieDomain" json:"cookieDomain"`   // Cookie Domain
-	CookieSecure bool     `yaml:"cookieSecure" json:"cookieSecure"`   // Cookie Secure 标志
+	ClientID     string   `yaml:"clientID" json:"clientID"`         // OAuth Client ID
+	ClientSecret string   `yaml:"clientSecret" json:"clientSecret"` // OAuth Client Secret
+	RedirectURL  string   `yaml:"redirectURL" json:"redirectURL"`   // Callback URL
+	FrontendURL  string   `yaml:"frontendURL" json:"frontendURL"`   // 登录成功后重定向的前端 URL
+	Scopes       []string `yaml:"scopes" json:"scopes"`             // OAuth Scopes
+	JWTSecret    string   `yaml:"jwtSecret" json:"jwtSecret"`       // JWT 签名密钥
+	CookieDomain string   `yaml:"cookieDomain" json:"cookieDomain"` // Cookie Domain
+	CookieSecure bool     `yaml:"cookieSecure" json:"cookieSecure"` // Cookie Secure 标志
 }
 
 // OIDCProviderConfig OIDC Provider 配置（Genet 作为 OIDC Provider）
 type OIDCProviderConfig struct {
-	Enabled  bool   `yaml:"enabled" json:"enabled"`   // 是否启用 OIDC Provider
+	Enabled   bool   `yaml:"enabled" json:"enabled"`     // 是否启用 OIDC Provider
 	IssuerURL string `yaml:"issuerURL" json:"issuerURL"` // OIDC Issuer URL，必须是外部可访问的地址
 
 	// RSA 密钥配置（用于签名 JWT）
@@ -106,6 +107,16 @@ type ClusterConfig struct {
 type UserRBACConfig struct {
 	Enabled    bool `yaml:"enabled" json:"enabled"`       // 是否启用用户 RBAC 管理
 	AutoCreate bool `yaml:"autoCreate" json:"autoCreate"` // 登录时自动创建 RBAC
+}
+
+// KubeconfigConfig Kubeconfig 生成配置
+type KubeconfigConfig struct {
+	// 认证模式: "oidc" 或 "cert"
+	// oidc: 使用 OIDC 认证（需要启用 OIDCProvider）
+	// cert: 使用客户端证书认证
+	Mode string `yaml:"mode" json:"mode"`
+	// 证书有效期（小时），仅 cert 模式有效
+	CertValidityHours int `yaml:"certValidityHours" json:"certValidityHours"`
 }
 
 // StorageConfig 存储配置
@@ -193,12 +204,12 @@ type PresetImage struct {
 
 // UIConfig UI 相关配置
 type UIConfig struct {
-	EnableJupyter     bool           `yaml:"enableJupyter" json:"enableJupyter"`
-	EnableCustomImage bool           `yaml:"enableCustomImage" json:"enableCustomImage"`
-	CPUOptions        []string       `yaml:"cpuOptions" json:"cpuOptions"`       // CPU 选项，如 ["2", "4", "8"]
-	MemoryOptions     []string       `yaml:"memoryOptions" json:"memoryOptions"` // 内存选项，如 ["4Gi", "8Gi", "16Gi"]
-	DefaultCPU        string         `yaml:"defaultCPU" json:"defaultCPU"`       // 默认 CPU
-	DefaultMemory     string         `yaml:"defaultMemory" json:"defaultMemory"` // 默认内存
+	EnableJupyter     bool     `yaml:"enableJupyter" json:"enableJupyter"`
+	EnableCustomImage bool     `yaml:"enableCustomImage" json:"enableCustomImage"`
+	CPUOptions        []string `yaml:"cpuOptions" json:"cpuOptions"`       // CPU 选项，如 ["2", "4", "8"]
+	MemoryOptions     []string `yaml:"memoryOptions" json:"memoryOptions"` // 内存选项，如 ["4Gi", "8Gi", "16Gi"]
+	DefaultCPU        string   `yaml:"defaultCPU" json:"defaultCPU"`       // 默认 CPU
+	DefaultMemory     string   `yaml:"defaultMemory" json:"defaultMemory"` // 默认内存
 }
 
 // LifecycleConfig 生命周期配置
@@ -351,6 +362,9 @@ tail -f /dev/null
 			DisableProxy: true, // 默认禁用代理，避免 Windows 代理冲突
 			Timeout:      30,   // 默认 30 秒超时
 		},
+		Kubeconfig: KubeconfigConfig{
+			Mode:              "cert", // 默认使用证书模式
+			CertValidityHours: 8760,   // 默认 1 年
+		},
 	}
 }
-
