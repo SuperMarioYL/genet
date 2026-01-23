@@ -1,10 +1,10 @@
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: genet-lifecycle-controller
+  name: genet-cleanup
   namespace: {{ .Release.Namespace }}
 spec:
-  schedule: "{{ .Values.cronjob.schedule }}"
+  schedule: "{{ .Values.cleanup.schedule }}"
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:
@@ -12,14 +12,14 @@ spec:
       template:
         metadata:
           labels:
-            app: genet-controller
+            app: genet-cleanup
         spec:
           serviceAccountName: genet-backend
           restartPolicy: OnFailure
           containers:
-          - name: controller
-            image: {{ .Values.cronjob.image }}
-            command: ["/app/controller"]
+          - name: cleanup
+            image: {{ .Values.cleanup.image }}
+            command: ["/app/cleanup"]
             volumeMounts:
             - name: config
               mountPath: /etc/genet
@@ -27,4 +27,3 @@ spec:
           - name: config
             configMap:
               name: genet-config
-

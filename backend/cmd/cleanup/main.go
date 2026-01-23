@@ -4,7 +4,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/uc-package/genet/internal/controller"
+	"github.com/uc-package/genet/internal/cleanup"
 	"github.com/uc-package/genet/internal/k8s"
 	"github.com/uc-package/genet/internal/models"
 )
@@ -27,16 +27,15 @@ func main() {
 		log.Fatalf("Failed to initialize K8s client: %v", err)
 	}
 
-	// 创建控制器
-	ctrl := controller.NewLifecycleController(k8sClient, config)
+	// 创建清理器
+	cleaner := cleanup.NewPodCleaner(k8sClient, config)
 
-	log.Println("Genet lifecycle controller - one-shot mode (for CronJob)")
-	log.Printf("Auto-delete time: %s %s", config.Lifecycle.AutoDeleteTime, config.Lifecycle.Timezone)
+	log.Println("Genet Pod Cleanup - triggered by CronJob")
 
-	// 运行一次协调（CronJob 模式）
-	if err := ctrl.ReconcileAll(); err != nil {
-		log.Fatalf("Error during reconciliation: %v", err)
+	// 执行清理
+	if err := cleaner.CleanupAllPods(); err != nil {
+		log.Fatalf("Error during cleanup: %v", err)
 	}
 
-	log.Println("Reconciliation completed successfully")
+	log.Println("Cleanup completed successfully")
 }

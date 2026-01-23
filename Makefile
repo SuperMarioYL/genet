@@ -17,7 +17,7 @@ help: ## 显示帮助信息
 build-backend: ## 构建后端二进制
 	@echo "==> 构建后端..."
 	cd backend && go build -o bin/api-server ./cmd/api
-	cd backend && go build -o bin/controller ./cmd/controller
+	cd backend && go build -o bin/cleanup ./cmd/cleanup
 
 build-frontend: ## 构建前端
 	@echo "==> 构建前端..."
@@ -103,9 +103,9 @@ dev-frontend: ## 启动前端开发服务器
 	@echo "==> 启动前端开发服务器..."
 	cd frontend && npm start
 
-dev-controller: ## 启动控制器开发服务器
-	@echo "==> 启动控制器开发服务器..."
-	cd backend && go run ./cmd/controller/main.go
+dev-cleanup: ## 运行清理任务（测试用）
+	@echo "==> 运行清理任务..."
+	cd backend && go run ./cmd/cleanup/main.go
 
 # Kubernetes 相关
 k8s-logs-backend: ## 查看后端日志
@@ -114,8 +114,8 @@ k8s-logs-backend: ## 查看后端日志
 k8s-logs-frontend: ## 查看前端日志
 	kubectl logs -n $(NAMESPACE) -l app=genet-frontend -f
 
-k8s-logs-controller: ## 查看控制器日志
-	kubectl logs -n $(NAMESPACE) -l app=genet-controller -f
+k8s-logs-cleanup: ## 查看清理任务日志
+	kubectl logs -n $(NAMESPACE) -l app=genet-cleanup -f
 
 k8s-port-forward: ## 端口转发
 	kubectl port-forward -n $(NAMESPACE) svc/genet-frontend 8080:80
@@ -160,7 +160,6 @@ dev: ## 启动完整开发环境
 	@echo "请在不同的终端窗口运行以下命令:"
 	@echo "  1. make dev-backend"
 	@echo "  2. make dev-frontend"
-	@echo "  3. make dev-controller"
 
 # ============================================
 # OAuth2 本地测试
