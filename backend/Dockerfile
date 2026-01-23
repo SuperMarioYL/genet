@@ -15,8 +15,8 @@ COPY . .
 # 构建 API 服务器
 RUN CGO_ENABLED=0 GOOS=linux go build -o api-server ./cmd/api
 
-# 构建控制器
-RUN CGO_ENABLED=0 GOOS=linux go build -o controller ./cmd/controller
+# 构建清理任务
+RUN CGO_ENABLED=0 GOOS=linux go build -o cleanup ./cmd/cleanup
 
 # 运行时镜像
 FROM alpine:latest
@@ -27,7 +27,7 @@ WORKDIR /app
 
 # 复制二进制文件
 COPY --from=builder /build/api-server /app/
-COPY --from=builder /build/controller /app/
+COPY --from=builder /build/cleanup /app/
 
 EXPOSE 8080
 
