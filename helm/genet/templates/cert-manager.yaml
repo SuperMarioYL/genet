@@ -13,12 +13,12 @@ metadata:
 spec:
   selfSigned: {}
 ---
-# 自签名 CA 证书
+# 自签名 CA 证书（放在 cert-manager namespace 中，供 ClusterIssuer 使用）
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: genet-ca
-  namespace: {{ .Release.Namespace }}
+  namespace: {{ .Values.certManager.namespace | default "cert-manager" }}
 spec:
   isCA: true
   commonName: genet-ca

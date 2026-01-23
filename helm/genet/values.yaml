@@ -420,6 +420,10 @@ certManager:
   # 是否创建 ClusterIssuer（如果已有可设为 false）
   createClusterIssuer: false
 
+  # cert-manager 所在的 namespace（用于存放 CA 证书 Secret）
+  # ClusterIssuer 只能引用此 namespace 中的 Secret
+  namespace: "cert-manager"
+
   # 证书类型: "selfsigned" 或 "acme"
   # - selfsigned: 自签名证书（内网环境推荐）
   # - acme: Let's Encrypt 证书（公网环境）
