@@ -1,12 +1,13 @@
 import { CloudServerOutlined, CodeOutlined, CopyOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons';
-import { Button, Card, Divider, Modal, Space, Tooltip, Typography, message } from 'antd';
+import { Button, Divider, Modal, Space, Tooltip, Typography, message } from 'antd';
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import GlassCard from '../../components/GlassCard';
 import StatusBadge from '../../components/StatusBadge';
 import { deletePod } from '../../services/api';
 import './PodCard.css';
 
-const { Text, Paragraph } = Typography;
+const { Text } = Typography;
 
 interface PodCardProps {
   pod: any;
@@ -19,12 +20,10 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
 
   const copyToClipboard = async (text: string, label: string) => {
     try {
-      // 优先使用 Clipboard API
       if (navigator.clipboard && navigator.clipboard.writeText) {
         await navigator.clipboard.writeText(text);
         message.success(`${label} 已复制`);
       } else {
-        // 降级方案：使用 execCommand
         const textArea = document.createElement('textarea');
         textArea.value = text;
         textArea.style.position = 'fixed';
@@ -36,7 +35,6 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
         message.success(`${label} 已复制`);
       }
     } catch (err) {
-      // 如果都失败，使用降级方案
       const textArea = document.createElement('textarea');
       textArea.value = text;
       textArea.style.position = 'fixed';
@@ -53,7 +51,6 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
     }
   };
 
-  // 显示 VSCode 连接指南
   const showVSCodeGuide = () => {
     const namespace = pod.namespace;
     const podName = pod.name;
@@ -61,52 +58,68 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
     const kubectlCmd = `kubectl exec -it -n ${namespace} ${podName} -c ${container} -- /bin/bash`;
 
     Modal.info({
-      title: '使用 VSCode 连接到 Pod',
+      title: (
+        <div className="modal-title-custom">
+          <CodeOutlined />
+          <span>连接到 Pod</span>
+        </div>
+      ),
       width: 600,
       content: (
-        <div style={{ marginTop: 16 }}>
-          <Paragraph>
-            <Text strong>方法 1: 使用 Kubernetes 插件（推荐）</Text>
-          </Paragraph>
-          <ol style={{ paddingLeft: 20 }}>
-            <li>安装 VSCode 扩展: <Text code>ms-kubernetes-tools.vscode-kubernetes-tools</Text></li>
-            <li>在 VSCode 左侧边栏点击 Kubernetes 图标</li>
-            <li>展开集群 → Namespaces → <Text code>{namespace}</Text> → Pods</li>
-            <li>右键点击 <Text code>{podName}</Text></li>
-            <li>选择 <Text strong>"Attach Visual Studio Code"</Text></li>
-          </ol>
+        <div className="vscode-guide">
+          <div className="guide-section">
+            <h4>方法 1: VSCode Kubernetes 插件</h4>
+            <ol>
+              <li>安装扩展: <Text code className="mono">ms-kubernetes-tools.vscode-kubernetes-tools</Text></li>
+              <li>点击 VSCode 左侧 Kubernetes 图标</li>
+              <li>展开: 集群 → Namespaces → <Text code>{namespace}</Text> → Pods</li>
+              <li>右键 <Text code>{podName}</Text> → <Text strong>"Attach Visual Studio Code"</Text></li>
+            </ol>
+          </div>
 
           <Divider />
 
-          <Paragraph>
-            <Text strong>方法 2: 使用 kubectl exec</Text>
-          </Paragraph>
-          <Paragraph copyable={{ text: kubectlCmd }}>
-            <Text code style={{ wordBreak: 'break-all' }}>{kubectlCmd}</Text>
-          </Paragraph>
+          <div className="guide-section">
+            <h4>方法 2: kubectl exec</h4>
+            <div className="command-box">
+              <code className="mono">{kubectlCmd}</code>
+              <Button
+                size="small"
+                icon={<CopyOutlined />}
+                onClick={() => copyToClipboard(kubectlCmd, 'kubectl 命令')}
+              />
+            </div>
+          </div>
 
           <Divider />
 
-          <Paragraph>
-            <Text strong>Pod 信息</Text>
-          </Paragraph>
-          <ul style={{ paddingLeft: 20 }}>
-            <li>Namespace: <Text code copyable>{namespace}</Text></li>
-            <li>Pod: <Text code copyable>{podName}</Text></li>
-            <li>Container: <Text code copyable>{container}</Text></li>
-          </ul>
+          <div className="guide-section">
+            <h4>Pod 信息</h4>
+            <div className="info-grid">
+              <div className="info-item">
+                <span className="info-label">Namespace</span>
+                <Text code copyable className="mono">{namespace}</Text>
+              </div>
+              <div className="info-item">
+                <span className="info-label">Pod</span>
+                <Text code copyable className="mono">{podName}</Text>
+              </div>
+              <div className="info-item">
+                <span className="info-label">Container</span>
+                <Text code copyable className="mono">{container}</Text>
+              </div>
+            </div>
+          </div>
         </div>
       ),
       okText: '知道了',
     });
   };
 
-  // 复制 kubectl exec 命令
   const copyKubectlExecCommand = () => {
     const namespace = pod.namespace;
     const podName = pod.name;
     const container = pod.container || 'workspace';
-    
     const cmd = `kubectl exec -it -n ${namespace} ${podName} -c ${container} -- /bin/bash`;
     copyToClipboard(cmd, 'kubectl exec 命令');
   };
@@ -115,9 +128,9 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
     Modal.confirm({
       title: '确认删除 Pod？',
       content: (
-        <div>
+        <div className="delete-confirm">
           <p><strong>Pod 名称:</strong> {pod.name}</p>
-          <p style={{ color: '#ff4d4f' }}>
+          <p className="delete-warning">
             此操作无法撤销，Pod 将被删除（工作区存储保留）
           </p>
         </div>
@@ -140,81 +153,118 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
     });
   };
 
-  // Pod 是否处于运行状态
   const isRunning = pod.status === 'Running';
 
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'Running': return 'var(--success)';
+      case 'Pending': return 'var(--warning)';
+      case 'Failed': return 'var(--error)';
+      default: return 'var(--text-muted)';
+    }
+  };
+
   return (
-    <Card className="pod-card" hoverable>
-      <div className="pod-header">
-        <Space>
+    <GlassCard className="pod-card" glow={isRunning}>
+      {/* Header */}
+      <div className="pod-card-header">
+        <div className="pod-status-indicator" style={{ background: getStatusColor(pod.status) }} />
+        <div className="pod-title-section">
+          <h3 className="pod-name">{pod.name}</h3>
           <StatusBadge status={pod.status} />
-          <span className="pod-name">{pod.name}</span>
-        </Space>
-      </div>
-
-      <div className="pod-info">
-        <div className="info-item">
-          CPU: {pod.cpu || '-'} 核 | 内存: {pod.memory || '-'}
-        </div>
-        <div className="info-item">
-          GPU: {pod.gpuType || '无'} x{pod.gpuCount}
-        </div>
-        <div className="info-item warning-text">
-          将在今晚 23:00 自动删除
         </div>
       </div>
 
-      <Divider />
+      {/* Specs */}
+      <div className="pod-specs">
+        <div className="spec-item">
+          <span className="spec-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="4" y="4" width="16" height="16" rx="2"/>
+              <rect x="9" y="9" width="6" height="6"/>
+            </svg>
+          </span>
+          <span className="spec-value">{pod.cpu || '-'} 核</span>
+        </div>
+        <div className="spec-item">
+          <span className="spec-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+              <polyline points="22,6 12,13 2,6"/>
+            </svg>
+          </span>
+          <span className="spec-value">{pod.memory || '-'}</span>
+        </div>
+        <div className="spec-item">
+          <span className="spec-icon gpu">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="2" y="6" width="20" height="12" rx="2"/>
+              <line x1="6" y1="12" x2="6" y2="12"/>
+              <line x1="10" y1="12" x2="10" y2="12"/>
+              <line x1="14" y1="12" x2="14" y2="12"/>
+              <line x1="18" y1="12" x2="18" y2="12"/>
+            </svg>
+          </span>
+          <span className="spec-value">
+            {pod.gpuType ? `${pod.gpuType} ×${pod.gpuCount}` : '无 GPU'}
+          </span>
+        </div>
+      </div>
 
-      {/* 连接按钮区域 */}
+      {/* Warning */}
+      <div className="pod-warning">
+        <span className="warning-icon">⏰</span>
+        <span>今晚 23:00 自动删除</span>
+      </div>
+
+      {/* Connection Buttons */}
       {isRunning && (
         <>
-          <div className="connection-info">
-            <div className="connection-title">连接方式</div>
-            <div className="connection-item" style={{ marginTop: 8 }}>
-              <Space wrap>
-                <Tooltip title="查看 VSCode 连接指南">
-                  <Button 
-                    size="small"
-                    type="primary"
-                    icon={<CodeOutlined />}
-                    onClick={showVSCodeGuide}
-                  >
-                    VSCode 连接
-                  </Button>
-                </Tooltip>
-
-                <Tooltip title="复制 kubectl exec 命令">
-                  <Button 
-                    size="small"
-                    icon={<CopyOutlined />}
-                    onClick={copyKubectlExecCommand}
-                  >
-                    kubectl exec
-                  </Button>
-                </Tooltip>
-
-                <Tooltip title="复制 Namespace">
-                  <Button 
-                    size="small"
-                    icon={<CloudServerOutlined />}
-                    onClick={() => copyToClipboard(pod.namespace, 'Namespace')}
-                  >
-                    Namespace
-                  </Button>
-                </Tooltip>
-              </Space>
-            </div>
+          <Divider className="pod-divider" />
+          <div className="pod-connections">
+            <span className="connections-label">快速连接</span>
+            <Space size="small" wrap>
+              <Tooltip title="VSCode 连接指南">
+                <Button
+                  size="small"
+                  type="primary"
+                  icon={<CodeOutlined />}
+                  onClick={showVSCodeGuide}
+                >
+                  VSCode
+                </Button>
+              </Tooltip>
+              <Tooltip title="复制 kubectl exec 命令">
+                <Button
+                  size="small"
+                  icon={<CopyOutlined />}
+                  onClick={copyKubectlExecCommand}
+                  className="glass-button"
+                >
+                  kubectl
+                </Button>
+              </Tooltip>
+              <Tooltip title="复制 Namespace">
+                <Button
+                  size="small"
+                  icon={<CloudServerOutlined />}
+                  onClick={() => copyToClipboard(pod.namespace, 'Namespace')}
+                  className="glass-button"
+                />
+              </Tooltip>
+            </Space>
           </div>
-          <Divider />
         </>
       )}
 
-      <Space className="pod-actions">
+      {/* Actions */}
+      <Divider className="pod-divider" />
+      <div className="pod-actions">
         <Button
           size="small"
           icon={<EyeOutlined />}
           onClick={() => navigate(`/pods/${pod.id}`)}
+          className="glass-button"
         >
           详情
         </Button>
@@ -227,8 +277,8 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
         >
           删除
         </Button>
-      </Space>
-    </Card>
+      </div>
+    </GlassCard>
   );
 };
 

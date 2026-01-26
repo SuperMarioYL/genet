@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Modal, Form, Select, InputNumber, message, Alert, AutoComplete } from 'antd';
+import { PlusOutlined } from '@ant-design/icons';
 import { getConfig, createPod } from '../../services/api';
+import './CreatePodModal.css';
 
 interface CreatePodModalProps {
   visible: boolean;
@@ -24,7 +26,7 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
     if (visible) {
       loadConfig();
       form.resetFields();
-      setSelectedGPUCount(1); // 默认为 1
+      setSelectedGPUCount(1);
     }
   }, [visible]);
 
@@ -32,7 +34,6 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
     try {
       const data: any = await getConfig();
       setConfig(data);
-      // 设置默认值
       if (data.presetImages && data.presetImages.length > 0) {
         form.setFieldsValue({ image: data.presetImages[0].image });
       }
@@ -40,7 +41,7 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
         form.setFieldsValue({ gpuType: data.gpuTypes[0].name });
       }
       form.setFieldsValue({
-        gpuCount: 1, // 默认为 1，可以改为 0
+        gpuCount: 1,
         cpu: data.ui?.defaultCPU || '4',
         memory: data.ui?.defaultMemory || '8Gi',
       });
@@ -53,20 +54,14 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
     try {
       const values = await form.validateFields();
       setLoading(true);
-
-      // 如果 GPU 数量为 0，删除 gpuType 字段
       const payload = { ...values };
       if (payload.gpuCount === 0) {
         delete payload.gpuType;
       }
-
       await createPod(payload);
       onSuccess();
     } catch (error: any) {
-      if (error.errorFields) {
-        // 表单验证错误
-        return;
-      }
+      if (error.errorFields) return;
       message.error(`创建失败: ${error.message}`);
     } finally {
       setLoading(false);
@@ -76,7 +71,6 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
   const willExceedQuota = () => {
     const newPodCount = currentQuota.podUsed + 1;
     const newGPUCount = currentQuota.gpuUsed + selectedGPUCount;
-    
     return {
       podExceeded: newPodCount > currentQuota.podLimit,
       gpuExceeded: newGPUCount > currentQuota.gpuLimit,
@@ -90,7 +84,12 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
 
   return (
     <Modal
-      title="创建新的 GPU Pod"
+      title={
+        <div className="modal-title-custom">
+          <PlusOutlined />
+          <span>创建新的 Pod</span>
+        </div>
+      }
       open={visible}
       onCancel={onCancel}
       onOk={handleSubmit}
@@ -99,39 +98,28 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
       cancelText="取消"
       okButtonProps={{ disabled: !canCreate }}
       width={600}
+      className="create-pod-modal"
     >
       <Form
         form={form}
         layout="vertical"
-        initialValues={{
-          gpuCount: 1,
-          cpu: '4',
-          memory: '8Gi',
-        }}
+        initialValues={{ gpuCount: 1, cpu: '4', memory: '8Gi' }}
+        className="create-pod-form"
       >
         <Form.Item
           label="基础镜像"
           name="image"
           rules={[
             { required: true, message: '请输入镜像' },
-            {
-              pattern: /^[a-zA-Z0-9\-_./:]+$/,
-              message: '请输入有效的镜像名称',
-            },
+            { pattern: /^[a-zA-Z0-9\-_./:]+$/, message: '请输入有效的镜像名称' },
           ]}
-          help={
-            config?.ui?.enableCustomImage
-              ? '可以从列表选择或输入自定义镜像（如 ubuntu:22.04）'
-              : '请从预设列表中选择镜像'
-          }
+          help={config?.ui?.enableCustomImage ? '可以从列表选择或输入自定义镜像' : '请从预设列表中选择镜像'}
         >
           {config?.ui?.enableCustomImage ? (
             <AutoComplete
               placeholder="选择或输入镜像名称"
               filterOption={(inputValue, option) =>
-                option?.value
-                  ? String(option.value).toUpperCase().indexOf(inputValue.toUpperCase()) !== -1
-                  : false
+                option?.value ? String(option.value).toUpperCase().indexOf(inputValue.toUpperCase()) !== -1 : false
               }
               options={config?.presetImages?.map((img: any) => ({
                 value: img.image,
@@ -149,112 +137,94 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
           )}
         </Form.Item>
 
-        <Form.Item
-          label="GPU 数量"
-          name="gpuCount"
-          rules={[{ required: true, message: '请选择 GPU 数量' }]}
-          help="设置为 0 可创建纯 CPU Pod"
-        >
-          <InputNumber
-            min={0}
-            max={8}
-            style={{ width: '100%' }}
-            onChange={(value) => setSelectedGPUCount(value || 0)}
-          />
-        </Form.Item>
+        <div className="form-row">
+          <Form.Item
+            label="CPU 核数"
+            name="cpu"
+            rules={[
+              { required: true, message: '请输入 CPU 核数' },
+              { pattern: /^[0-9]+(\.[0-9]+)?$/, message: '请输入有效的数字' },
+            ]}
+            className="form-col"
+          >
+            <AutoComplete
+              placeholder="选择或输入"
+              options={(config?.ui?.cpuOptions || ['2', '4', '8', '16']).map((cpu: string) => ({
+                value: cpu,
+                label: `${cpu} 核`,
+              }))}
+            />
+          </Form.Item>
 
-        <Form.Item
-          label="GPU 类型"
-          name="gpuType"
-          rules={[
-            {
-              required: selectedGPUCount > 0,
-              message: '使用 GPU 时请选择 GPU 类型',
-            },
-          ]}
-          hidden={selectedGPUCount === 0}
-        >
-          <Select placeholder="选择 GPU 类型" allowClear>
-            {config?.gpuTypes?.map((gpu: any) => (
-              <Select.Option key={gpu.name} value={gpu.name}>
-                {gpu.name}
-              </Select.Option>
-            ))}
-          </Select>
-        </Form.Item>
+          <Form.Item
+            label="内存大小"
+            name="memory"
+            rules={[
+              { required: true, message: '请输入内存大小' },
+              { pattern: /^[0-9]+(\.[0-9]+)?(Mi|Gi)$/, message: '格式如 4Gi, 512Mi' },
+            ]}
+            className="form-col"
+          >
+            <AutoComplete
+              placeholder="选择或输入"
+              options={(config?.ui?.memoryOptions || ['4Gi', '8Gi', '16Gi', '32Gi']).map((mem: string) => ({
+                value: mem,
+                label: mem,
+              }))}
+            />
+          </Form.Item>
+        </div>
 
-        <Form.Item
-          label="CPU 核数"
-          name="cpu"
-          rules={[
-            { required: true, message: '请输入 CPU 核数' },
-            {
-              pattern: /^[0-9]+(\.[0-9]+)?$/,
-              message: '请输入有效的数字（如 2, 4, 0.5）',
-            },
-          ]}
-          help="可从列表选择或输入自定义值（如 0.5, 2, 4）"
-        >
-          <AutoComplete
-            placeholder="选择或输入 CPU 核数"
-            options={(config?.ui?.cpuOptions || ['2', '4', '8', '16']).map((cpu: string) => ({
-              value: cpu,
-              label: `${cpu} 核`,
-            }))}
-            filterOption={(inputValue, option) =>
-              option?.value ? String(option.value).indexOf(inputValue) !== -1 : false
-            }
-          />
-        </Form.Item>
+        <div className="form-row">
+          <Form.Item
+            label="GPU 数量"
+            name="gpuCount"
+            rules={[{ required: true, message: '请选择 GPU 数量' }]}
+            help="设置为 0 可创建纯 CPU Pod"
+            className="form-col"
+          >
+            <InputNumber
+              min={0}
+              max={8}
+              style={{ width: '100%' }}
+              onChange={(value) => setSelectedGPUCount(value || 0)}
+            />
+          </Form.Item>
 
-        <Form.Item
-          label="内存大小"
-          name="memory"
-          rules={[
-            { required: true, message: '请输入内存大小' },
-            {
-              pattern: /^[0-9]+(\.[0-9]+)?(Mi|Gi)$/,
-              message: '请输入有效的内存值（如 512Mi, 4Gi, 16Gi）',
-            },
-          ]}
-          help="可从列表选择或输入自定义值（如 512Mi, 4Gi）"
-        >
-          <AutoComplete
-            placeholder="选择或输入内存大小"
-            options={(config?.ui?.memoryOptions || ['4Gi', '8Gi', '16Gi', '32Gi']).map((mem: string) => ({
-              value: mem,
-              label: mem,
-            }))}
-            filterOption={(inputValue, option) =>
-              option?.value ? String(option.value).toUpperCase().indexOf(inputValue.toUpperCase()) !== -1 : false
-            }
-          />
-        </Form.Item>
+          <Form.Item
+            label="GPU 类型"
+            name="gpuType"
+            rules={[{ required: selectedGPUCount > 0, message: '请选择 GPU 类型' }]}
+            hidden={selectedGPUCount === 0}
+            className="form-col"
+          >
+            <Select placeholder="选择 GPU 类型" allowClear>
+              {config?.gpuTypes?.map((gpu: any) => (
+                <Select.Option key={gpu.name} value={gpu.name}>{gpu.name}</Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+        </div>
 
-        {/* 配额预测 */}
-        <Alert
-          message={
-            <div>
-              <div>创建后配额使用：</div>
-              <div style={{ marginTop: 8 }}>
-                • Pod: {quotaCheck.newPodCount}/{currentQuota.podLimit}
-                {quotaCheck.podExceeded && <span style={{ color: '#ff4d4f' }}> (超限)</span>}
-              </div>
-              <div>
-                • GPU: {quotaCheck.newGPUCount}/{currentQuota.gpuLimit}
-                {quotaCheck.gpuExceeded && <span style={{ color: '#ff4d4f' }}> (超限)</span>}
-              </div>
+        <div className="quota-preview">
+          <div className="quota-preview-title">创建后配额使用</div>
+          <div className="quota-preview-items">
+            <div className={`quota-preview-item ${quotaCheck.podExceeded ? 'exceeded' : ''}`}>
+              <span className="quota-label">Pod</span>
+              <span className="quota-value">{quotaCheck.newPodCount} / {currentQuota.podLimit}</span>
             </div>
-          }
-          type={canCreate ? 'info' : 'error'}
-          style={{ marginTop: 16 }}
-        />
+            <div className={`quota-preview-item ${quotaCheck.gpuExceeded ? 'exceeded' : ''}`}>
+              <span className="quota-label">GPU</span>
+              <span className="quota-value">{quotaCheck.newGPUCount} / {currentQuota.gpuLimit}</span>
+            </div>
+          </div>
+        </div>
 
         <Alert
-          message="所有 Pod 将在今晚 11:00 自动删除"
+          message={<span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span>⏰</span> 所有 Pod 将在今晚 23:00 自动删除</span>}
           type="warning"
-          showIcon
-          style={{ marginTop: 16 }}
+          showIcon={false}
+          className="time-warning"
         />
       </Form>
     </Modal>
@@ -262,4 +232,3 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
 };
 
 export default CreatePodModal;
-

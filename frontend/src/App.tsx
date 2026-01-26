@@ -2,12 +2,16 @@ import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ConfigProvider, Spin, Result, Button } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
+import { ThemeProvider, useTheme, lightAntdTheme, darkAntdTheme } from './theme';
+import ParticleBackground from './components/ParticleBackground';
 import Dashboard from './pages/Dashboard';
 import PodDetail from './pages/PodDetail';
 import { getAuthStatus, AuthStatus } from './services/api';
 import './App.css';
 
-function App() {
+// 内部组件，使用主题
+const AppContent: React.FC = () => {
+  const { mode } = useTheme();
   const [loading, setLoading] = useState(true);
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -21,7 +25,6 @@ function App() {
       const status = await getAuthStatus();
       setAuthStatus(status);
       
-      // 如果 OAuth 已启用但未认证，跳转到登录页
       if (status.oauthEnabled && !status.authenticated && status.loginURL) {
         window.location.href = status.loginURL;
         return;
@@ -33,38 +36,41 @@ function App() {
     }
   };
 
-  // 加载中
   if (loading) {
     return (
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        height: '100vh' 
-      }}>
-        <Spin size="large" tip="正在检查认证状态..." />
+      <div className="app-loading">
+        <div className="loading-content animate-scale-in">
+          <div className="loading-spinner">
+            <Spin size="large" />
+          </div>
+          <p className="loading-text">正在检查认证状态...</p>
+        </div>
       </div>
     );
   }
 
-  // 错误状态
   if (error) {
     return (
-      <Result
-        status="error"
-        title="认证失败"
-        subTitle={error}
-        extra={
-          <Button type="primary" onClick={() => window.location.reload()}>
-            重试
-          </Button>
-        }
-      />
+      <div className="app-error">
+        <Result
+          status="error"
+          title="认证失败"
+          subTitle={error}
+          extra={
+            <Button type="primary" onClick={() => window.location.reload()}>
+              重试
+            </Button>
+          }
+        />
+      </div>
     );
   }
 
   return (
-    <ConfigProvider locale={zhCN}>
+    <ConfigProvider
+      locale={zhCN}
+      theme={mode === 'light' ? lightAntdTheme : darkAntdTheme}
+    >
       <Router>
         <Routes>
           <Route path="/" element={<Dashboard />} />
@@ -72,6 +78,18 @@ function App() {
         </Routes>
       </Router>
     </ConfigProvider>
+  );
+};
+
+// 主 App 组件
+function App() {
+  return (
+    <ThemeProvider>
+      <div className="app-container">
+        <ParticleBackground />
+        <AppContent />
+      </div>
+    </ThemeProvider>
   );
 }
 

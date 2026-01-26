@@ -1,0 +1,52 @@
+.glass-card-component {
+  background: var(--glass-bg) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid var(--glass-border) !important;
+  border-radius: var(--border-radius) !important;
+  box-shadow: var(--shadow-md) !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  overflow: hidden;
+}
+
+.glass-card-hover:hover {
+  background: var(--glass-hover-bg) !important;
+  box-shadow: var(--shadow-lg) !important;
+  transform: translateY(-4px);
+}
+
+.glass-card-glow {
+  position: relative;
+}
+
+.glass-card-glow::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  background: var(--accent-gradient);
+  border-radius: calc(var(--border-radius) + 2px);
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.glass-card-glow:hover::before {
+  opacity: 0.6;
+}
+
+.glass-card-component .ant-card-head {
+  border-bottom: 1px solid var(--border-color);
+  background: transparent;
+}
+
+.glass-card-component .ant-card-head-title {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.glass-card-component .ant-card-body {
+  color: var(--text-primary);
+}

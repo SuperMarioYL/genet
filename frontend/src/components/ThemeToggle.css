@@ -1,0 +1,87 @@
+.theme-toggle-btn {
+  background: var(--glass-bg) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  border: 1px solid var(--glass-border) !important;
+  border-radius: 50% !important;
+  width: 40px !important;
+  height: 40px !important;
+  padding: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: all 0.3s ease !important;
+  overflow: hidden;
+}
+
+.theme-toggle-btn:hover {
+  background: var(--glass-hover-bg) !important;
+  border-color: var(--accent-primary) !important;
+  transform: rotate(15deg);
+}
+
+.theme-toggle-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+}
+
+.theme-toggle-icon svg {
+  width: 18px;
+  height: 18px;
+  color: var(--text-primary);
+  transition: transform 0.3s ease;
+}
+
+.icon-moon {
+  animation: moonRise 0.3s ease;
+}
+
+.icon-sun {
+  animation: sunRise 0.3s ease;
+}
+
+@keyframes moonRise {
+  from {
+    transform: rotate(-90deg) scale(0.5);
+    opacity: 0;
+  }
+  to {
+    transform: rotate(0) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes sunRise {
+  from {
+    transform: rotate(90deg) scale(0.5);
+    opacity: 0;
+  }
+  to {
+    transform: rotate(0) scale(1);
+    opacity: 1;
+  }
+}
+
+/* Size variants */
+.theme-toggle-btn.ant-btn-sm {
+  width: 32px !important;
+  height: 32px !important;
+}
+
+.theme-toggle-btn.ant-btn-lg {
+  width: 48px !important;
+  height: 48px !important;
+}
+
+.theme-toggle-btn.ant-btn-sm .theme-toggle-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.theme-toggle-btn.ant-btn-lg .theme-toggle-icon svg {
+  width: 22px;
+  height: 22px;
+}

@@ -1,0 +1,96 @@
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+}
+
+.status-small {
+  padding: 2px 8px;
+  font-size: 11px;
+  gap: 4px;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-small .status-dot {
+  width: 5px;
+  height: 5px;
+}
+
+.status-dot.pulse {
+  animation: status-pulse 2s ease-in-out infinite;
+}
+
+@keyframes status-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.2); }
+}
+
+.status-text {
+  white-space: nowrap;
+}
+
+/* Success - Running */
+.status-success {
+  background: rgba(72, 187, 120, 0.15);
+  border-color: rgba(72, 187, 120, 0.3);
+  color: var(--success);
+}
+.status-success .status-dot {
+  background: var(--success);
+  box-shadow: 0 0 8px var(--success);
+}
+
+/* Warning - Pending */
+.status-warning {
+  background: rgba(237, 137, 54, 0.15);
+  border-color: rgba(237, 137, 54, 0.3);
+  color: var(--warning);
+}
+.status-warning .status-dot {
+  background: var(--warning);
+  box-shadow: 0 0 8px var(--warning);
+}
+
+/* Error - Failed */
+.status-error {
+  background: rgba(245, 101, 101, 0.15);
+  border-color: rgba(245, 101, 101, 0.3);
+  color: var(--error);
+}
+.status-error .status-dot {
+  background: var(--error);
+  box-shadow: 0 0 8px var(--error);
+}
+
+/* Info - Creating */
+.status-info {
+  background: rgba(66, 153, 225, 0.15);
+  border-color: rgba(66, 153, 225, 0.3);
+  color: var(--info);
+}
+.status-info .status-dot {
+  background: var(--info);
+  box-shadow: 0 0 8px var(--info);
+}
+
+/* Default */
+.status-default {
+  background: var(--glass-bg);
+  border-color: var(--glass-border);
+  color: var(--text-muted);
+}
+.status-default .status-dot {
+  background: var(--text-muted);
+}

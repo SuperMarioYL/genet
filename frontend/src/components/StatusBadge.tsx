@@ -1,55 +1,54 @@
-import { Tag } from 'antd';
 import React from 'react';
+import './StatusBadge.css';
 
 interface StatusBadgeProps {
   status: string;
+  size?: 'small' | 'default';
 }
 
-const StatusBadge: React.FC<StatusBadgeProps> = ({ status }) => {
+const StatusBadge: React.FC<StatusBadgeProps> = ({ status, size = 'default' }) => {
   const getStatusConfig = () => {
-    // 直接使用后端返回的 status（类似 kubectl get pod 的 STATUS）
     const statusKey = status?.toLowerCase() || '';
 
     switch (statusKey) {
       case 'running':
-        return { color: 'green', text: '运行中' };
+        return { color: 'success', text: '运行中', pulse: true };
       case 'pending':
-        return { color: 'gold', text: '等待中' };
+        return { color: 'warning', text: '等待中', pulse: true };
       case 'terminating':
-        return { color: 'orange', text: '删除中' };
+        return { color: 'warning', text: '删除中', pulse: true };
       case 'containercreating':
-        return { color: 'blue', text: '创建中' };
+        return { color: 'info', text: '创建中', pulse: true };
       case 'crashloopbackoff':
-        return { color: 'red', text: '崩溃重启' };
+        return { color: 'error', text: '崩溃重启', pulse: false };
       case 'imagepullbackoff':
       case 'errimagepull':
-        return { color: 'red', text: '镜像拉取失败' };
+        return { color: 'error', text: '镜像拉取失败', pulse: false };
       case 'error':
-        return { color: 'red', text: '错误' };
+        return { color: 'error', text: '错误', pulse: false };
       case 'failed':
-        return { color: 'red', text: '失败' };
+        return { color: 'error', text: '失败', pulse: false };
       case 'succeeded':
       case 'completed':
-        return { color: 'blue', text: '已完成' };
+        return { color: 'info', text: '已完成', pulse: false };
       case 'oomkilled':
-        return { color: 'red', text: '内存溢出' };
+        return { color: 'error', text: '内存溢出', pulse: false };
       default:
-        // 处理 Init: 前缀的状态
         if (statusKey.startsWith('init:')) {
-          return { color: 'blue', text: status };
+          return { color: 'info', text: status, pulse: true };
         }
-        return { color: 'default', text: status || '未知' };
+        return { color: 'default', text: status || '未知', pulse: false };
     }
   };
 
   const config = getStatusConfig();
 
   return (
-    <Tag color={config.color}>
-      {config.text}
-    </Tag>
+    <span className={`status-badge status-${config.color} ${size === 'small' ? 'status-small' : ''}`}>
+      <span className={`status-dot ${config.pulse ? 'pulse' : ''}`} />
+      <span className="status-text">{config.text}</span>
+    </span>
   );
 };
 
 export default StatusBadge;
-
