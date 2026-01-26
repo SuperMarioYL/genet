@@ -26,10 +26,13 @@
 }
 
 .glass-header {
-  background: var(--header-bg);
+  background: rgba(240, 244, 248, 0.95) !important;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border-bottom: 1px solid var(--header-border);
+}
+[data-theme="dark"] .glass-header {
+  background: rgba(15, 15, 26, 0.95) !important;
 }
 
 .glass-input {
@@ -40,16 +43,22 @@
 }
 
 .glass-button {
-  background: var(--glass-bg);
+  background: rgba(255, 255, 255, 0.9) !important;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  border: 1px solid var(--glass-border);
+  border: 1px solid var(--glass-border) !important;
   transition: all 0.2s ease;
+}
+[data-theme="dark"] .glass-button {
+  background: rgba(40, 40, 70, 0.9) !important;
 }
 
 .glass-button:hover {
-  background: var(--glass-hover-bg);
-  border-color: var(--accent-primary);
+  background: rgba(255, 255, 255, 0.95) !important;
+  border-color: var(--accent-primary) !important;
+}
+[data-theme="dark"] .glass-button:hover {
+  background: rgba(50, 50, 80, 0.95) !important;
 }
 
 /* 渐变按钮 */

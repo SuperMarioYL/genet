@@ -1,6 +1,7 @@
 .dashboard-layout { min-height: 100vh; background: transparent; }
 
-.dashboard-header { position: sticky; top: 0; z-index: 100; padding: 0 24px; height: 72px; display: flex; align-items: center; }
+.dashboard-header { position: sticky; top: 0; z-index: 100; padding: 0 24px; height: 72px; display: flex; align-items: center; background: rgba(240, 244, 248, 0.95) !important; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid var(--border-color); }
+[data-theme="dark"] .dashboard-header { background: rgba(15, 15, 26, 0.95) !important; }
 
 .header-content { display: flex; justify-content: space-between; align-items: center; width: 100%; max-width: 1400px; margin: 0 auto; }
 
