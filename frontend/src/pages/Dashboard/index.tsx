@@ -17,7 +17,7 @@ const Dashboard: React.FC = () => {
   const [createModalVisible, setCreateModalVisible] = useState(false);
   const [kubeconfigModalVisible, setKubeconfigModalVisible] = useState(false);
   const [kubeconfigData, setKubeconfigData] = useState<any>(null);
-  const [oidcEnabled, setOidcEnabled] = useState(false);
+  const [clusterInfo, setClusterInfo] = useState<any>(null);
 
   const loadPods = async () => {
     setLoading(true);
@@ -34,14 +34,18 @@ const Dashboard: React.FC = () => {
 
   useEffect(() => {
     loadPods();
-    // 检查是否启用 OIDC
+    // 获取集群信息
     getClusterInfo().then((info) => {
-      setOidcEnabled(info.oidcEnabled);
+      setClusterInfo(info);
     }).catch(() => {});
     // 每 30 秒自动刷新
     const timer = setInterval(loadPods, 30000);
     return () => clearInterval(timer);
   }, []);
+
+  // 判断是否显示 kubeconfig 按钮
+  // 当 kubeconfigMode 为 "cert" 或 "oidc" 时显示
+  const showKubeconfigButton = clusterInfo?.kubeconfigMode === 'cert' || clusterInfo?.kubeconfigMode === 'oidc';
 
   const handleShowKubeconfig = async () => {
     try {
@@ -84,7 +88,7 @@ const Dashboard: React.FC = () => {
             >
               创建新 Pod
             </Button>
-            {oidcEnabled && (
+            {showKubeconfigButton && (
               <Button
                 icon={<CloudDownloadOutlined />}
                 onClick={handleShowKubeconfig}
@@ -181,23 +185,35 @@ const Dashboard: React.FC = () => {
               <Text code copyable>{kubeconfigData.namespace}</Text>
             </Card>
 
-            <Card size="small" title="安装 kubelogin" style={{ marginBottom: 16 }}>
-              <Paragraph>
-                <Text strong>macOS:</Text>
+            {/* 仅 OIDC 模式显示 kubelogin 安装说明 */}
+            {kubeconfigData.mode === 'oidc' && kubeconfigData.instructions?.installKubelogin && (
+              <Card size="small" title="安装 kubelogin" style={{ marginBottom: 16 }}>
+                <Paragraph>
+                  <Text strong>macOS:</Text>
+                  <br />
+                  <Text code copyable>{kubeconfigData.instructions?.installKubelogin?.macOS}</Text>
+                </Paragraph>
+                <Paragraph>
+                  <Text strong>Linux:</Text>
+                  <br />
+                  <Text code copyable style={{ fontSize: 12 }}>{kubeconfigData.instructions?.installKubelogin?.Linux}</Text>
+                </Paragraph>
+                <Paragraph>
+                  <Text strong>Windows:</Text>
+                  <br />
+                  <Text code copyable>{kubeconfigData.instructions?.installKubelogin?.Windows}</Text>
+                </Paragraph>
+              </Card>
+            )}
+
+            {/* 证书模式显示有效期信息 */}
+            {kubeconfigData.mode === 'cert' && clusterInfo?.certValidityDays && (
+              <Card size="small" title="证书信息" style={{ marginBottom: 16 }}>
+                <Text>证书有效期: <Text strong>{clusterInfo.certValidityDays} 天</Text></Text>
                 <br />
-                <Text code copyable>{kubeconfigData.instructions?.installKubelogin?.macOS}</Text>
-              </Paragraph>
-              <Paragraph>
-                <Text strong>Linux:</Text>
-                <br />
-                <Text code copyable style={{ fontSize: 12 }}>{kubeconfigData.instructions?.installKubelogin?.Linux}</Text>
-              </Paragraph>
-              <Paragraph>
-                <Text strong>Windows:</Text>
-                <br />
-                <Text code copyable>{kubeconfigData.instructions?.installKubelogin?.Windows}</Text>
-              </Paragraph>
-            </Card>
+                <Text type="secondary">证书过期后请重新下载 kubeconfig</Text>
+              </Card>
+            )}
 
             <Card size="small" title="使用说明" style={{ marginBottom: 16 }}>
               <ol style={{ paddingLeft: 20, margin: 0 }}>
@@ -232,4 +248,3 @@ const Dashboard: React.FC = () => {
 };
 
 export default Dashboard;
-

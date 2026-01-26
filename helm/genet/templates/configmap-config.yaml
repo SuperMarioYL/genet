@@ -15,12 +15,16 @@ data:
 {{ toYaml .Values.backend.config.lifecycle | indent 6 }}
     storage:
 {{ toYaml .Values.backend.config.storage | indent 6 }}
+    pod:
+{{ toYaml .Values.backend.config.pod | indent 6 }}
     oauth:
 {{ toYaml .Values.backend.config.oauth | indent 6 }}
     oidcProvider:
 {{ toYaml .Values.backend.config.oidcProvider | indent 6 }}
     cluster:
 {{ toYaml .Values.backend.config.cluster | indent 6 }}
+    kubeconfig:
+{{ toYaml .Values.backend.config.kubeconfig | indent 6 }}
     userRBAC:
 {{ toYaml .Values.backend.config.userRBAC | indent 6 }}
     proxy:
@@ -29,3 +33,5 @@ data:
 {{ toYaml .Values.backend.config.registry | indent 6 }}
     images:
 {{ toYaml .Values.backend.config.images | indent 6 }}
+    kubernetes:
+{{ toYaml .Values.backend.config.kubernetes | indent 6 }}

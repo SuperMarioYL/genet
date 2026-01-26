@@ -387,6 +387,15 @@ frontend:
 cleanup:
   # 每天 23:00 执行清理（删除所有用户 Pod）
   schedule: "0 23 * * *"
+
+  # 节点选择器（K8s 原生格式）
+  nodeSelector: {}
+
+  # 亲和性调度（K8s 原生格式）
+  affinity: {}
+
+  # 容忍度（K8s 原生格式）
+  tolerations: []
   image: genet-backend:latest
 
 # Ingress configuration

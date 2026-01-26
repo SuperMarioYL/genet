@@ -111,12 +111,14 @@ export const getCommitLogs = (id: string): Promise<{ logs: string }> => {
 // Kubeconfig 相关
 export interface ClusterInfo {
   oidcEnabled: boolean;
+  kubeconfigMode: string; // "oidc" 或 "cert"
   clusterName?: string;
   issuerURL?: string;
+  certValidityDays?: number; // 证书有效期（天），仅 cert 模式
 }
 
 export interface KubeconfigInstructions {
-  installKubelogin: Record<string, string>;
+  installKubelogin?: Record<string, string>; // 仅 OIDC 模式
   usage: string[];
 }
 
@@ -124,6 +126,7 @@ export interface KubeconfigResponse {
   kubeconfig: string;
   namespace: string;
   clusterName: string;
+  mode: string; // "oidc" 或 "cert"
   instructions: KubeconfigInstructions;
 }
 

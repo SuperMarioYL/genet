@@ -16,6 +16,18 @@ spec:
         spec:
           serviceAccountName: genet-backend
           restartPolicy: OnFailure
+          {{- with .Values.cleanup.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.cleanup.affinity }}
+          affinity:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.cleanup.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           containers:
           - name: cleanup
             image: {{ .Values.cleanup.image }}
