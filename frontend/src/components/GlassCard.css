@@ -1,18 +1,25 @@
 .glass-card-component {
-  background: var(--glass-bg) !important;
-  backdrop-filter: blur(12px) !important;
-  -webkit-backdrop-filter: blur(12px) !important;
-  border: 1px solid var(--glass-border) !important;
+  background: #ffffff !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
   border-radius: var(--border-radius) !important;
   box-shadow: var(--shadow-md) !important;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
   overflow: hidden;
 }
 
+[data-theme="dark"] .glass-card-component {
+  background: #1e1e32 !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
 .glass-card-hover:hover {
-  background: var(--glass-hover-bg) !important;
+  background: #f8f9fa !important;
   box-shadow: var(--shadow-lg) !important;
   transform: translateY(-4px);
+}
+
+[data-theme="dark"] .glass-card-hover:hover {
+  background: #282846 !important;
 }
 
 .glass-card-glow {
@@ -34,7 +41,7 @@
 }
 
 .glass-card-glow:hover::before {
-  opacity: 0.6;
+  opacity: 0.5;
 }
 
 .glass-card-component .ant-card-head {

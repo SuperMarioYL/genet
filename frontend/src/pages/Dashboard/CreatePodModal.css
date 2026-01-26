@@ -1,5 +1,5 @@
-.create-pod-modal .ant-modal-content { padding: 0; background: rgba(255, 255, 255, 0.95) !important; }
-[data-theme="dark"] .create-pod-modal .ant-modal-content { background: rgba(30, 30, 50, 0.95) !important; }
+.create-pod-modal .ant-modal-content { padding: 0; background: #ffffff !important; }
+[data-theme="dark"] .create-pod-modal .ant-modal-content { background: #1e1e32 !important; }
 .create-pod-modal .ant-modal-header { padding: 20px 24px; margin: 0; }
 .create-pod-modal .ant-modal-body { padding: 24px; }
 .create-pod-modal .ant-modal-footer { padding: 16px 24px; border-top: 1px solid var(--border-color); }
@@ -21,5 +21,5 @@
 .time-warning { background: rgba(237, 137, 54, 0.15) !important; border: 1px solid rgba(237, 137, 54, 0.3) !important; border-radius: 8px !important; backdrop-filter: none !important; }
 .time-warning .ant-alert-message { color: var(--warning); font-size: 13px; }
 
-[data-theme="dark"] .quota-preview { background: rgba(30, 30, 50, 0.95); }
+[data-theme="dark"] .quota-preview { background: #1a1a2e; }
 [data-theme="dark"] .time-warning { background: rgba(237, 137, 54, 0.2) !important; }
