@@ -74,6 +74,28 @@ func (h *KubeconfigHandler) GetKubeconfig(c *gin.Context) {
 
 	// 生成用户 namespace
 	namespace := k8s.GetNamespaceForUser(username)
+	ctx := c.Request.Context()
+
+	// 确保用户 RBAC 存在（如果启用了 userRBAC）
+	if h.config.UserRBAC.Enabled {
+		email, _ := auth.GetEmail(c)
+		if err := h.k8sClient.EnsureUserRBAC(ctx, k8s.UserRBACConfig{
+			Username:  username,
+			Email:     email,
+			Namespace: namespace,
+		}); err != nil {
+			h.log.Error("Failed to ensure user RBAC",
+				zap.String("username", username),
+				zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": fmt.Sprintf("创建用户权限失败: %v", err),
+			})
+			return
+		}
+		h.log.Info("User RBAC ensured",
+			zap.String("username", username),
+			zap.String("namespace", namespace))
+	}
 
 	// 根据模式生成 kubeconfig
 	mode := h.config.Kubeconfig.Mode
@@ -166,6 +188,25 @@ func (h *KubeconfigHandler) DownloadKubeconfig(c *gin.Context) {
 
 	// 生成用户 namespace
 	namespace := k8s.GetNamespaceForUser(username)
+	ctx := c.Request.Context()
+
+	// 确保用户 RBAC 存在（如果启用了 userRBAC）
+	if h.config.UserRBAC.Enabled {
+		email, _ := auth.GetEmail(c)
+		if err := h.k8sClient.EnsureUserRBAC(ctx, k8s.UserRBACConfig{
+			Username:  username,
+			Email:     email,
+			Namespace: namespace,
+		}); err != nil {
+			h.log.Error("Failed to ensure user RBAC for download",
+				zap.String("username", username),
+				zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": fmt.Sprintf("创建用户权限失败: %v", err),
+			})
+			return
+		}
+	}
 
 	// 根据模式生成 kubeconfig
 	mode := h.config.Kubeconfig.Mode
