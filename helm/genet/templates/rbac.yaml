@@ -18,7 +18,12 @@ rules:
 # Pod logs access
 - apiGroups: [""]
   resources: ["pods/log"]
-  verbs: ["get", "list"]
+  verbs: ["get", "list", "create"]
+
+# Pod exec/attach/portforward (needed to grant these permissions to users)
+- apiGroups: [""]
+  resources: ["pods/exec", "pods/attach", "pods/portforward"]
+  verbs: ["get", "create"]
 
 # Events (for monitoring pod status)
 - apiGroups: ["events.k8s.io"]
