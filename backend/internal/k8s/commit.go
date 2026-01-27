@@ -304,7 +304,7 @@ echo ""
 
 # 推送镜像
 echo "Pushing image to registry: %s"
-nerdctl -n k8s.io push %s %s
+nerdctl -n k8s.io %s push %s
 
 echo ""
 echo "=== SUCCESS ==="
@@ -313,8 +313,8 @@ echo "Image %s has been pushed successfully!"
 		insecureFlag,                       // 显示是否使用 insecure
 		spec.PodName,                       // 方式1 grep
 		spec.PodName,                       // 错误信息
-		spec.TargetImage, spec.TargetImage, // commit
-		spec.TargetImage, insecureFlag, spec.TargetImage, // push (添加 insecure flag)
+		spec.TargetImage, spec.TargetImage, // commit: echo, nerdctl commit
+		spec.TargetImage, insecureFlag, spec.TargetImage, // push: echo, insecureFlag, 镜像名
 		spec.TargetImage) // 成功信息
 
 	return script
