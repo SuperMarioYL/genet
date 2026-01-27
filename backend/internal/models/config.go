@@ -43,6 +43,7 @@ type RegistryConfig struct {
 	URL      string `yaml:"url" json:"url"`           // 镜像仓库地址
 	Username string `yaml:"username" json:"username"` // 仓库用户名
 	Password string `yaml:"password" json:"password"` // 仓库密码
+	Insecure bool   `yaml:"insecure" json:"insecure"` // 是否使用 HTTP（不安全）协议，默认 false
 }
 
 // ProxyConfig 代理配置

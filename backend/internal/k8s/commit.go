@@ -244,12 +244,19 @@ func (c *Client) GetCommitJobLogs(ctx context.Context, namespace, podName string
 
 // buildCommitScript 构建 commit 脚本
 func (c *Client) buildCommitScript(spec *CommitSpec, hasAuth bool) string {
+	// 如果配置了 insecure，添加 --insecure-registry 参数
+	insecureFlag := ""
+	if c.config.Registry.Insecure {
+		insecureFlag = "--insecure-registry"
+	}
+
 	script := fmt.Sprintf(`
 set -e
 echo "=== Genet Image Commit ==="
 echo "Source Pod: %s"
 echo "Target Image: %s"
 echo "Node: %s"
+echo "Insecure Registry: %s"
 
 # 查找容器 ID
 echo "Searching for container..."
@@ -297,16 +304,17 @@ echo ""
 
 # 推送镜像
 echo "Pushing image to registry: %s"
-nerdctl -n k8s.io push %s
+nerdctl -n k8s.io push %s %s
 
 echo ""
 echo "=== SUCCESS ==="
 echo "Image %s has been pushed successfully!"
 `, spec.PodName, spec.TargetImage, spec.NodeName,
+		insecureFlag,                       // 显示是否使用 insecure
 		spec.PodName,                       // 方式1 grep
 		spec.PodName,                       // 错误信息
 		spec.TargetImage, spec.TargetImage, // commit
-		spec.TargetImage, spec.TargetImage, // push
+		spec.TargetImage, insecureFlag, spec.TargetImage, // push (添加 insecure flag)
 		spec.TargetImage) // 成功信息
 
 	return script

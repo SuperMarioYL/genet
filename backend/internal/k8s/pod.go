@@ -192,8 +192,9 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 			zap.String("type", spec.GPUType))
 		container.Resources.Requests["nvidia.com/gpu"] = resource.MustParse(fmt.Sprintf("%d", spec.GPUCount))
 		container.Resources.Limits["nvidia.com/gpu"] = resource.MustParse(fmt.Sprintf("%d", spec.GPUCount))
+		// 只设置 DRIVER_CAPABILITIES，不要设置 VISIBLE_DEVICES
+		// NVIDIA Device Plugin 会自动注入正确的 NVIDIA_VISIBLE_DEVICES（只包含分配的 GPU）
 		container.Env = append(container.Env,
-			corev1.EnvVar{Name: "NVIDIA_VISIBLE_DEVICES", Value: "all"},
 			corev1.EnvVar{Name: "NVIDIA_DRIVER_CAPABILITIES", Value: "compute,utility"},
 		)
 	}

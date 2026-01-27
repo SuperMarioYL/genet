@@ -362,6 +362,7 @@ backend:
       url: "" # 镜像仓库地址，如: registry.example.com
       username: "" # 仓库用户名
       password: "" # 仓库密码
+      insecure: false # 是否使用 HTTP（不安全）协议推送镜像，内网 HTTP 仓库设为 true
 
     # 系统依赖镜像配置
     images:

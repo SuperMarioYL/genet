@@ -312,10 +312,14 @@ registry:
   username: ""
   # 仓库密码（可选，用于推送镜像）
   password: ""
+  # 是否使用 HTTP（不安全）协议推送镜像
+  # 内网 HTTP 仓库需要设为 true
+  insecure: false
   # 示例配置：
   # url: "registry.cn-hangzhou.aliyuncs.com"
   # username: "your-username"
   # password: "your-password"
+  # insecure: true  # 内网 HTTP 仓库
 
 # 系统依赖镜像配置
 images:
