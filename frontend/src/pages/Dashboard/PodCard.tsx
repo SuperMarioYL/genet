@@ -64,23 +64,77 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
           <span>连接到 Pod</span>
         </div>
       ),
-      width: 600,
+      width: 700,
       content: (
         <div className="vscode-guide">
+          {/* 环境准备 */}
           <div className="guide-section">
-            <h4>方法 1: VSCode Kubernetes 插件</h4>
-            <ol>
-              <li>安装扩展: <Text code className="mono">ms-kubernetes-tools.vscode-kubernetes-tools</Text></li>
-              <li>点击 VSCode 左侧 Kubernetes 图标</li>
-              <li>展开: 集群 → Namespaces → <Text code>{namespace}</Text> → Pods</li>
-              <li>右键 <Text code>{podName}</Text> → <Text strong>"Attach Visual Studio Code"</Text></li>
+            <h4>📦 环境准备（首次使用）</h4>
+            
+            <div className="setup-step">
+              <div className="step-title">1. 安装 kubectl</div>
+              <div className="setup-commands">
+                <div className="cmd-item">
+                  <span className="cmd-label">macOS:</span>
+                  <Text code copyable className="mono">brew install kubectl@1.23</Text>
+                </div>
+                <div className="cmd-hint">
+                  未安装 Homebrew？先运行：<Text code copyable className="mono" style={{ fontSize: 11 }}>/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"</Text>
+                </div>
+                <div className="cmd-item">
+                  <span className="cmd-label">Windows:</span>
+                  <Text code copyable className="mono">choco install kubernetes-cli --version=1.23.1</Text>
+                </div>
+                <div className="cmd-hint">
+                  未安装 Chocolatey？以管理员身份运行 PowerShell：<Text code copyable className="mono" style={{ fontSize: 11 }}>Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))</Text>
+                </div>
+              </div>
+            </div>
+
+            <div className="setup-step">
+              <div className="step-title">2. 安装 VSCode 插件</div>
+              <ul className="plugin-list">
+                <li><Text code>ms-kubernetes-tools.vscode-kubernetes-tools</Text> (Kubernetes)</li>
+                <li><Text code>ms-vscode-remote.remote-containers</Text> (Dev Containers)</li>
+              </ul>
+            </div>
+
+            <div className="setup-step">
+              <div className="step-title">3. 配置 Kubeconfig</div>
+              <p className="step-desc">
+                点击页面顶部 <Text strong>"Kubeconfig"</Text> 按钮下载配置文件，保存到：
+              </p>
+              <div className="setup-commands">
+                <div className="cmd-item">
+                  <span className="cmd-label">macOS/Linux:</span>
+                  <Text code className="mono">~/.kube/config</Text>
+                </div>
+                <div className="cmd-item">
+                  <span className="cmd-label">Windows:</span>
+                  <Text code className="mono">%USERPROFILE%\.kube\config</Text>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <Divider />
+
+          {/* 连接方式 */}
+          <div className="guide-section">
+            <h4>🔗 连接到 Pod</h4>
+            <ol className="connect-steps">
+              <li>打开 VSCode，点击左侧 <Text strong>Kubernetes</Text> 图标</li>
+              <li>展开集群 → Workloads → Pods</li>
+              <li>右键点击 <Text code>{podName}</Text></li>
+              <li>选择 <Text strong>"Attach Visual Studio Code"</Text></li>
             </ol>
           </div>
 
           <Divider />
 
+          {/* 命令行方式 */}
           <div className="guide-section">
-            <h4>方法 2: kubectl exec</h4>
+            <h4>💻 命令行连接</h4>
             <div className="command-box">
               <code className="mono">{kubectlCmd}</code>
               <Button
@@ -93,8 +147,9 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
 
           <Divider />
 
+          {/* Pod 信息 */}
           <div className="guide-section">
-            <h4>Pod 信息</h4>
+            <h4>📋 Pod 信息</h4>
             <div className="info-grid">
               <div className="info-item">
                 <span className="info-label">Namespace</span>

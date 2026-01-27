@@ -1,9 +1,9 @@
 import { CloudDownloadOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { Button, Col, Empty, Layout, message, Modal, Row, Space, Statistic, Typography } from 'antd';
 import React, { useEffect, useState } from 'react';
-import { downloadKubeconfig, getClusterInfo, getKubeconfig, listPods } from '../../services/api';
 import GlassCard from '../../components/GlassCard';
 import ThemeToggle from '../../components/ThemeToggle';
+import { downloadKubeconfig, getClusterInfo, getKubeconfig, listPods } from '../../services/api';
 import CreatePodModal from './CreatePodModal';
 import './index.css';
 import PodCard from './PodCard';
@@ -306,6 +306,21 @@ const Dashboard: React.FC = () => {
                 <Text type="secondary">证书过期后请重新下载 kubeconfig</Text>
               </GlassCard>
             )}
+
+            <GlassCard size="small" title="⚠️ 首次使用提示" hover={false} className="kubeconfig-card kubeconfig-first-use">
+              <Text>下载后请将文件保存到以下路径：</Text>
+              <div className="kubeconfig-path-list">
+                <div className="path-item">
+                  <Text strong>macOS/Linux:</Text>
+                  <Text code copyable className="mono">~/.kube/config</Text>
+                </div>
+                <div className="path-item">
+                  <Text strong>Windows:</Text>
+                  <Text code copyable className="mono">%USERPROFILE%\.kube\config</Text>
+                </div>
+              </div>
+              <Text type="secondary" style={{ fontSize: 12 }}>如果目录不存在，请先创建 <Text code>.kube</Text> 文件夹</Text>
+            </GlassCard>
 
             <GlassCard size="small" title="使用说明" hover={false} className="kubeconfig-card">
               <ol className="usage-list">

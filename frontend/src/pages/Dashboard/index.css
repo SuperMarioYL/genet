@@ -54,6 +54,11 @@
 .usage-list li:last-child { margin-bottom: 0; }
 .kubeconfig-pre { background: var(--bg-secondary); padding: 16px; border-radius: 8px; overflow: auto; max-height: 300px; font-size: 12px; margin: 0; color: var(--text-primary); border: 1px solid var(--border-color); }
 
+.kubeconfig-first-use { background: rgba(237, 137, 54, 0.08) !important; border-color: rgba(237, 137, 54, 0.3) !important; }
+.kubeconfig-path-list { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
+.kubeconfig-path-list .path-item { display: flex; align-items: center; gap: 12px; }
+.kubeconfig-path-list .path-item > span:first-child { min-width: 100px; }
+
 @media (max-width: 768px) {
   .dashboard-header { padding: 0 16px; }
   .brand-subtitle { display: none; }
