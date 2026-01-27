@@ -50,10 +50,8 @@ func (c *Client) CreatePod(ctx context.Context, spec *PodSpec) (*corev1.Pod, err
 		c.log.Debug("Configuring proxy for pod",
 			zap.String("httpProxy", spec.HTTPProxy),
 			zap.String("httpsProxy", spec.HTTPSProxy))
-		proxySetupScript = fmt.Sprintf(`
-# 配置代理到 ~/.bashrc
-cat >> /root/.bashrc << 'PROXYEOF'
-
+		// 代理配置内容
+		proxyConfig := fmt.Sprintf(`
 # Proxy Configuration (by Genet)
 export HTTP_PROXY="%s"
 export HTTPS_PROXY="%s"
@@ -61,6 +59,21 @@ export http_proxy="%s"
 export https_proxy="%s"
 export NO_PROXY="%s"
 export no_proxy="%s"
+`, spec.HTTPProxy, spec.HTTPSProxy, spec.HTTPProxy, spec.HTTPSProxy, spec.NoProxy, spec.NoProxy)
+
+		proxySetupScript = fmt.Sprintf(`
+# 创建代理配置文件
+cat > /etc/profile.d/proxy.sh << 'PROXYEOF'%s
+PROXYEOF
+chmod +x /etc/profile.d/proxy.sh 2>/dev/null || true
+
+# 同时写入 ~/.profile (sh 登录 shell)
+mkdir -p /root
+cat >> /root/.profile << 'PROXYEOF'%s
+PROXYEOF
+
+# 同时写入 ~/.bashrc (bash 交互式 shell)
+cat >> /root/.bashrc << 'PROXYEOF'%s
 PROXYEOF
 
 # 使当前 shell 生效
@@ -71,7 +84,7 @@ export https_proxy="%s"
 export NO_PROXY="%s"
 export no_proxy="%s"
 echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
-`, spec.HTTPProxy, spec.HTTPSProxy, spec.HTTPProxy, spec.HTTPSProxy, spec.NoProxy, spec.NoProxy,
+`, proxyConfig, proxyConfig, proxyConfig,
 			spec.HTTPProxy, spec.HTTPSProxy, spec.HTTPProxy, spec.HTTPSProxy, spec.NoProxy, spec.NoProxy,
 			spec.HTTPProxy, spec.HTTPSProxy)
 	}
@@ -105,7 +118,7 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 	container := corev1.Container{
 		Name:    "workspace",
 		Image:   spec.Image,
-		Command: []string{"/bin/bash", "-c"},
+		Command: []string{"/bin/sh", "-c"},
 		Args:    []string{startupScript},
 		VolumeMounts: []corev1.VolumeMount{
 			{

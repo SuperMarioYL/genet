@@ -55,7 +55,7 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
     const namespace = pod.namespace;
     const podName = pod.name;
     const container = pod.container || 'workspace';
-    const kubectlCmd = `kubectl exec -it -n ${namespace} ${podName} -c ${container} -- /bin/bash`;
+    const kubectlCmd = `kubectl exec -it -n ${namespace} ${podName} -c ${container} -- /bin/sh`;
 
     Modal.info({
       title: (
@@ -64,7 +64,7 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
           <span>连接到 Pod</span>
         </div>
       ),
-      width: 700,
+      width: 800,
       content: (
         <div className="vscode-guide">
           {/* 环境准备 */}
@@ -74,29 +74,37 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
             <div className="setup-step">
               <div className="step-title">1. 安装 kubectl</div>
               <div className="setup-commands">
-                <div className="cmd-item">
+                <div className="cmd-group">
                   <span className="cmd-label">macOS:</span>
-                  <Text code copyable className="mono">brew install kubectl@1.23</Text>
+                  <pre className="code-block mono">brew install kubectl@1.23</pre>
                 </div>
                 <div className="cmd-hint">
-                  未安装 Homebrew？先运行：<Text code copyable className="mono" style={{ fontSize: 11 }}>/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"</Text>
+                  未安装 Homebrew？先运行：
+                  <pre className="code-block code-block-sm mono">/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"</pre>
                 </div>
-                <div className="cmd-item">
+                <div className="cmd-group">
                   <span className="cmd-label">Windows:</span>
-                  <Text code copyable className="mono">choco install kubernetes-cli --version=1.23.1</Text>
+                  <pre className="code-block mono">choco install kubernetes-cli --version=1.23.1</pre>
                 </div>
                 <div className="cmd-hint">
-                  未安装 Chocolatey？以管理员身份运行 PowerShell：<Text code copyable className="mono" style={{ fontSize: 11 }}>Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))</Text>
+                  未安装 Chocolatey？以管理员身份运行 PowerShell：
+                  <pre className="code-block code-block-sm mono">Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))</pre>
                 </div>
               </div>
             </div>
 
             <div className="setup-step">
               <div className="step-title">2. 安装 VSCode 插件</div>
-              <ul className="plugin-list">
-                <li><Text code>ms-kubernetes-tools.vscode-kubernetes-tools</Text> (Kubernetes)</li>
-                <li><Text code>ms-vscode-remote.remote-containers</Text> (Dev Containers)</li>
-              </ul>
+              <div className="setup-commands">
+                <div className="cmd-group">
+                  <span className="cmd-label">Kubernetes:</span>
+                  <pre className="code-block mono">ms-kubernetes-tools.vscode-kubernetes-tools</pre>
+                </div>
+                <div className="cmd-group">
+                  <span className="cmd-label">Dev Containers:</span>
+                  <pre className="code-block mono">ms-vscode-remote.remote-containers</pre>
+                </div>
+              </div>
             </div>
 
             <div className="setup-step">
@@ -105,13 +113,13 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
                 点击页面顶部 <Text strong>"Kubeconfig"</Text> 按钮下载配置文件，保存到：
               </p>
               <div className="setup-commands">
-                <div className="cmd-item">
+                <div className="cmd-group">
                   <span className="cmd-label">macOS/Linux:</span>
-                  <Text code className="mono">~/.kube/config</Text>
+                  <pre className="code-block mono">~/.kube/config</pre>
                 </div>
-                <div className="cmd-item">
+                <div className="cmd-group">
                   <span className="cmd-label">Windows:</span>
-                  <Text code className="mono">%USERPROFILE%\.kube\config</Text>
+                  <pre className="code-block mono">%USERPROFILE%\.kube\config</pre>
                 </div>
               </div>
             </div>
@@ -135,14 +143,15 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
           {/* 命令行方式 */}
           <div className="guide-section">
             <h4>💻 命令行连接</h4>
-            <div className="command-box">
-              <code className="mono">{kubectlCmd}</code>
-              <Button
-                size="small"
-                icon={<CopyOutlined />}
-                onClick={() => copyToClipboard(kubectlCmd, 'kubectl 命令')}
-              />
-            </div>
+            <pre className="code-block code-block-lg mono">{kubectlCmd}</pre>
+            <Button
+              size="small"
+              icon={<CopyOutlined />}
+              onClick={() => copyToClipboard(kubectlCmd, 'kubectl 命令')}
+              style={{ marginTop: 8 }}
+            >
+              复制命令
+            </Button>
           </div>
 
           <Divider />
@@ -175,7 +184,7 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
     const namespace = pod.namespace;
     const podName = pod.name;
     const container = pod.container || 'workspace';
-    const cmd = `kubectl exec -it -n ${namespace} ${podName} -c ${container} -- /bin/bash`;
+    const cmd = `kubectl exec -it -n ${namespace} ${podName} -c ${container} -- /bin/sh`;
     copyToClipboard(cmd, 'kubectl exec 命令');
   };
 

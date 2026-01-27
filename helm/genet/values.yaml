@@ -228,8 +228,9 @@ backend:
 
       # 容器启动脚本模板
       # 可用变量: {{.ProxyScript}}
+      # 注意: 使用 /bin/sh 以兼容 Alpine 等精简镜像
       startupScript: |
-        #!/bin/bash
+        #!/bin/sh
         set -e
 
         echo "=== Starting Genet Pod ==="
@@ -246,7 +247,7 @@ backend:
         {{.ProxyScript}}
 
         # 显示 GPU 信息（如果有）
-        if command -v nvidia-smi &> /dev/null; then
+        if command -v nvidia-smi > /dev/null 2>&1; then
             echo "===== GPU Information ====="
             nvidia-smi || true
         else

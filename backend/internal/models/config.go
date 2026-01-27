@@ -275,7 +275,7 @@ func DefaultConfig() *Config {
 		Pod: PodConfig{
 			HostNetwork: true,
 			DNSPolicy:   corev1.DNSClusterFirstWithHostNet, // hostNetwork=true 时推荐
-			StartupScript: `#!/bin/bash
+			StartupScript: `#!/bin/sh
 set -e
 
 echo "=== Starting Genet Pod ==="
@@ -292,7 +292,7 @@ echo "VS Code Server directory linked to /workspace/.vscode-server"
 {{.ProxyScript}}
 
 # 显示 GPU 信息（如果有）
-if command -v nvidia-smi &> /dev/null; then
+if command -v nvidia-smi > /dev/null 2>&1; then
     echo "===== GPU Information ====="
     nvidia-smi || true
 else

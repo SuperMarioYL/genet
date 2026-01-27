@@ -249,7 +249,6 @@ const PodDetail: React.FC = () => {
               <Descriptions.Item label="CPU / 内存">{pod.cpu || '-'} 核 / {pod.memory || '-'}</Descriptions.Item>
               <Descriptions.Item label="节点 IP">{pod.nodeIP || '-'}</Descriptions.Item>
               <Descriptions.Item label="创建时间">{dayjs(pod.createdAt).format('YYYY-MM-DD HH:mm:ss')}</Descriptions.Item>
-              <Descriptions.Item label="过期时间">{dayjs(pod.expiresAt).format('YYYY-MM-DD HH:mm:ss')}</Descriptions.Item>
             </Descriptions>
           </GlassCard>
         </div>
