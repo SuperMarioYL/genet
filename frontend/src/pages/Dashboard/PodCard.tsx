@@ -51,11 +51,40 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
     }
   };
 
+  // 可复制代码块组件
+  const CodeBlock: React.FC<{ code: string; size?: 'sm' | 'md' | 'lg'; label?: string }> = ({ code, size = 'md', label }) => {
+    const sizeClass = size === 'sm' ? 'code-block-sm' : size === 'lg' ? 'code-block-lg' : '';
+    return (
+      <div className="code-block-wrapper">
+        <pre className={`code-block mono ${sizeClass}`}>{code}</pre>
+        <Button
+          className="code-copy-btn"
+          size="small"
+          type="text"
+          icon={<CopyOutlined />}
+          onClick={() => copyToClipboard(code, label || '命令')}
+        />
+      </div>
+    );
+  };
+
   const showVSCodeGuide = () => {
     const namespace = pod.namespace;
     const podName = pod.name;
     const container = pod.container || 'workspace';
     const kubectlCmd = `kubectl exec -it -n ${namespace} ${podName} -c ${container} -- /bin/sh`;
+
+    // 命令定义
+    const commands = {
+      kubectlMac: 'brew install kubectl@1.23',
+      kubectlWin: 'choco install kubernetes-cli --version=1.23.1',
+      homebrew: '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"',
+      chocolatey: 'Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString(\'https://community.chocolatey.org/install.ps1\'))',
+      k8sPlugin: 'ms-kubernetes-tools.vscode-kubernetes-tools',
+      devContainerPlugin: 'ms-vscode-remote.remote-containers',
+      kubeconfigMac: '~/.kube/config',
+      kubeconfigWin: '%USERPROFILE%\\.kube\\config',
+    };
 
     Modal.info({
       title: (
@@ -76,19 +105,19 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
               <div className="setup-commands">
                 <div className="cmd-group">
                   <span className="cmd-label">macOS:</span>
-                  <pre className="code-block mono">brew install kubectl@1.23</pre>
+                  <CodeBlock code={commands.kubectlMac} label="kubectl 安装命令" />
                 </div>
                 <div className="cmd-hint">
                   未安装 Homebrew？先运行：
-                  <pre className="code-block code-block-sm mono">/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"</pre>
+                  <CodeBlock code={commands.homebrew} size="sm" label="Homebrew 安装命令" />
                 </div>
                 <div className="cmd-group">
                   <span className="cmd-label">Windows:</span>
-                  <pre className="code-block mono">choco install kubernetes-cli --version=1.23.1</pre>
+                  <CodeBlock code={commands.kubectlWin} label="kubectl 安装命令" />
                 </div>
                 <div className="cmd-hint">
                   未安装 Chocolatey？以管理员身份运行 PowerShell：
-                  <pre className="code-block code-block-sm mono">Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))</pre>
+                  <CodeBlock code={commands.chocolatey} size="sm" label="Chocolatey 安装命令" />
                 </div>
               </div>
             </div>
@@ -98,11 +127,11 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
               <div className="setup-commands">
                 <div className="cmd-group">
                   <span className="cmd-label">Kubernetes:</span>
-                  <pre className="code-block mono">ms-kubernetes-tools.vscode-kubernetes-tools</pre>
+                  <CodeBlock code={commands.k8sPlugin} label="插件 ID" />
                 </div>
                 <div className="cmd-group">
                   <span className="cmd-label">Dev Containers:</span>
-                  <pre className="code-block mono">ms-vscode-remote.remote-containers</pre>
+                  <CodeBlock code={commands.devContainerPlugin} label="插件 ID" />
                 </div>
               </div>
             </div>
@@ -115,11 +144,11 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
               <div className="setup-commands">
                 <div className="cmd-group">
                   <span className="cmd-label">macOS/Linux:</span>
-                  <pre className="code-block mono">~/.kube/config</pre>
+                  <CodeBlock code={commands.kubeconfigMac} label="路径" />
                 </div>
                 <div className="cmd-group">
                   <span className="cmd-label">Windows:</span>
-                  <pre className="code-block mono">%USERPROFILE%\.kube\config</pre>
+                  <CodeBlock code={commands.kubeconfigWin} label="路径" />
                 </div>
               </div>
             </div>
@@ -143,15 +172,7 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
           {/* 命令行方式 */}
           <div className="guide-section">
             <h4>💻 命令行连接</h4>
-            <pre className="code-block code-block-lg mono">{kubectlCmd}</pre>
-            <Button
-              size="small"
-              icon={<CopyOutlined />}
-              onClick={() => copyToClipboard(kubectlCmd, 'kubectl 命令')}
-              style={{ marginTop: 8 }}
-            >
-              复制命令
-            </Button>
+            <CodeBlock code={kubectlCmd} size="lg" label="kubectl 命令" />
           </div>
 
           <Divider />

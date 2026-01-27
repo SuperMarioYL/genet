@@ -41,9 +41,15 @@
 .plugin-list li { margin-bottom: 6px; font-size: 13px; }
 
 /* 代码块样式 */
+.code-block-wrapper {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
 .code-block { 
+  flex: 1;
   margin: 0; 
-  padding: 10px 14px; 
+  padding: 10px 40px 10px 14px; 
   background: var(--bg-code); 
   border: 1px solid var(--border-color); 
   border-radius: 6px; 
@@ -54,8 +60,24 @@
   word-break: break-all;
   line-height: 1.5;
 }
-.code-block-sm { font-size: 11px; padding: 8px 12px; }
-.code-block-lg { font-size: 14px; padding: 12px 16px; }
+.code-block-sm { font-size: 11px; padding: 8px 36px 8px 12px; }
+.code-block-lg { font-size: 14px; padding: 12px 44px 12px 16px; }
+.code-copy-btn {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted) !important;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+.code-copy-btn:hover {
+  opacity: 1;
+  color: var(--accent-primary) !important;
+}
+.code-block-wrapper:hover .code-copy-btn {
+  opacity: 1;
+}
 
 /* 连接步骤 */
 .connect-steps { padding-left: 20px; margin: 0; }
