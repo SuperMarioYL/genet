@@ -245,6 +245,8 @@ func (c *Client) GetCommitJobLogs(ctx context.Context, namespace, podName string
 // buildCommitScript 构建 commit 脚本
 func (c *Client) buildCommitScript(spec *CommitSpec, hasAuth bool) string {
 	// 如果配置了 insecure，添加 --insecure-registry 参数
+	// 注意：这个参数需要宿主机 containerd 也配置了 insecure registry 才能生效
+	// 参考文档：需要在 K8s 节点上配置 /etc/containerd/certs.d/<registry>/hosts.toml
 	insecureFlag := ""
 	if c.config.Registry.Insecure {
 		insecureFlag = "--insecure-registry"
