@@ -1,10 +1,11 @@
-import { CloudServerOutlined, CodeOutlined, CopyOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons';
+import { CloudServerOutlined, CodeOutlined, CopyOutlined, DeleteOutlined, EyeOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import { Button, Divider, Modal, Space, Tooltip, Typography, message } from 'antd';
+import dayjs from 'dayjs';
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import GlassCard from '../../components/GlassCard';
 import StatusBadge from '../../components/StatusBadge';
-import { deletePod } from '../../services/api';
+import { deletePod, extendPod } from '../../services/api';
 import './PodCard.css';
 
 const { Text } = Typography;
@@ -17,6 +18,7 @@ interface PodCardProps {
 const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
   const navigate = useNavigate();
   const [deleting, setDeleting] = useState(false);
+  const [extending, setExtending] = useState(false);
 
   const copyToClipboard = async (text: string, label: string) => {
     try {
@@ -240,6 +242,60 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
 
   const isRunning = pod.status === 'Running';
 
+  // 处理延长保护
+  const handleExtend = async () => {
+    setExtending(true);
+    try {
+      const response = await extendPod(pod.id);
+      message.success(`Pod 已保护至 ${dayjs(response.protectedUntil).format('MM-DD HH:mm')}`);
+      onUpdate();
+    } catch (error: any) {
+      message.error(`延长保护失败: ${error.message}`);
+    } finally {
+      setExtending(false);
+    }
+  };
+
+  // 获取保护状态信息
+  const getProtectionInfo = () => {
+    const protectedUntil = pod.protectedUntil ? dayjs(pod.protectedUntil) : null;
+    const now = dayjs();
+    const today2259 = now.hour(22).minute(59).second(0);
+    
+    if (!protectedUntil || protectedUntil.isBefore(now)) {
+      // 未保护或保护已过期
+      return {
+        type: 'warning' as const,
+        icon: '⏰',
+        text: '今晚 23:00 自动清理',
+        canExtend: true,
+      };
+    }
+    
+    // 判断是否是最后一天（保护截止时间是今天 22:59）
+    const isLastDay = protectedUntil.isSame(today2259, 'minute') || 
+                      (protectedUntil.isAfter(today2259) && protectedUntil.isBefore(today2259.add(1, 'day')));
+    
+    if (isLastDay) {
+      return {
+        type: 'warning' as const,
+        icon: '⚠️',
+        text: '今日 23:00 将清理（可再次延长）',
+        canExtend: true,
+      };
+    }
+    
+    // 还有保护时间
+    return {
+      type: 'success' as const,
+      icon: '✅',
+      text: `已保护至 ${protectedUntil.format('MM-DD HH:mm')}`,
+      canExtend: true,
+    };
+  };
+
+  const protectionInfo = getProtectionInfo();
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'Running': return 'var(--success)';
@@ -296,11 +352,27 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
         </div>
       </div>
 
-      {/* Warning */}
-      <div className="pod-warning">
-        <span className="warning-icon">⏰</span>
-        <span>今晚 23:00 自动删除</span>
-      </div>
+      {/* Protection Status */}
+      <div className={`pod-protection pod-protection-${protectionInfo.type}`}>
+        <div className="protection-info">
+          <span className="protection-icon">{protectionInfo.icon}</span>
+          <span className="protection-text">{protectionInfo.text}</span>
+        </div>
+        {protectionInfo.canExtend && (
+          <Tooltip title="延长保护至明天 22:59">
+                  <Button 
+                    size="small" 
+              type="link"
+              icon={<SafetyCertificateOutlined />}
+              onClick={handleExtend}
+              loading={extending}
+              className="extend-btn"
+            >
+              延长
+            </Button>
+                </Tooltip>
+        )}
+            </div>
 
       {/* Connection Buttons */}
       {isRunning && (
@@ -310,34 +382,34 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
             <span className="connections-label">快速连接</span>
             <Space size="small" wrap>
               <Tooltip title="VSCode 连接指南">
-                <Button
-                  size="small"
-                  type="primary"
-                  icon={<CodeOutlined />}
+                  <Button 
+                    size="small"
+                    type="primary"
+                    icon={<CodeOutlined />}
                   onClick={showVSCodeGuide}
-                >
-                  VSCode
-                </Button>
-              </Tooltip>
+                  >
+                    VSCode
+                  </Button>
+                </Tooltip>
               <Tooltip title="复制 kubectl exec 命令">
-                <Button
-                  size="small"
-                  icon={<CopyOutlined />}
+                  <Button 
+                    size="small"
+                    icon={<CopyOutlined />}
                   onClick={copyKubectlExecCommand}
                   className="glass-button"
-                >
+                  >
                   kubectl
-                </Button>
-              </Tooltip>
+                  </Button>
+                </Tooltip>
               <Tooltip title="复制 Namespace">
-                <Button
-                  size="small"
+                  <Button 
+                    size="small"
                   icon={<CloudServerOutlined />}
                   onClick={() => copyToClipboard(pod.namespace, 'Namespace')}
                   className="glass-button"
                 />
-              </Tooltip>
-            </Space>
+                </Tooltip>
+              </Space>
           </div>
         </>
       )}

@@ -12,8 +12,37 @@
 .spec-icon.gpu { color: var(--accent-primary); }
 .spec-value { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
 
-.pod-warning { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: rgba(237, 137, 54, 0.1); border-radius: 6px; font-size: 12px; color: var(--warning); }
-.warning-icon { font-size: 14px; }
+/* 保护状态样式 */
+.pod-protection {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.pod-protection-warning {
+  background: rgba(237, 137, 54, 0.1);
+  color: var(--warning);
+}
+.pod-protection-success {
+  background: rgba(72, 187, 120, 0.1);
+  color: var(--success);
+}
+.protection-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.protection-icon { font-size: 14px; }
+.protection-text { font-weight: 500; }
+.extend-btn {
+  padding: 0 8px !important;
+  height: auto !important;
+  font-size: 12px !important;
+}
+.pod-protection-warning .extend-btn { color: var(--warning) !important; }
+.pod-protection-success .extend-btn { color: var(--success) !important; }
 
 .pod-divider { margin: 12px 0 !important; border-color: var(--border-color) !important; }
 

@@ -152,6 +152,7 @@ func main() {
 			pods.POST("", podHandler.CreatePod)
 			pods.GET("/:id", podHandler.GetPod)
 			pods.DELETE("/:id", podHandler.DeletePod)
+			pods.POST("/:id/extend", podHandler.ExtendPod) // 延长 Pod 保护期
 			pods.GET("/:id/logs", podHandler.GetPodLogs)
 			pods.GET("/:id/events", podHandler.GetPodEvents)
 			pods.GET("/:id/describe", podHandler.GetPodDescribe)

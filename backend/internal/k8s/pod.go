@@ -199,6 +199,44 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 		)
 	}
 
+	// 构建 workspace volume（根据配置选择 PVC 或 HostPath）
+	var workspaceVolume corev1.Volume
+	storageType := c.config.Storage.Type
+	if storageType == "" {
+		storageType = "pvc" // 默认使用 PVC
+	}
+
+	if storageType == "hostpath" {
+		// HostPath 模式：挂载 <根目录>/<用户名>
+		hostPath := fmt.Sprintf("%s/%s", c.config.Storage.HostPathRoot, spec.Username)
+		hostPathType := corev1.HostPathDirectoryOrCreate
+		workspaceVolume = corev1.Volume{
+			Name: "workspace",
+			VolumeSource: corev1.VolumeSource{
+				HostPath: &corev1.HostPathVolumeSource{
+					Path: hostPath,
+					Type: &hostPathType,
+				},
+			},
+		}
+		c.log.Info("Using HostPath storage",
+			zap.String("path", hostPath),
+			zap.String("user", spec.Username))
+	} else {
+		// PVC 模式：使用用户专属的 PVC
+		workspaceVolume = corev1.Volume{
+			Name: "workspace",
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: fmt.Sprintf("%s-workspace", spec.Username),
+				},
+			},
+		}
+		c.log.Info("Using PVC storage",
+			zap.String("pvc", fmt.Sprintf("%s-workspace", spec.Username)),
+			zap.String("user", spec.Username))
+	}
+
 	// 构建 Pod
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -210,12 +248,13 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 				"app":              spec.Name,
 			},
 			Annotations: map[string]string{
-				"genet.io/created-at": time.Now().Format(time.RFC3339),
-				"genet.io/gpu-type":   spec.GPUType,
-				"genet.io/gpu-count":  fmt.Sprintf("%d", spec.GPUCount),
-				"genet.io/cpu":        cpuRequest,
-				"genet.io/memory":     memoryRequest,
-				"genet.io/image":      spec.Image,
+				"genet.io/created-at":   time.Now().Format(time.RFC3339),
+				"genet.io/gpu-type":     spec.GPUType,
+				"genet.io/gpu-count":    fmt.Sprintf("%d", spec.GPUCount),
+				"genet.io/cpu":          cpuRequest,
+				"genet.io/memory":       memoryRequest,
+				"genet.io/image":        spec.Image,
+				"genet.io/storage-type": storageType,
 			},
 		},
 		Spec: corev1.PodSpec{
@@ -223,16 +262,7 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 			HostNetwork:                  c.config.Pod.HostNetwork,
 			RestartPolicy:                corev1.RestartPolicyNever,
 			Containers:                   []corev1.Container{container},
-			Volumes: []corev1.Volume{
-				{
-					Name: "workspace",
-					VolumeSource: corev1.VolumeSource{
-						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-							ClaimName: fmt.Sprintf("%s-workspace", spec.Username),
-						},
-					},
-				},
-			},
+			Volumes:                      []corev1.Volume{workspaceVolume},
 		},
 	}
 

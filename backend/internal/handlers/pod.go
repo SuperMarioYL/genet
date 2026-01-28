@@ -81,6 +81,14 @@ func (h *PodHandler) ListPods(c *gin.Context) {
 		// 解析时间
 		createdAt, _ := time.Parse(time.RFC3339, pod.Annotations["genet.io/created-at"])
 
+		// 解析保护截止时间
+		var protectedUntil *time.Time
+		if protectedStr := pod.Annotations["genet.io/protected-until"]; protectedStr != "" {
+			if t, err := time.Parse(time.RFC3339, protectedStr); err == nil {
+				protectedUntil = &t
+			}
+		}
+
 		// 获取节点 IP
 		nodeIP := h.getNodeIP(ctx, pod.Spec.NodeName)
 
@@ -91,19 +99,20 @@ func (h *PodHandler) ListPods(c *gin.Context) {
 		}
 
 		podResponses = append(podResponses, models.PodResponse{
-			ID:        pod.Name,
-			Name:      pod.Name,
-			Namespace: namespace,
-			Container: containerName,
-			Status:    h.getPodStatus(&pod),
-			Phase:     string(pod.Status.Phase),
-			Image:     pod.Annotations["genet.io/image"],
-			GPUType:   pod.Annotations["genet.io/gpu-type"],
-			GPUCount:  gpuCount,
-			CPU:       pod.Annotations["genet.io/cpu"],
-			Memory:    pod.Annotations["genet.io/memory"],
-			CreatedAt: createdAt,
-			NodeIP:    nodeIP,
+			ID:             pod.Name,
+			Name:           pod.Name,
+			Namespace:      namespace,
+			Container:      containerName,
+			Status:         h.getPodStatus(&pod),
+			Phase:          string(pod.Status.Phase),
+			Image:          pod.Annotations["genet.io/image"],
+			GPUType:        pod.Annotations["genet.io/gpu-type"],
+			GPUCount:       gpuCount,
+			CPU:            pod.Annotations["genet.io/cpu"],
+			Memory:         pod.Annotations["genet.io/memory"],
+			CreatedAt:      createdAt,
+			NodeIP:         nodeIP,
+			ProtectedUntil: protectedUntil,
 		})
 	}
 
@@ -292,6 +301,14 @@ func (h *PodHandler) GetPod(c *gin.Context) {
 	// 解析时间
 	createdAt, _ := time.Parse(time.RFC3339, pod.Annotations["genet.io/created-at"])
 
+	// 解析保护截止时间
+	var protectedUntil *time.Time
+	if protectedStr := pod.Annotations["genet.io/protected-until"]; protectedStr != "" {
+		if t, err := time.Parse(time.RFC3339, protectedStr); err == nil {
+			protectedUntil = &t
+		}
+	}
+
 	// 获取节点 IP
 	nodeIP := h.getNodeIP(ctx, pod.Spec.NodeName)
 
@@ -302,22 +319,81 @@ func (h *PodHandler) GetPod(c *gin.Context) {
 	}
 
 	response := models.PodResponse{
-		ID:        pod.Name,
-		Name:      pod.Name,
-		Namespace: namespace,
-		Container: containerName,
-		Status:    h.getPodStatus(pod),
-		Phase:     string(pod.Status.Phase),
-		Image:     pod.Annotations["genet.io/image"],
-		GPUType:   pod.Annotations["genet.io/gpu-type"],
-		GPUCount:  gpuCount,
-		CPU:       pod.Annotations["genet.io/cpu"],
-		Memory:    pod.Annotations["genet.io/memory"],
-		CreatedAt: createdAt,
-		NodeIP:    nodeIP,
+		ID:             pod.Name,
+		Name:           pod.Name,
+		Namespace:      namespace,
+		Container:      containerName,
+		Status:         h.getPodStatus(pod),
+		Phase:          string(pod.Status.Phase),
+		Image:          pod.Annotations["genet.io/image"],
+		GPUType:        pod.Annotations["genet.io/gpu-type"],
+		GPUCount:       gpuCount,
+		CPU:            pod.Annotations["genet.io/cpu"],
+		Memory:         pod.Annotations["genet.io/memory"],
+		CreatedAt:      createdAt,
+		NodeIP:         nodeIP,
+		ProtectedUntil: protectedUntil,
 	}
 
 	c.JSON(http.StatusOK, response)
+}
+
+// ExtendPod 延长 Pod 保护期
+// 设置保护截止时间为明天 22:59，跳过下一次 23:00 清理
+func (h *PodHandler) ExtendPod(c *gin.Context) {
+	username, _ := auth.GetUsername(c)
+	podID := c.Param("id")
+	namespace := k8s.GetNamespaceForUser(username)
+	ctx := context.Background()
+
+	h.log.Info("Extending pod protection",
+		zap.String("user", username),
+		zap.String("podID", podID),
+		zap.String("namespace", namespace))
+
+	// 获取 Pod
+	pod, err := h.k8sClient.GetPod(ctx, namespace, podID)
+	if err != nil {
+		h.log.Warn("Pod not found for extension",
+			zap.String("user", username),
+			zap.String("podID", podID),
+			zap.Error(err))
+		c.JSON(http.StatusNotFound, gin.H{"error": "Pod 不存在"})
+		return
+	}
+
+	// 计算保护截止时间：明天 22:59
+	now := time.Now()
+	tomorrow := now.AddDate(0, 0, 1)
+	protectedUntil := time.Date(tomorrow.Year(), tomorrow.Month(), tomorrow.Day(), 22, 59, 0, 0, now.Location())
+
+	// 更新 Pod 注解
+	if pod.Annotations == nil {
+		pod.Annotations = make(map[string]string)
+	}
+	pod.Annotations["genet.io/protected-until"] = protectedUntil.Format(time.RFC3339)
+
+	// 更新 Pod
+	clientset := h.k8sClient.GetClientset()
+	_, err = clientset.CoreV1().Pods(namespace).Update(ctx, pod, metav1.UpdateOptions{})
+	if err != nil {
+		h.log.Error("Failed to extend pod protection",
+			zap.String("user", username),
+			zap.String("podID", podID),
+			zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("延长保护失败: %v", err)})
+		return
+	}
+
+	h.log.Info("Pod protection extended",
+		zap.String("user", username),
+		zap.String("podID", podID),
+		zap.Time("protectedUntil", protectedUntil))
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":        "Pod 保护已延长",
+		"protectedUntil": protectedUntil,
+	})
 }
 
 // DeletePod 删除 Pod

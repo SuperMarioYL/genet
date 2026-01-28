@@ -12,7 +12,14 @@ import (
 )
 
 // EnsurePVC 确保 PVC 存在，不存在则创建
+// 如果使用 HostPath 模式，则跳过 PVC 创建
 func (c *Client) EnsurePVC(ctx context.Context, namespace, username, storageClass, size string) error {
+	// 如果使用 HostPath 模式，不需要创建 PVC
+	storageType := c.config.Storage.Type
+	if storageType == "hostpath" {
+		return nil
+	}
+
 	pvcName := fmt.Sprintf("%s-workspace", username)
 
 	// 检查是否已存在

@@ -13,19 +13,20 @@ type PodRequest struct {
 
 // PodResponse Pod 响应
 type PodResponse struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Namespace string    `json:"namespace"` // Pod 所在的 namespace
-	Container string    `json:"container"` // 主容器名称
-	Status    string    `json:"status"`
-	Phase     string    `json:"phase"`
-	Image     string    `json:"image"`
-	GPUType   string    `json:"gpuType"`
-	GPUCount  int       `json:"gpuCount"`
-	CPU       string    `json:"cpu"`    // CPU 核数
-	Memory    string    `json:"memory"` // 内存大小
-	CreatedAt time.Time `json:"createdAt"`
-	NodeIP    string    `json:"nodeIP"`
+	ID             string     `json:"id"`
+	Name           string     `json:"name"`
+	Namespace      string     `json:"namespace"` // Pod 所在的 namespace
+	Container      string     `json:"container"` // 主容器名称
+	Status         string     `json:"status"`
+	Phase          string     `json:"phase"`
+	Image          string     `json:"image"`
+	GPUType        string     `json:"gpuType"`
+	GPUCount       int        `json:"gpuCount"`
+	CPU            string     `json:"cpu"`    // CPU 核数
+	Memory         string     `json:"memory"` // 内存大小
+	CreatedAt      time.Time  `json:"createdAt"`
+	NodeIP         string     `json:"nodeIP"`
+	ProtectedUntil *time.Time `json:"protectedUntil,omitempty"` // 保护截止时间，nil 表示未保护
 }
 
 // PodListResponse Pod 列表响应
@@ -36,19 +37,17 @@ type PodListResponse struct {
 
 // QuotaInfo 配额信息
 type QuotaInfo struct {
-	PodUsed   int `json:"podUsed"`
-	PodLimit  int `json:"podLimit"`
-	GpuUsed   int `json:"gpuUsed"`
-	GpuLimit  int `json:"gpuLimit"`
+	PodUsed  int `json:"podUsed"`
+	PodLimit int `json:"podLimit"`
+	GpuUsed  int `json:"gpuUsed"`
+	GpuLimit int `json:"gpuLimit"`
 }
-
 
 // ConfigResponse 配置响应
 type ConfigResponse struct {
 	PodLimitPerUser int           `json:"podLimitPerUser"`
 	GpuLimitPerUser int           `json:"gpuLimitPerUser"`
-	GPUTypes        []GPUType     `json:"gpuTypes"`      // 注意：JSON 字段名用小写
+	GPUTypes        []GPUType     `json:"gpuTypes"` // 注意：JSON 字段名用小写
 	PresetImages    []PresetImage `json:"presetImages"`
 	UI              UIConfig      `json:"ui"`
 }
-

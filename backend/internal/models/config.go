@@ -122,9 +122,19 @@ type KubeconfigConfig struct {
 
 // StorageConfig 存储配置
 type StorageConfig struct {
+	// 存储类型: "pvc" 或 "hostpath"
+	// pvc: 使用 PersistentVolumeClaim（默认）
+	// hostpath: 使用宿主机目录，路径为 HostPathRoot/<username>
+	Type string `yaml:"type" json:"type"`
+
+	// PVC 模式配置
 	StorageClass string `yaml:"storageClass" json:"storageClass"` // 用户 workspace PVC 的 StorageClass
 	Size         string `yaml:"size" json:"size"`                 // 用户 workspace PVC 的大小
 	AccessMode   string `yaml:"accessMode" json:"accessMode"`     // PVC 访问模式: ReadWriteOnce (RWO) 或 ReadWriteMany (RWX)
+
+	// HostPath 模式配置
+	HostPathRoot string `yaml:"hostPathRoot" json:"hostPathRoot"` // HostPath 根目录，实际挂载路径为 HostPathRoot/<username>
+
 	// 注意：ExtraVolumes 已废弃，请使用 Pod.ExtraVolumes 和 Pod.ExtraVolumeMounts（K8s 原生格式）
 	ExtraVolumes []ExtraVolume `yaml:"extraVolumes,omitempty" json:"extraVolumes,omitempty"` // 废弃：请使用 pod.extraVolumes
 }
@@ -268,9 +278,11 @@ func DefaultConfig() *Config {
 			Timezone:       "Asia/Shanghai",
 		},
 		Storage: StorageConfig{
+			Type:         "pvc", // 默认使用 PVC
 			StorageClass: "hostpath",
 			Size:         "50Gi",
-			AccessMode:   "ReadWriteMany", // 默认 RWX
+			AccessMode:   "ReadWriteMany",          // 默认 RWX
+			HostPathRoot: "/data/genet/workspaces", // HostPath 模式的根目录
 			ExtraVolumes: []ExtraVolume{},
 		},
 		Pod: PodConfig{

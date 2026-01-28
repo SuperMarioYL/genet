@@ -100,7 +100,12 @@ backend:
       timezone: "Asia/Shanghai"
 
     storage:
-      # 用户 workspace PVC 配置
+      # 存储类型: "pvc" 或 "hostpath"
+      # - pvc: 使用 PersistentVolumeClaim（默认，推荐生产环境）
+      # - hostpath: 使用宿主机目录，路径为 hostPathRoot/<username>（适合单节点或测试）
+      type: "pvc"
+
+      # ========== PVC 模式配置 ==========
       storageClass: "standard" # 根据集群调整
       size: "50Gi"
       # PVC 访问模式
@@ -109,6 +114,12 @@ backend:
       # - ReadOnlyMany (ROX): 多节点只读
       # - ReadWriteOncePod (RWOP): 单 Pod 读写（K8s 1.22+）
       accessMode: "ReadWriteOnce"
+
+      # ========== HostPath 模式配置 ==========
+      # 宿主机根目录，实际挂载路径为 hostPathRoot/<username>
+      # 例如: /data/genet/workspaces/alice, /data/genet/workspaces/bob
+      # 注意: 需要确保节点上该目录有足够的权限和空间
+      hostPathRoot: "/data/genet/workspaces"
 
       # 注意：extraVolumes 已废弃，请使用下面的 pod.extraVolumes（K8s 原生格式）
       # extraVolumes: []

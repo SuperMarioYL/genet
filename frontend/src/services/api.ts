@@ -66,6 +66,16 @@ export const deletePod = (id: string) => {
   return api.delete(`/pods/${id}`);
 };
 
+// 延长 Pod 保护期
+export interface ExtendPodResponse {
+  message: string;
+  protectedUntil: string;
+}
+
+export const extendPod = (id: string): Promise<ExtendPodResponse> => {
+  return api.post(`/pods/${id}/extend`);
+};
+
 export const getPodLogs = (id: string) => {
   return api.get(`/pods/${id}/logs`);
 };
