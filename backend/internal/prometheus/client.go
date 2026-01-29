@@ -353,9 +353,29 @@ func FormatMemory(mib float64) string {
 }
 
 // ParseDeviceID 解析设备ID为整数
+// 支持格式: "0", "1", "nvidia0", "nvidia1", "device0", "gpu0" 等
 func ParseDeviceID(id string) int {
+	// 先尝试直接解析数字
 	if n, err := strconv.Atoi(id); err == nil {
 		return n
 	}
-	return 0
+
+	// 尝试提取末尾的数字 (如 "nvidia0" -> 0, "device1" -> 1)
+	// 从后往前找连续的数字
+	numStart := len(id)
+	for i := len(id) - 1; i >= 0; i-- {
+		if id[i] >= '0' && id[i] <= '9' {
+			numStart = i
+		} else {
+			break
+		}
+	}
+
+	if numStart < len(id) {
+		if n, err := strconv.Atoi(id[numStart:]); err == nil {
+			return n
+		}
+	}
+
+	return -1 // 返回 -1 表示无法解析，而不是 0（避免和 GPU 0 混淆）
 }
