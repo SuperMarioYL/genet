@@ -13,14 +13,11 @@ interface AcceleratorHeatmapProps {
 }
 
 // 根据利用率计算颜色
-// 空闲: 绿色, 占用: 黄(60°) → 橙(30°) → 红(0°) 渐变
-const getUtilizationColor = (utilization: number, status: string): string => {
-  if (status === 'free') {
-    return 'hsl(120, 70%, 45%)'; // 绿色 - 空闲
-  }
-  // 占用时: 黄(60°) → 橙(30°) → 红(0°)
-  // utilization 0-100 映射到 hue 60-0
-  const hue = 60 - (utilization * 0.6);
+// 利用率 0-100: 绿(120°) → 黄(60°) → 橙(30°) → 红(0°) 渐变
+const getUtilizationColor = (utilization: number): string => {
+  // utilization 0-100 映射到 hue 120-0
+  // 0% = 绿色(120°), 50% = 黄色(60°), 100% = 红色(0°)
+  const hue = 120 - (utilization * 1.2);
   return `hsl(${Math.max(0, hue)}, 70%, 45%)`;
 };
 
@@ -59,9 +56,9 @@ const DeviceCell: React.FC<{
     ? (slot.memoryUsed || 0) / slot.memoryTotal * 100
     : 0;
 
-  // 取最大值决定颜色
+  // 取最大值决定颜色（利用率和显存利用率取大）
   const maxUtil = Math.max(slot.utilization, memoryUtilization);
-  const color = getUtilizationColor(maxUtil, slot.status);
+  const color = getUtilizationColor(maxUtil);
 
   const tooltipContent = (
     <div className="device-tooltip">
@@ -288,10 +285,6 @@ const AcceleratorHeatmap: React.FC<AcceleratorHeatmapProps> = ({
 
       <div className="heatmap-footer">
         <div className="heatmap-legend">
-          <div className="legend-item">
-            <div className="legend-color" style={{ backgroundColor: 'hsl(120, 70%, 45%)' }} />
-            <span>Free</span>
-          </div>
           <div className="legend-gradient-section">
             <span className="legend-gradient-label">0%</span>
             <div className="legend-gradient-bar" />
