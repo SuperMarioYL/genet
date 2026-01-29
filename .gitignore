@@ -5,6 +5,7 @@
 *.dylib
 bin/
 dist/
+.claude
 
 # Test binary
 *.test

@@ -9,22 +9,23 @@ import (
 
 // Config 系统配置
 type Config struct {
-	PodLimitPerUser int                `yaml:"podLimitPerUser" json:"podLimitPerUser"`
-	GpuLimitPerUser int                `yaml:"gpuLimitPerUser" json:"gpuLimitPerUser"`
-	GPU             GPUConfig          `yaml:"gpu" json:"gpu"`
-	UI              UIConfig           `yaml:"ui" json:"ui"`
-	Lifecycle       LifecycleConfig    `yaml:"lifecycle" json:"lifecycle"`
-	Storage         StorageConfig      `yaml:"storage" json:"storage"`
-	Pod             PodConfig          `yaml:"pod" json:"pod"`
-	OAuth           OAuthConfig        `yaml:"oauth" json:"oauth"`
-	OIDCProvider    OIDCProviderConfig `yaml:"oidcProvider" json:"oidcProvider"`
-	Cluster         ClusterConfig      `yaml:"cluster" json:"cluster"`
-	UserRBAC        UserRBACConfig     `yaml:"userRBAC" json:"userRBAC"`
-	Proxy           ProxyConfig        `yaml:"proxy" json:"proxy"`
-	Registry        RegistryConfig     `yaml:"registry" json:"registry"`
-	Images          ImagesConfig       `yaml:"images" json:"images"`
-	Kubernetes      KubernetesConfig   `yaml:"kubernetes" json:"kubernetes"`
-	Kubeconfig      KubeconfigConfig   `yaml:"kubeconfig" json:"kubeconfig"`
+	PodLimitPerUser  int                 `yaml:"podLimitPerUser" json:"podLimitPerUser"`
+	GpuLimitPerUser  int                 `yaml:"gpuLimitPerUser" json:"gpuLimitPerUser"`
+	GPU              GPUConfig           `yaml:"gpu" json:"gpu"`
+	UI               UIConfig            `yaml:"ui" json:"ui"`
+	Lifecycle        LifecycleConfig     `yaml:"lifecycle" json:"lifecycle"`
+	Storage          StorageConfig       `yaml:"storage" json:"storage"`
+	Pod              PodConfig           `yaml:"pod" json:"pod"`
+	OAuth            OAuthConfig         `yaml:"oauth" json:"oauth"`
+	OIDCProvider     OIDCProviderConfig  `yaml:"oidcProvider" json:"oidcProvider"`
+	Cluster          ClusterConfig       `yaml:"cluster" json:"cluster"`
+	UserRBAC         UserRBACConfig      `yaml:"userRBAC" json:"userRBAC"`
+	Proxy            ProxyConfig         `yaml:"proxy" json:"proxy"`
+	Registry         RegistryConfig      `yaml:"registry" json:"registry"`
+	Images           ImagesConfig        `yaml:"images" json:"images"`
+	Kubernetes       KubernetesConfig    `yaml:"kubernetes" json:"kubernetes"`
+	Kubeconfig    KubeconfigConfig `yaml:"kubeconfig" json:"kubeconfig"`
+	PrometheusURL string           `yaml:"prometheusURL" json:"prometheusURL"` // Prometheus 地址，如 http://prometheus.monitoring:9090
 }
 
 // ImagesConfig 系统依赖镜像配置
@@ -122,21 +123,90 @@ type KubeconfigConfig struct {
 
 // StorageConfig 存储配置
 type StorageConfig struct {
+	// ========== 新配置格式（推荐）==========
+	// 存储卷列表，支持配置多个存储卷
+	Volumes []StorageVolume `yaml:"volumes,omitempty" json:"volumes,omitempty"`
+
+	// ========== 旧配置格式（向后兼容）==========
 	// 存储类型: "pvc" 或 "hostpath"
 	// pvc: 使用 PersistentVolumeClaim（默认）
 	// hostpath: 使用宿主机目录，路径为 HostPathRoot/<username>
-	Type string `yaml:"type" json:"type"`
+	Type string `yaml:"type,omitempty" json:"type,omitempty"`
 
 	// PVC 模式配置
-	StorageClass string `yaml:"storageClass" json:"storageClass"` // 用户 workspace PVC 的 StorageClass
-	Size         string `yaml:"size" json:"size"`                 // 用户 workspace PVC 的大小
-	AccessMode   string `yaml:"accessMode" json:"accessMode"`     // PVC 访问模式: ReadWriteOnce (RWO) 或 ReadWriteMany (RWX)
+	StorageClass string `yaml:"storageClass,omitempty" json:"storageClass,omitempty"` // 用户 workspace PVC 的 StorageClass
+	Size         string `yaml:"size,omitempty" json:"size,omitempty"`                 // 用户 workspace PVC 的大小
+	AccessMode   string `yaml:"accessMode,omitempty" json:"accessMode,omitempty"`     // PVC 访问模式: ReadWriteOnce (RWO) 或 ReadWriteMany (RWX)
 
 	// HostPath 模式配置
-	HostPathRoot string `yaml:"hostPathRoot" json:"hostPathRoot"` // HostPath 根目录，实际挂载路径为 HostPathRoot/<username>
+	HostPathRoot string `yaml:"hostPathRoot,omitempty" json:"hostPathRoot,omitempty"` // HostPath 根目录，实际挂载路径为 HostPathRoot/<username>
 
 	// 注意：ExtraVolumes 已废弃，请使用 Pod.ExtraVolumes 和 Pod.ExtraVolumeMounts（K8s 原生格式）
 	ExtraVolumes []ExtraVolume `yaml:"extraVolumes,omitempty" json:"extraVolumes,omitempty"` // 废弃：请使用 pod.extraVolumes
+}
+
+// StorageVolume 存储卷配置
+//
+// 可用模板变量（在 Pod 创建时替换）:
+//   - {username}   : 当前登录用户名，如 "alice"
+//   - {volumeName} : 存储卷名称，即 Name 字段的值
+type StorageVolume struct {
+	// 基础配置
+	Name      string `yaml:"name" json:"name"`           // 卷名称（必填）
+	MountPath string `yaml:"mountPath" json:"mountPath"` // 挂载路径（必填）
+	ReadOnly  bool   `yaml:"readOnly" json:"readOnly"`   // 是否只读，默认 false
+
+	// 存储类型: "pvc" 或 "hostpath"
+	Type string `yaml:"type" json:"type"`
+
+	// ========== PVC 模式配置 ==========
+	StorageClass string `yaml:"storageClass,omitempty" json:"storageClass,omitempty"` // StorageClass 名称
+	Size         string `yaml:"size,omitempty" json:"size,omitempty"`                 // PVC 大小，如 "50Gi"
+	AccessMode   string `yaml:"accessMode,omitempty" json:"accessMode,omitempty"`     // 访问模式: ReadWriteOnce, ReadWriteMany, ReadOnlyMany
+	// PVC 命名模板，支持变量: {username}, {volumeName}
+	// 默认: "genet-{username}-{volumeName}"
+	PVCNameTemplate string `yaml:"pvcNameTemplate,omitempty" json:"pvcNameTemplate,omitempty"`
+	// PVC 删除策略，决定 Pod 删除时 PVC 的处理方式
+	// "Retain": 保留 PVC（默认，用户数据持久化）
+	// "Delete": 随 Pod 删除（临时存储场景）
+	ReclaimPolicy string `yaml:"reclaimPolicy,omitempty" json:"reclaimPolicy,omitempty"`
+
+	// ========== HostPath 模式配置 ==========
+	// 路径模板，支持变量: {username}
+	// 例如: "/data/workspaces/{username}" 会生成 "/data/workspaces/alice"
+	// 如果不包含 {username}，则所有用户共享同一路径
+	HostPath string `yaml:"hostPath,omitempty" json:"hostPath,omitempty"`
+}
+
+// GetEffectiveVolumes 获取有效的存储卷配置（兼容新旧格式）
+func (s *StorageConfig) GetEffectiveVolumes() []StorageVolume {
+	// 如果配置了新格式，直接返回
+	if len(s.Volumes) > 0 {
+		return s.Volumes
+	}
+
+	// 兼容旧格式：转换为新格式
+	vol := StorageVolume{
+		Name:      "workspace",
+		MountPath: "/workspace",
+		Type:      s.Type,
+		ReadOnly:  false,
+	}
+
+	if s.Type == "" {
+		vol.Type = "pvc" // 默认 PVC
+	}
+
+	if vol.Type == "pvc" {
+		vol.StorageClass = s.StorageClass
+		vol.Size = s.Size
+		vol.AccessMode = s.AccessMode
+	} else {
+		// hostpath 模式：使用旧的 HostPathRoot/<username> 格式
+		vol.HostPath = s.HostPathRoot + "/{username}"
+	}
+
+	return []StorageVolume{vol}
 }
 
 // ExtraVolume 额外存储配置
@@ -204,6 +274,76 @@ type GPUType struct {
 	Name         string            `yaml:"name" json:"name"`
 	ResourceName string            `yaml:"resourceName" json:"resourceName"`
 	NodeSelector map[string]string `yaml:"nodeSelector" json:"nodeSelector"`
+	// 以下字段用于热力图展示（可选，如果不填则使用默认值）
+	Type       string `yaml:"type,omitempty" json:"type,omitempty"`             // 类型标识，如 "nvidia"、"ascend"，用于分组
+	MetricName string `yaml:"metricName,omitempty" json:"metricName,omitempty"` // Prometheus 指标名
+}
+
+// AcceleratorType 加速卡类型配置（用于热力图）
+type AcceleratorType struct {
+	Type         string `yaml:"type" json:"type"`                 // "nvidia" | "ascend"
+	Label        string `yaml:"label" json:"label"`               // "NVIDIA GPU" | "华为昇腾 NPU"
+	ResourceName string `yaml:"resourceName" json:"resourceName"` // "nvidia.com/gpu" | "huawei.com/Ascend910"
+	MetricName   string `yaml:"metricName" json:"metricName"`     // "DCGM_FI_DEV_GPU_UTIL" | "npu_chip_info_utilization"
+}
+
+// GetAcceleratorTypes 从 GPU.AvailableTypes 推导出热力图需要的加速卡类型
+// 按 resourceName 去重，合并相同资源类型的配置
+func (c *Config) GetAcceleratorTypes() []AcceleratorType {
+	seen := make(map[string]bool)
+	result := []AcceleratorType{}
+
+	for _, gpuType := range c.GPU.AvailableTypes {
+		// 跳过已处理的资源类型
+		if seen[gpuType.ResourceName] {
+			continue
+		}
+		seen[gpuType.ResourceName] = true
+
+		// 推导类型标识和标签
+		accType := AcceleratorType{
+			ResourceName: gpuType.ResourceName,
+			Type:         gpuType.Type,
+			MetricName:   gpuType.MetricName,
+		}
+
+		// 如果没有配置 type，根据 resourceName 推导
+		if accType.Type == "" {
+			switch {
+			case gpuType.ResourceName == "nvidia.com/gpu":
+				accType.Type = "nvidia"
+			case gpuType.ResourceName == "huawei.com/Ascend910":
+				accType.Type = "ascend"
+			default:
+				accType.Type = gpuType.ResourceName
+			}
+		}
+
+		// 根据 type 设置默认 Label 和 MetricName
+		if accType.Label == "" {
+			switch accType.Type {
+			case "nvidia":
+				accType.Label = "NVIDIA GPU"
+			case "ascend":
+				accType.Label = "华为昇腾 NPU"
+			default:
+				accType.Label = gpuType.Name
+			}
+		}
+
+		if accType.MetricName == "" {
+			switch accType.Type {
+			case "nvidia":
+				accType.MetricName = "DCGM_FI_DEV_GPU_UTIL"
+			case "ascend":
+				accType.MetricName = "npu_chip_info_utilization"
+			}
+		}
+
+		result = append(result, accType)
+	}
+
+	return result
 }
 
 // PresetImage 预设镜像
@@ -379,5 +519,6 @@ tail -f /dev/null
 			Mode:              "cert", // 默认使用证书模式
 			CertValidityHours: 8760,   // 默认 1 年
 		},
+		PrometheusURL: "", // 默认不启用，需要配置 Prometheus 地址
 	}
 }

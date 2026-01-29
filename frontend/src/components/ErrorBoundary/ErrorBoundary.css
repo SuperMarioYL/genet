@@ -1,0 +1,23 @@
+.error-boundary-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background: var(--bg-primary);
+}
+
+.error-boundary-container .ant-result {
+  padding: 48px 32px;
+  background: var(--glass-bg);
+  border-radius: 16px;
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border);
+}
+
+.error-boundary-container .ant-result-title {
+  color: var(--text-primary);
+}
+
+.error-boundary-container .ant-result-subtitle {
+  color: var(--text-secondary);
+}

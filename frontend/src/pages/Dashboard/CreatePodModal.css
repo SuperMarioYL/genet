@@ -23,3 +23,47 @@
 
 [data-theme="dark"] .quota-preview { background: #1a1a2e; }
 [data-theme="dark"] .time-warning { background: rgba(237, 137, 54, 0.2) !important; }
+
+/* 高级设置样式 */
+.advanced-settings-collapse {
+  margin-bottom: 16px;
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+}
+
+.advanced-settings-collapse .ant-collapse-header {
+  padding: 12px 16px !important;
+}
+
+.advanced-settings-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.advanced-settings-content {
+  padding: 4px 0;
+}
+
+.node-select-item {
+  margin-bottom: 16px;
+}
+
+.gpu-selector-wrapper {
+  margin-top: 8px;
+  padding: 16px;
+  background: var(--bg-primary);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+[data-theme="dark"] .advanced-settings-collapse {
+  background: #1a1a2e;
+}
+
+[data-theme="dark"] .gpu-selector-wrapper {
+  background: #141425;
+}

@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ConfigProvider, Spin, Result, Button } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import { ThemeProvider, useTheme, lightAntdTheme, darkAntdTheme } from './theme';
+import ErrorBoundary from './components/ErrorBoundary';
 import ParticleBackground from './components/ParticleBackground';
 import Dashboard from './pages/Dashboard';
 import PodDetail from './pages/PodDetail';
@@ -13,7 +14,7 @@ import './App.css';
 const AppContent: React.FC = () => {
   const { mode } = useTheme();
   const [loading, setLoading] = useState(true);
-  const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
+  const [, setAuthStatus] = useState<AuthStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -84,12 +85,14 @@ const AppContent: React.FC = () => {
 // 主 App 组件
 function App() {
   return (
-    <ThemeProvider>
-      <div className="app-container">
-        <ParticleBackground />
-        <AppContent />
-      </div>
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <div className="app-container">
+          <ParticleBackground />
+          <AppContent />
+        </div>
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 }
 

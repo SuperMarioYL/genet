@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strings"
 	"text/template"
 	"time"
 
+	"github.com/uc-package/genet/internal/models"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -27,11 +29,9 @@ type PodSpec struct {
 	HTTPProxy  string // HTTP 代理
 	HTTPSProxy string // HTTPS 代理
 	NoProxy    string // 不代理列表
-}
-
-// GeneratePodName 生成 Pod 名称
-func GeneratePodName(username string) string {
-	return fmt.Sprintf("pod-%s-%d", username, time.Now().Unix())
+	// 高级配置
+	NodeName   string // 指定调度节点（可选）
+	GPUDevices []int  // 指定 GPU 卡编号（可选），如 [0, 2, 5]
 }
 
 // CreatePod 创建 Pod
@@ -42,7 +42,9 @@ func (c *Client) CreatePod(ctx context.Context, spec *PodSpec) (*corev1.Pod, err
 		zap.String("user", spec.Username),
 		zap.String("image", spec.Image),
 		zap.Int("gpuCount", spec.GPUCount),
-		zap.String("gpuType", spec.GPUType))
+		zap.String("gpuType", spec.GPUType),
+		zap.String("nodeName", spec.NodeName),
+		zap.Ints("gpuDevices", spec.GPUDevices))
 
 	// 构建代理配置脚本片段
 	proxySetupScript := ""
@@ -114,18 +116,13 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 
 	startupScript := scriptBuf.String()
 
-	// 主容器
+	// 主容器（VolumeMounts 在后面动态添加）
 	container := corev1.Container{
-		Name:    "workspace",
-		Image:   spec.Image,
-		Command: []string{"/bin/sh", "-c"},
-		Args:    []string{startupScript},
-		VolumeMounts: []corev1.VolumeMount{
-			{
-				Name:      "workspace",
-				MountPath: "/workspace",
-			},
-		},
+		Name:         "workspace",
+		Image:        spec.Image,
+		Command:      []string{"/bin/sh", "-c"},
+		Args:         []string{startupScript},
+		VolumeMounts: []corev1.VolumeMount{},
 	}
 
 	// 应用资源配置（优先使用用户指定的值）
@@ -185,56 +182,92 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 		)
 	}
 
-	// 如果需要 GPU
+	// 如果需要加速卡（GPU/NPU）
 	if spec.GPUCount > 0 {
-		c.log.Debug("Configuring GPU resources",
+		c.log.Debug("Configuring accelerator resources",
 			zap.Int("count", spec.GPUCount),
 			zap.String("type", spec.GPUType))
-		container.Resources.Requests["nvidia.com/gpu"] = resource.MustParse(fmt.Sprintf("%d", spec.GPUCount))
-		container.Resources.Limits["nvidia.com/gpu"] = resource.MustParse(fmt.Sprintf("%d", spec.GPUCount))
-		// 只设置 DRIVER_CAPABILITIES，不要设置 VISIBLE_DEVICES
-		// NVIDIA Device Plugin 会自动注入正确的 NVIDIA_VISIBLE_DEVICES（只包含分配的 GPU）
-		container.Env = append(container.Env,
-			corev1.EnvVar{Name: "NVIDIA_DRIVER_CAPABILITIES", Value: "compute,utility"},
-		)
+
+		// 从配置中查找对应的资源名称和类型
+		resourceName := "nvidia.com/gpu" // 默认 NVIDIA GPU
+		acceleratorType := "nvidia"
+		for _, gpuType := range c.config.GPU.AvailableTypes {
+			if gpuType.Name == spec.GPUType {
+				resourceName = gpuType.ResourceName
+				if gpuType.Type != "" {
+					acceleratorType = gpuType.Type
+				}
+				break
+			}
+		}
+
+		// 设置资源请求和限制
+		container.Resources.Requests[corev1.ResourceName(resourceName)] = resource.MustParse(fmt.Sprintf("%d", spec.GPUCount))
+		container.Resources.Limits[corev1.ResourceName(resourceName)] = resource.MustParse(fmt.Sprintf("%d", spec.GPUCount))
+
+		// 根据加速卡类型设置环境变量
+		switch acceleratorType {
+		case "nvidia":
+			// NVIDIA GPU: 设置 DRIVER_CAPABILITIES
+			container.Env = append(container.Env,
+				corev1.EnvVar{Name: "NVIDIA_DRIVER_CAPABILITIES", Value: "compute,utility"},
+			)
+			// 如果用户指定了具体的 GPU 卡，设置 NVIDIA_VISIBLE_DEVICES
+			// 否则让 Device Plugin 自动注入
+			if len(spec.GPUDevices) > 0 {
+				deviceStr := intsToCommaString(spec.GPUDevices)
+				container.Env = append(container.Env,
+					corev1.EnvVar{Name: "NVIDIA_VISIBLE_DEVICES", Value: deviceStr},
+				)
+				c.log.Debug("Set NVIDIA_VISIBLE_DEVICES for specific GPU selection",
+					zap.String("devices", deviceStr))
+			}
+		case "ascend":
+			// 华为昇腾 NPU: 设置 ASCEND 相关环境变量
+			container.Env = append(container.Env,
+				corev1.EnvVar{Name: "ASCEND_GLOBAL_LOG_LEVEL", Value: "3"}, // 日志级别: 0-DEBUG, 1-INFO, 2-WARNING, 3-ERROR
+			)
+			// 如果用户指定了具体的 NPU 卡，设置 ASCEND_VISIBLE_DEVICES
+			if len(spec.GPUDevices) > 0 {
+				deviceStr := intsToCommaString(spec.GPUDevices)
+				container.Env = append(container.Env,
+					corev1.EnvVar{Name: "ASCEND_VISIBLE_DEVICES", Value: deviceStr},
+				)
+				c.log.Debug("Set ASCEND_VISIBLE_DEVICES for specific NPU selection",
+					zap.String("devices", deviceStr))
+			}
+		}
+
+		c.log.Debug("Accelerator configured",
+			zap.String("resourceName", resourceName),
+			zap.String("acceleratorType", acceleratorType),
+			zap.Int("count", spec.GPUCount))
 	}
 
-	// 构建 workspace volume（根据配置选择 PVC 或 HostPath）
-	var workspaceVolume corev1.Volume
-	storageType := c.config.Storage.Type
-	if storageType == "" {
-		storageType = "pvc" // 默认使用 PVC
+	// 构建存储卷（支持多存储卷配置）
+	storageVolumes := c.config.Storage.GetEffectiveVolumes()
+	var volumes []corev1.Volume
+	var volumeMounts []corev1.VolumeMount
+	var storageTypeAnnotation string
+
+	for _, storageVol := range storageVolumes {
+		volume, volumeMount := c.buildStorageVolume(storageVol, spec.Username)
+		volumes = append(volumes, volume)
+		volumeMounts = append(volumeMounts, volumeMount)
+
+		c.log.Info("Storage volume configured",
+			zap.String("name", storageVol.Name),
+			zap.String("type", storageVol.Type),
+			zap.String("mountPath", storageVol.MountPath),
+			zap.String("user", spec.Username))
 	}
 
-	if storageType == "hostpath" {
-		// HostPath 模式：挂载 <根目录>/<用户名>
-		hostPath := fmt.Sprintf("%s/%s", c.config.Storage.HostPathRoot, spec.Username)
-		hostPathType := corev1.HostPathDirectoryOrCreate
-		workspaceVolume = corev1.Volume{
-			Name: "workspace",
-			VolumeSource: corev1.VolumeSource{
-				HostPath: &corev1.HostPathVolumeSource{
-					Path: hostPath,
-					Type: &hostPathType,
-				},
-			},
-		}
-		c.log.Info("Using HostPath storage",
-			zap.String("path", hostPath),
-			zap.String("user", spec.Username))
-	} else {
-		// PVC 模式：使用用户专属的 PVC
-		workspaceVolume = corev1.Volume{
-			Name: "workspace",
-			VolumeSource: corev1.VolumeSource{
-				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-					ClaimName: fmt.Sprintf("%s-workspace", spec.Username),
-				},
-			},
-		}
-		c.log.Info("Using PVC storage",
-			zap.String("pvc", fmt.Sprintf("%s-workspace", spec.Username)),
-			zap.String("user", spec.Username))
+	// 添加 VolumeMounts 到容器
+	container.VolumeMounts = append(container.VolumeMounts, volumeMounts...)
+
+	// 设置 annotation（使用第一个卷的类型作为主要存储类型）
+	if len(storageVolumes) > 0 {
+		storageTypeAnnotation = storageVolumes[0].Type
 	}
 
 	// 构建 Pod
@@ -254,7 +287,8 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 				"genet.io/cpu":          cpuRequest,
 				"genet.io/memory":       memoryRequest,
 				"genet.io/image":        spec.Image,
-				"genet.io/storage-type": storageType,
+				"genet.io/storage-type": storageTypeAnnotation,
+				"genet.io/gpu-devices":  intsToCommaString(spec.GPUDevices), // 记录指定的 GPU 卡编号
 			},
 		},
 		Spec: corev1.PodSpec{
@@ -262,7 +296,7 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 			HostNetwork:                  c.config.Pod.HostNetwork,
 			RestartPolicy:                corev1.RestartPolicyNever,
 			Containers:                   []corev1.Container{container},
-			Volumes:                      []corev1.Volume{workspaceVolume},
+			Volumes:                      volumes,
 		},
 	}
 
@@ -274,6 +308,13 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 	// 应用 DNS Config
 	if c.config.Pod.DNSConfig != nil {
 		pod.Spec.DNSConfig = c.config.Pod.DNSConfig
+	}
+
+	// 如果指定了节点名称，直接调度到该节点
+	if spec.NodeName != "" {
+		pod.Spec.NodeName = spec.NodeName
+		c.log.Debug("Pod scheduled to specific node",
+			zap.String("nodeName", spec.NodeName))
 	}
 
 	// 应用 NodeSelector（合并全局配置和 GPU 特定配置）
@@ -411,6 +452,12 @@ func (c *Client) GetPod(ctx context.Context, namespace, name string) (*corev1.Po
 	return pod, nil
 }
 
+// PodExists 检查 Pod 是否存在
+func (c *Client) PodExists(ctx context.Context, namespace, name string) bool {
+	_, err := c.clientset.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
+	return err == nil
+}
+
 // ListPods 列出用户的所有 Pod
 func (c *Client) ListPods(ctx context.Context, namespace string) ([]corev1.Pod, error) {
 	list, err := c.clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
@@ -451,4 +498,101 @@ func (c *Client) GetPodLogs(ctx context.Context, namespace, name string, tailLin
 	}
 
 	return string(logs), nil
+}
+
+// buildStorageVolume 根据存储卷配置构建 K8s Volume 和 VolumeMount
+func (c *Client) buildStorageVolume(storageVol models.StorageVolume, username string) (corev1.Volume, corev1.VolumeMount) {
+	volumeMount := corev1.VolumeMount{
+		Name:      storageVol.Name,
+		MountPath: storageVol.MountPath,
+		ReadOnly:  storageVol.ReadOnly,
+	}
+
+	var volume corev1.Volume
+
+	if storageVol.Type == "hostpath" {
+		// HostPath 模式
+		// 支持 {username} 变量替换
+		hostPath := expandPathTemplate(storageVol.HostPath, username, storageVol.Name)
+		hostPathType := corev1.HostPathDirectoryOrCreate
+		volume = corev1.Volume{
+			Name: storageVol.Name,
+			VolumeSource: corev1.VolumeSource{
+				HostPath: &corev1.HostPathVolumeSource{
+					Path: hostPath,
+					Type: &hostPathType,
+				},
+			},
+		}
+	} else {
+		// PVC 模式（默认）
+		pvcName := storageVol.PVCNameTemplate
+		if pvcName == "" {
+			// 默认 PVC 命名: genet-<username>-<volumeName>
+			pvcName = fmt.Sprintf("genet-%s-%s", username, storageVol.Name)
+		} else {
+			// 支持 {username}, {volumeName} 变量替换
+			pvcName = expandPathTemplate(pvcName, username, storageVol.Name)
+		}
+
+		volume = corev1.Volume{
+			Name: storageVol.Name,
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: pvcName,
+					ReadOnly:  storageVol.ReadOnly,
+				},
+			},
+		}
+	}
+
+	return volume, volumeMount
+}
+
+// expandPathTemplate 展开路径模板中的变量
+// 支持: {username}, {volumeName}
+func expandPathTemplate(tmpl, username, volumeName string) string {
+	if tmpl == "" {
+		return tmpl
+	}
+	result := strings.ReplaceAll(tmpl, "{username}", username)
+	result = strings.ReplaceAll(result, "{volumeName}", volumeName)
+	return result
+}
+
+// intsToCommaString 将整数切片转换为逗号分隔的字符串
+// 例如: [0, 2, 5] -> "0,2,5"
+func intsToCommaString(nums []int) string {
+	if len(nums) == 0 {
+		return ""
+	}
+	strs := make([]string, len(nums))
+	for i, n := range nums {
+		strs[i] = fmt.Sprintf("%d", n)
+	}
+	return strings.Join(strs, ",")
+}
+
+// GetPVCName 获取存储卷对应的 PVC 名称
+// storageVol: 存储卷配置
+// username: 用户名
+// 返回 PVC 名称，如果是 HostPath 类型则返回空字符串
+func (c *Client) GetPVCName(storageVol models.StorageVolume, username string) string {
+	if storageVol.Type == "hostpath" {
+		return ""
+	}
+	pvcName := storageVol.PVCNameTemplate
+	if pvcName == "" {
+		// 默认 PVC 命名: genet-<username>-<volumeName>
+		pvcName = fmt.Sprintf("genet-%s-%s", username, storageVol.Name)
+	} else {
+		// 支持 {username}, {volumeName} 变量替换
+		pvcName = expandPathTemplate(pvcName, username, storageVol.Name)
+	}
+	return pvcName
+}
+
+// GetStorageVolumes 获取有效的存储卷配置（对外暴露）
+func (c *Client) GetStorageVolumes() []models.StorageVolume {
+	return c.config.Storage.GetEffectiveVolumes()
 }

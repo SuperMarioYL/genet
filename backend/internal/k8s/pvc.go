@@ -13,14 +13,15 @@ import (
 
 // EnsurePVC 确保 PVC 存在，不存在则创建
 // 如果使用 HostPath 模式，则跳过 PVC 创建
-func (c *Client) EnsurePVC(ctx context.Context, namespace, username, storageClass, size string) error {
+// userIdentifier: 用户标识（username-emailPrefix）
+func (c *Client) EnsurePVC(ctx context.Context, namespace, userIdentifier, storageClass, size string) error {
 	// 如果使用 HostPath 模式，不需要创建 PVC
 	storageType := c.config.Storage.Type
 	if storageType == "hostpath" {
 		return nil
 	}
 
-	pvcName := fmt.Sprintf("%s-workspace", username)
+	pvcName := fmt.Sprintf("%s-workspace", userIdentifier)
 
 	// 检查是否已存在
 	_, err := c.clientset.CoreV1().PersistentVolumeClaims(namespace).Get(ctx, pvcName, metav1.GetOptions{})
@@ -41,8 +42,8 @@ func (c *Client) EnsurePVC(ctx context.Context, namespace, username, storageClas
 			Name:      pvcName,
 			Namespace: namespace,
 			Labels: map[string]string{
-				"genet.io/user":    username,
-				"genet.io/managed": "true",
+				"genet.io/user-identifier": userIdentifier,
+				"genet.io/managed":         "true",
 			},
 		},
 		Spec: corev1.PersistentVolumeClaimSpec{

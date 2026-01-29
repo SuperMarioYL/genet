@@ -5,13 +5,23 @@ podLimitPerUser: 3
 gpuLimitPerUser: 3
 
 gpu:
+  # GPU/NPU 类型配置
+  # - name: UI 显示名称（创建 Pod 时选择）
+  # - resourceName: K8s 资源名称
+  # - type: 类型标识，用于热力图分组（如 nvidia、ascend）
+  # - metricName: Prometheus 指标名（用于热力图获取利用率）
+  # - nodeSelector: 节点选择器（可选）
   availableTypes:
     - name: "NVIDIA A100"
       resourceName: "nvidia.com/gpu"
+      type: "nvidia"
+      metricName: "DCGM_FI_DEV_GPU_UTIL"
       nodeSelector:
         gpu-type: "a100"
     - name: "NVIDIA V100"
       resourceName: "nvidia.com/gpu"
+      type: "nvidia"
+      metricName: "DCGM_FI_DEV_GPU_UTIL"
       nodeSelector:
         gpu-type: "v100"
   presetImages:
@@ -45,25 +55,62 @@ lifecycle:
   timezone: "Asia/Shanghai"
 
 storage:
-  # 存储类型: "pvc" 或 "hostpath"
-  # - pvc: 使用 PersistentVolumeClaim（默认）
-  # - hostpath: 使用宿主机目录，路径为 hostPathRoot/<username>
-  type: "pvc" # 本地开发使用 pvc，生产环境可选 hostpath
+  # ============================================
+  # 存储卷配置（新格式，推荐）
+  # ============================================
+  # 支持配置多个存储卷，每个用户的 Pod 会挂载所有配置的存储卷
+  #
+  # 可用模板变量（在 Pod 创建时由后端替换）:
+  # - {username}   : 当前登录用户名，如 "alice"
+  # - {volumeName} : 存储卷名称，即 volumes[].name 的值
+  #
+  # 字段说明:
+  # - name: 卷名称（必填）
+  # - mountPath: 挂载路径（必填）
+  # - type: "pvc" 或 "hostpath"
+  # - readOnly: 是否只读，默认 false
+  #
+  # PVC 模式字段:
+  # - storageClass: StorageClass 名称
+  # - size: PVC 大小
+  # - accessMode: 访问模式 (ReadWriteOnce, ReadWriteMany, ReadOnlyMany)
+  # - pvcNameTemplate: PVC 命名模板，支持 {username}, {volumeName}
+  #
+  # HostPath 模式字段:
+  # - hostPath: 路径模板，支持 {username}
+  volumes:
+    # 用户工作空间（每用户独立 PVC）
+    - name: "workspace"
+      mountPath: "/workspace"
+      type: "pvc"
+      storageClass: "hostpath" # Docker Desktop 使用 hostpath
+      size: "10Gi"
+      accessMode: "ReadWriteOnce"
 
-  # ========== PVC 模式配置 ==========
-  storageClass: "hostpath" # Docker Desktop 使用 hostpath
-  size: "10Gi"
-  # PVC 访问模式
-  # - ReadWriteOnce (RWO): 单节点读写
-  # - ReadWriteMany (RWX): 多节点读写（需要 NFS 等支持）
-  accessMode: "ReadWriteOnce"
+    # 示例：共享数据目录（HostPath，所有用户共享，只读）
+    # - name: "shared-data"
+    #   mountPath: "/data"
+    #   type: "hostpath"
+    #   hostPath: "/mnt/shared-data"
+    #   readOnly: true
 
-  # ========== HostPath 模式配置 ==========
-  # 宿主机根目录，实际挂载路径为 hostPathRoot/<username>
-  # 例如: /data/genet/workspaces/alice
-  hostPathRoot: "/data/genet/workspaces"
+    # 示例：用户独立的 HostPath 缓存目录
+    # - name: "user-cache"
+    #   mountPath: "/cache"
+    #   type: "hostpath"
+    #   hostPath: "/data/cache/{username}"
 
-  # 注意：extraVolumes 已废弃，请使用下面的 pod.extraVolumes（K8s 原生格式）
+  # ============================================
+  # 旧格式配置（向后兼容，不推荐）
+  # ============================================
+  # 如果配置了上面的 volumes，以下配置会被忽略
+  # type: "pvc"
+  # storageClass: "hostpath"
+  # size: "10Gi"
+  # accessMode: "ReadWriteOnce"
+  # hostPathRoot: "/data/genet/workspaces"
+
+  # 注意：extraVolumes 已废弃，请使用上面的 volumes 或 pod.extraVolumes
   # extraVolumes: []
 
 # ============================================
@@ -393,3 +440,10 @@ kubeconfig:
 userRBAC:
   enabled: true # 是否启用用户 RBAC 管理
   autoCreate: true # 登录时自动创建用户 Namespace 和 RBAC
+
+# ============================================
+# 加速卡热力图配置
+# ============================================
+# Prometheus 地址（用于获取 GPU/NPU 实时利用率）
+# 留空则不从 Prometheus 获取指标，仅从 K8s 获取 Pod 占用信息
+prometheusURL: "" # 如: http://prometheus.monitoring:9090

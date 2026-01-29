@@ -9,6 +9,11 @@ type PodRequest struct {
 	GPUCount int    `json:"gpuCount" binding:"min=0,max=8"` // 支持 0 GPU，不使用 required（0 会被认为是空值）
 	CPU      string `json:"cpu"`                            // CPU 核数，如 "2", "4"
 	Memory   string `json:"memory"`                         // 内存大小，如 "4Gi", "8Gi"
+	// 高级配置字段
+	NodeName   string `json:"nodeName,omitempty"`   // 指定调度节点（可选）
+	GPUDevices []int  `json:"gpuDevices,omitempty"` // 指定 GPU 卡编号（可选），如 [0, 2, 5]
+	// Pod 名称自定义
+	Name string `json:"name,omitempty"` // 自定义 Pod 名称后缀（可选），如 "train", "dev"，为空则使用时间戳
 }
 
 // PodResponse Pod 响应

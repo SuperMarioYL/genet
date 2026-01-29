@@ -35,3 +35,4 @@ data:
 {{ toYaml .Values.backend.config.images | indent 6 }}
     kubernetes:
 {{ toYaml .Values.backend.config.kubernetes | indent 6 }}
+    prometheusURL: {{ .Values.backend.config.prometheusURL | default "" | quote }}

@@ -937,7 +937,8 @@ func (p *Provider) ensureUserRBAC(ctx context.Context, username, email string) e
 		return fmt.Errorf("K8s client not initialized")
 	}
 
-	namespace := k8s.GetNamespaceForUser(username)
+	userIdentifier := k8s.GetUserIdentifier(username, email)
+	namespace := k8s.GetNamespaceForUserIdentifier(userIdentifier)
 	return p.k8sClient.EnsureUserRBAC(ctx, k8s.UserRBACConfig{
 		Username:  username,
 		Email:     email,

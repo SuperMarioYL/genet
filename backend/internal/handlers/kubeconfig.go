@@ -71,14 +71,15 @@ func (h *KubeconfigHandler) GetKubeconfig(c *gin.Context) {
 		})
 		return
 	}
+	email, _ := auth.GetEmail(c)
 
 	// 生成用户 namespace
-	namespace := k8s.GetNamespaceForUser(username)
+	userIdentifier := k8s.GetUserIdentifier(username, email)
+	namespace := k8s.GetNamespaceForUserIdentifier(userIdentifier)
 	ctx := c.Request.Context()
 
 	// 确保用户 RBAC 存在（如果启用了 userRBAC）
 	if h.config.UserRBAC.Enabled {
-		email, _ := auth.GetEmail(c)
 		if err := h.k8sClient.EnsureUserRBAC(ctx, k8s.UserRBACConfig{
 			Username:  username,
 			Email:     email,
@@ -185,14 +186,15 @@ func (h *KubeconfigHandler) DownloadKubeconfig(c *gin.Context) {
 		})
 		return
 	}
+	email, _ := auth.GetEmail(c)
 
 	// 生成用户 namespace
-	namespace := k8s.GetNamespaceForUser(username)
+	userIdentifier := k8s.GetUserIdentifier(username, email)
+	namespace := k8s.GetNamespaceForUserIdentifier(userIdentifier)
 	ctx := c.Request.Context()
 
 	// 确保用户 RBAC 存在（如果启用了 userRBAC）
 	if h.config.UserRBAC.Enabled {
-		email, _ := auth.GetEmail(c)
 		if err := h.k8sClient.EnsureUserRBAC(ctx, k8s.UserRBACConfig{
 			Username:  username,
 			Email:     email,

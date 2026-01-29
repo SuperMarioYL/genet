@@ -22,7 +22,26 @@ api.interceptors.response.use(
     return response.data;
   },
   (error) => {
-    const message = error.response?.data?.error || error.message || '请求失败';
+    // 安全地提取错误信息
+    let message = '请求失败';
+
+    if (error.response) {
+      // 服务器返回了错误响应
+      const data = error.response.data;
+      if (data && typeof data === 'object' && 'error' in data) {
+        message = String(data.error);
+      } else if (typeof data === 'string' && data.length > 0) {
+        message = data;
+      } else {
+        message = `服务器错误 (${error.response.status})`;
+      }
+    } else if (error.request) {
+      // 请求已发送但无响应
+      message = '网络连接失败，请检查网络';
+    } else if (error.message) {
+      message = error.message;
+    }
+
     return Promise.reject(new Error(message));
   }
 );
@@ -50,11 +69,23 @@ export const getConfig = () => {
 };
 
 // Pod 相关
+export interface CreatePodRequest {
+  image: string;
+  gpuType?: string;
+  gpuCount: number;
+  cpu?: string;
+  memory?: string;
+  // 高级配置
+  nodeName?: string;      // 指定调度节点（可选）
+  gpuDevices?: number[];  // 指定 GPU 卡编号（可选）
+  name?: string;          // 自定义 Pod 名称后缀（可选）
+}
+
 export const listPods = () => {
   return api.get('/pods');
 };
 
-export const createPod = (data: any) => {
+export const createPod = (data: CreatePodRequest) => {
   return api.post('/pods', data);
 };
 
@@ -151,6 +182,74 @@ export const getKubeconfig = (): Promise<KubeconfigResponse> => {
 export const downloadKubeconfig = () => {
   // 使用 window.location 触发文件下载
   window.location.href = '/api/kubeconfig/download';
+};
+
+// GPU 热力图相关
+export interface DeviceSlot {
+  index: number;
+  status: 'free' | 'used';
+  utilization: number;
+  pod?: {
+    name: string;
+    namespace: string;
+    user: string;
+    email?: string;
+    gpuCount?: number;
+    startTime?: string;
+  };
+}
+
+export interface NodeGPUInfo {
+  nodeName: string;
+  nodeIP: string;
+  deviceType: string;
+  totalDevices: number;
+  usedDevices: number;
+  slots: DeviceSlot[];
+  timeSharingEnabled: boolean;  // 是否支持时分复用
+  timeSharingReplicas: number;  // 每卡可共享数
+}
+
+export interface AcceleratorGroup {
+  type: string;
+  label: string;
+  resourceName: string;
+  nodes: NodeGPUInfo[];
+  totalDevices: number;
+  usedDevices: number;
+}
+
+export interface GPUOverviewResponse {
+  acceleratorGroups: AcceleratorGroup[];
+  summary: {
+    totalDevices: number;
+    usedDevices: number;
+    byType: Record<string, { total: number; used: number }>;
+  };
+  updatedAt: string;
+  prometheusEnabled: boolean;  // Prometheus 是否已配置
+}
+
+export const getGPUOverview = (): Promise<GPUOverviewResponse> => {
+  return api.get('/cluster/gpu-overview');
+};
+
+// 共用 GPU 的 Pod 信息
+export interface SharedGPUPod {
+  name: string;
+  namespace: string;
+  user: string;
+  gpuDevices: number[];   // 该 Pod 使用的所有 GPU
+  sharedWith: number[];   // 与当前 Pod 共用的 GPU 编号
+  createdAt: string;
+}
+
+export interface SharedGPUPodsResponse {
+  pods: SharedGPUPod[];
+}
+
+export const getSharedGPUPods = (id: string): Promise<SharedGPUPodsResponse> => {
+  return api.get(`/pods/${id}/shared-gpus`);
 };
 
 export default api;

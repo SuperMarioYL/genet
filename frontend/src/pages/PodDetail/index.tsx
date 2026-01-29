@@ -1,12 +1,12 @@
 import { ArrowLeftOutlined, CodeOutlined, CopyOutlined, DesktopOutlined, DownloadOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
-import { Alert, Button, Descriptions, Input, Layout, message, Modal, Progress, Space, Table, Tabs, Tag, Tooltip, Typography } from 'antd';
+import { Alert, Button, Descriptions, Input, Layout, message, Modal, Progress, Skeleton, Space, Switch, Table, Tabs, Tag, Tooltip, Typography } from 'antd';
 import dayjs from 'dayjs';
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import GlassCard from '../../components/GlassCard';
 import StatusBadge from '../../components/StatusBadge';
 import ThemeToggle from '../../components/ThemeToggle';
-import { commitImage, CommitStatus, getCommitLogs, getCommitStatus, getPod, getPodDescribe, getPodEvents, getPodLogs } from '../../services/api';
+import { commitImage, CommitStatus, getCommitLogs, getCommitStatus, getPod, getPodDescribe, getPodEvents, getPodLogs, getSharedGPUPods, SharedGPUPod } from '../../services/api';
 import './index.css';
 
 const { Header, Content } = Layout;
@@ -30,18 +30,41 @@ const PodDetail: React.FC = () => {
   const [commitLogs, setCommitLogs] = useState<string>('');
   const [commitSubmitting, setCommitSubmitting] = useState(false);
   const commitPollRef = useRef<NodeJS.Timeout | null>(null);
+  const [sharedGPUPods, setSharedGPUPods] = useState<SharedGPUPod[]>([]);
+  const [sharedGPULoading, setSharedGPULoading] = useState(false);
+  const [autoRefreshLogs, setAutoRefreshLogs] = useState(false);
+  const [activeTab, setActiveTab] = useState('overview');
+  const logRefreshRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     if (id) {
       loadPod();
       loadCommitStatus();
+      loadSharedGPUPods();
     }
     return () => {
       if (commitPollRef.current) {
         clearInterval(commitPollRef.current);
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  // 日志自动刷新
+  useEffect(() => {
+    if (autoRefreshLogs && activeTab === 'logs') {
+      logRefreshRef.current = setInterval(() => {
+        loadLogs();
+      }, 3000);
+    }
+    return () => {
+      if (logRefreshRef.current) {
+        clearInterval(logRefreshRef.current);
+        logRefreshRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRefreshLogs, activeTab]);
 
   const loadPod = async () => {
     setLoading(true);
@@ -89,6 +112,19 @@ const PodDetail: React.FC = () => {
       message.error(`加载详情失败: ${error.message}`);
     } finally {
       setDescribeLoading(false);
+    }
+  };
+
+  const loadSharedGPUPods = async () => {
+    setSharedGPULoading(true);
+    try {
+      const data = await getSharedGPUPods(id!);
+      setSharedGPUPods(data.pods || []);
+    } catch (error: any) {
+      // 静默失败，不显示错误消息
+      console.error('Failed to load shared GPU pods:', error);
+    } finally {
+      setSharedGPULoading(false);
     }
   };
 
@@ -220,14 +256,24 @@ const PodDetail: React.FC = () => {
 
   if (loading || !pod) {
     return (
-      <div className="detail-loading">
-        <GlassCard hover={false} className="loading-card">
-          <div className="loading-content">
-            <div className="loading-spinner" />
-            <p>加载中...</p>
+      <Layout className="pod-detail-layout">
+        <Header className="pod-detail-header glass-header">
+          <div className="header-content">
+            <Space size="middle">
+              <Skeleton.Button active style={{ width: 80 }} />
+              <div className="header-title">
+                <Skeleton.Input active style={{ width: 200 }} />
+              </div>
+            </Space>
+            <Skeleton.Button active style={{ width: 40 }} />
           </div>
-        </GlassCard>
-      </div>
+        </Header>
+        <Content className="pod-detail-content">
+          <GlassCard hover={false} className="detail-card animate-slide-up">
+            <Skeleton active paragraph={{ rows: 8 }} />
+          </GlassCard>
+        </Content>
+      </Layout>
     );
   }
 
@@ -251,6 +297,78 @@ const PodDetail: React.FC = () => {
               <Descriptions.Item label="创建时间">{dayjs(pod.createdAt).format('YYYY-MM-DD HH:mm:ss')}</Descriptions.Item>
             </Descriptions>
           </GlassCard>
+
+          {/* 共用 GPU 的 Pod 信息 */}
+          {sharedGPUPods.length > 0 && (
+            <GlassCard
+              hover={false}
+              className="info-card"
+              title={
+                <Space>
+                  <span>共用 GPU 的 Pod</span>
+                  <Tag color="warning">{sharedGPUPods.length} 个</Tag>
+                </Space>
+              }
+              extra={
+                <Button
+                  icon={<ReloadOutlined />}
+                  size="small"
+                  onClick={loadSharedGPUPods}
+                  loading={sharedGPULoading}
+                >
+                  刷新
+                </Button>
+              }
+              style={{ marginTop: 16 }}
+            >
+              <Alert
+                message="以下 Pod 与当前 Pod 共用 GPU 卡（时分复用模式）"
+                type="warning"
+                showIcon
+                style={{ marginBottom: 16 }}
+              />
+              <Table
+                dataSource={sharedGPUPods}
+                rowKey="name"
+                pagination={false}
+                size="small"
+                columns={[
+                  {
+                    title: 'Pod 名称',
+                    dataIndex: 'name',
+                    key: 'name',
+                    render: (name: string, record: SharedGPUPod) => (
+                      <Button type="link" size="small" style={{ padding: 0 }} onClick={() => navigate(`/pod/${record.namespace}/${name}`)}>{name}</Button>
+                    ),
+                  },
+                  {
+                    title: '用户',
+                    dataIndex: 'user',
+                    key: 'user',
+                  },
+                  {
+                    title: '共用的 GPU',
+                    dataIndex: 'sharedWith',
+                    key: 'sharedWith',
+                    render: (gpus: number[]) => (
+                      <Space size={4}>
+                        {gpus.map(g => (
+                          <Tag key={g} color="orange">GPU {g}</Tag>
+                        ))}
+                      </Space>
+                    ),
+                  },
+                  {
+                    title: '创建时间',
+                    dataIndex: 'createdAt',
+                    key: 'createdAt',
+                    width: 150,
+                    render: (time: string) => time ? dayjs(time).format('MM-DD HH:mm') : '-',
+                  },
+                ]}
+              />
+            </GlassCard>
+          )}
         </div>
       ),
     },
@@ -260,7 +378,15 @@ const PodDetail: React.FC = () => {
       children: (
         <div className="tab-content">
           <div className="tab-actions">
-            <Button onClick={loadLogs} loading={logsLoading} icon={<ReloadOutlined />}>刷新日志</Button>
+            <Space>
+              <Switch
+                checked={autoRefreshLogs}
+                onChange={setAutoRefreshLogs}
+                checkedChildren="自动刷新"
+                unCheckedChildren="手动刷新"
+              />
+              <Button onClick={loadLogs} loading={logsLoading} icon={<ReloadOutlined />}>刷新日志</Button>
+            </Space>
           </div>
           <div className="logs-container">
             <pre className="mono">{logs || '点击刷新按钮加载日志'}</pre>
@@ -427,7 +553,7 @@ const PodDetail: React.FC = () => {
 
       <Content className="pod-detail-content">
         <GlassCard hover={false} className="detail-card animate-slide-up">
-          <Tabs defaultActiveKey="overview" items={tabItems} />
+          <Tabs defaultActiveKey="overview" items={tabItems} onChange={setActiveTab} />
         </GlassCard>
 
         <Modal title="保存为镜像" open={commitModalVisible} onCancel={() => setCommitModalVisible(false)} onOk={handleCommit} confirmLoading={commitSubmitting} okText="开始保存" cancelText="取消">

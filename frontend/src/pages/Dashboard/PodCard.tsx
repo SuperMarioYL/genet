@@ -260,8 +260,9 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
   const getProtectionInfo = () => {
     const protectedUntil = pod.protectedUntil ? dayjs(pod.protectedUntil) : null;
     const now = dayjs();
+    const today2300 = now.hour(23).minute(0).second(0);
     const today2259 = now.hour(22).minute(59).second(0);
-    
+
     if (!protectedUntil || protectedUntil.isBefore(now)) {
       // 未保护或保护已过期
       return {
@@ -271,12 +272,11 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
         canExtend: true,
       };
     }
-    
-    // 判断是否是最后一天（保护截止时间是今天 22:59）
-    const isLastDay = protectedUntil.isSame(today2259, 'minute') || 
-                      (protectedUntil.isAfter(today2259) && protectedUntil.isBefore(today2259.add(1, 'day')));
-    
-    if (isLastDay) {
+
+    // 判断保护时间是否在今晚 23:00 之前（即今天会被清理）
+    const willBeCleanedTonight = protectedUntil.isBefore(today2300) || protectedUntil.isSame(today2259, 'minute');
+
+    if (willBeCleanedTonight) {
       return {
         type: 'warning' as const,
         icon: '⚠️',
@@ -284,8 +284,8 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
         canExtend: true,
       };
     }
-    
-    // 还有保护时间
+
+    // 保护到明天或之后，显示保护状态
     return {
       type: 'success' as const,
       icon: '✅',
@@ -330,8 +330,10 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
         <div className="spec-item">
           <span className="spec-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
-              <polyline points="22,6 12,13 2,6"/>
+              <rect x="3" y="6" width="18" height="12" rx="1"/>
+              <line x1="7" y1="10" x2="7" y2="14"/>
+              <line x1="11" y1="10" x2="11" y2="14"/>
+              <line x1="15" y1="10" x2="15" y2="14"/>
             </svg>
           </span>
           <span className="spec-value">{pod.memory || '-'}</span>

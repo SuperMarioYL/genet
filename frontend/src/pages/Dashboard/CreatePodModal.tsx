@@ -1,8 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { Modal, Form, Select, InputNumber, message, Alert, AutoComplete } from 'antd';
-import { PlusOutlined } from '@ant-design/icons';
-import { getConfig, createPod } from '../../services/api';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Modal, Form, Select, InputNumber, Input, message, Alert, AutoComplete, Collapse, Typography, Tooltip } from 'antd';
+import { PlusOutlined, SettingOutlined, QuestionCircleOutlined } from '@ant-design/icons';
+import { getConfig, createPod, getGPUOverview, GPUOverviewResponse, NodeGPUInfo, CreatePodRequest } from '../../services/api';
+import GPUSelector from '../../components/GPUSelector';
 import './CreatePodModal.css';
+
+const { Text } = Typography;
 
 interface CreatePodModalProps {
   visible: boolean;
@@ -22,13 +25,37 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
   const [config, setConfig] = useState<any>(null);
   const [selectedGPUCount, setSelectedGPUCount] = useState(1);
 
+  // 高级配置状态
+  const [gpuOverview, setGpuOverview] = useState<GPUOverviewResponse | null>(null);
+  const [selectedNode, setSelectedNode] = useState<string | undefined>(undefined);
+  const [selectedGPUDevices, setSelectedGPUDevices] = useState<number[]>([]);
+  const [hasPrometheus, setHasPrometheus] = useState(false);
+
   useEffect(() => {
     if (visible) {
       loadConfig();
+      loadGPUOverview();
       form.resetFields();
       setSelectedGPUCount(1);
+      setSelectedNode(undefined);
+      setSelectedGPUDevices([]);
     }
+    // form 是 antd useForm 返回的稳定引用，loadConfig/loadGPUOverview 在组件内定义
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
+
+  // 加载 GPU 概览数据（用于高级选择）
+  const loadGPUOverview = useCallback(async () => {
+    try {
+      const data = await getGPUOverview();
+      setGpuOverview(data);
+      // 直接使用后端返回的 prometheusEnabled 字段
+      setHasPrometheus(data.prometheusEnabled);
+    } catch (error: any) {
+      console.error('Failed to load GPU overview:', error);
+      setHasPrometheus(false);
+    }
+  }, []);
 
   const loadConfig = async () => {
     try {
@@ -54,12 +81,51 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
     try {
       const values = await form.validateFields();
       setLoading(true);
-      const payload = { ...values };
+
+      const payload: CreatePodRequest = {
+        image: values.image,
+        gpuCount: values.gpuCount,
+        gpuType: values.gpuType,
+        cpu: values.cpu,
+        memory: values.memory,
+      };
+
+      // 处理自定义名称
+      if (values.name && values.name.trim()) {
+        payload.name = values.name.trim();
+      }
+
+      // 处理高级配置
+      if (selectedNode) {
+        payload.nodeName = selectedNode;
+      }
+      if (selectedGPUDevices.length > 0) {
+        payload.gpuDevices = selectedGPUDevices;
+        // GPU 数量由选择的卡数决定
+        payload.gpuCount = selectedGPUDevices.length;
+      }
+
       if (payload.gpuCount === 0) {
         delete payload.gpuType;
       }
+
       await createPod(payload);
+
+      // 显示创建中状态
+      message.loading({
+        content: 'Pod 创建中，等待调度...',
+        key: 'podCreating',
+        duration: 0,
+      });
+
+      // 关闭对话框后调用成功回调
       onSuccess();
+
+      // 延迟更新消息（给用户一个视觉反馈过渡）
+      setTimeout(() => {
+        message.success({ content: 'Pod 创建已提交，请在列表中查看状态', key: 'podCreating', duration: 3 });
+      }, 2000);
+
     } catch (error: any) {
       if (error.errorFields) return;
       message.error(`创建失败: ${error.message}`);
@@ -70,13 +136,53 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
 
   const willExceedQuota = () => {
     const newPodCount = currentQuota.podUsed + 1;
-    const newGPUCount = currentQuota.gpuUsed + selectedGPUCount;
+    // 如果选择了具体 GPU 卡，使用卡数；否则使用输入的 GPU 数量
+    const gpuToAdd = selectedGPUDevices.length > 0 ? selectedGPUDevices.length : selectedGPUCount;
+    const newGPUCount = currentQuota.gpuUsed + gpuToAdd;
     return {
       podExceeded: newPodCount > currentQuota.podLimit,
       gpuExceeded: newGPUCount > currentQuota.gpuLimit,
       newPodCount,
       newGPUCount,
     };
+  };
+
+  // 获取当前选中节点的信息
+  const getSelectedNodeInfo = (): NodeGPUInfo | undefined => {
+    if (!selectedNode || !gpuOverview) return undefined;
+    for (const group of gpuOverview.acceleratorGroups) {
+      const node = group.nodes.find(n => n.nodeName === selectedNode);
+      if (node) return node;
+    }
+    return undefined;
+  };
+
+  // 获取可选择的节点列表
+  const getAvailableNodes = (): NodeGPUInfo[] => {
+    if (!gpuOverview) return [];
+    const nodes: NodeGPUInfo[] = [];
+
+    for (const group of gpuOverview.acceleratorGroups) {
+      // 显示所有有 GPU 的节点
+      nodes.push(...group.nodes);
+    }
+
+    return nodes;
+  };
+
+  // 处理节点选择变化
+  const handleNodeChange = (nodeName: string | undefined) => {
+    setSelectedNode(nodeName);
+    setSelectedGPUDevices([]); // 切换节点时清空 GPU 选择
+  };
+
+  // 处理 GPU 卡选择变化
+  const handleGPUDevicesChange = (devices: number[]) => {
+    setSelectedGPUDevices(devices);
+    // 同步更新 GPU 数量显示
+    if (devices.length > 0) {
+      setSelectedGPUCount(devices.length);
+    }
   };
 
   const quotaCheck = willExceedQuota();
@@ -137,6 +243,30 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
           )}
         </Form.Item>
 
+        <Form.Item
+          label={
+            <span>
+              Pod 名称
+              <Tooltip title="自定义 Pod 名称后缀，留空则使用时间戳自动生成">
+                <QuestionCircleOutlined style={{ marginLeft: 4, color: '#999' }} />
+              </Tooltip>
+            </span>
+          }
+          name="name"
+          rules={[
+            {
+              pattern: /^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/,
+              message: '只能包含小写字母、数字和连字符，不能以连字符开头或结尾',
+            },
+            { max: 20, message: '最多 20 个字符' },
+          ]}
+        >
+          <Input
+            placeholder="例如: train, dev, test（留空自动生成）"
+            allowClear
+          />
+        </Form.Item>
+
         <div className="form-row">
           <Form.Item
             label="CPU 核数"
@@ -180,14 +310,22 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
             label="GPU 数量"
             name="gpuCount"
             rules={[{ required: true, message: '请选择 GPU 数量' }]}
-            help="设置为 0 可创建纯 CPU Pod"
+            help={selectedGPUDevices.length > 0 ? `已通过高级设置选择 ${selectedGPUDevices.length} 张卡` : "设置为 0 可创建纯 CPU Pod"}
             className="form-col"
           >
             <InputNumber
               min={0}
               max={8}
               style={{ width: '100%' }}
-              onChange={(value) => setSelectedGPUCount(value || 0)}
+              onChange={(value) => {
+                setSelectedGPUCount(value || 0);
+                // 如果手动修改 GPU 数量，清空具体卡选择
+                if (selectedGPUDevices.length > 0 && value !== selectedGPUDevices.length) {
+                  setSelectedGPUDevices([]);
+                }
+              }}
+              value={selectedGPUDevices.length > 0 ? selectedGPUDevices.length : selectedGPUCount}
+              disabled={selectedGPUDevices.length > 0}
             />
           </Form.Item>
 
@@ -205,6 +343,87 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
             </Select>
           </Form.Item>
         </div>
+
+        {/* 高级配置 */}
+        {selectedGPUCount > 0 && gpuOverview && gpuOverview.acceleratorGroups.length > 0 && (
+          <Collapse
+            ghost
+            className="advanced-settings-collapse"
+            items={[
+              {
+                key: 'advanced',
+                label: (
+                  <span className="advanced-settings-label">
+                    <SettingOutlined />
+                    <span>高级设置</span>
+                    {selectedNode && <Text type="secondary" style={{ marginLeft: 8 }}>已选节点: {selectedNode}</Text>}
+                  </span>
+                ),
+                children: (
+                  <div className="advanced-settings-content">
+                    {/* 节点选择 */}
+                    <Form.Item label="选择节点" className="node-select-item">
+                      <Select
+                        placeholder="自动调度（推荐）"
+                        allowClear
+                        value={selectedNode}
+                        onChange={handleNodeChange}
+                        style={{ width: '100%' }}
+                      >
+                        {getAvailableNodes().map(node => {
+                          const freeDevices = node.totalDevices - node.usedDevices;
+                          // 非时分复用节点且无空闲卡时禁用
+                          const isDisabled = !node.timeSharingEnabled && freeDevices === 0;
+                          return (
+                            <Select.Option
+                              key={node.nodeName}
+                              value={node.nodeName}
+                              disabled={isDisabled}
+                            >
+                              {node.nodeName}
+                              <Text type="secondary" style={{ marginLeft: 8 }}>
+                                ({freeDevices}/{node.totalDevices} 可用)
+                                {node.timeSharingEnabled && ' [时分复用]'}
+                              </Text>
+                            </Select.Option>
+                          );
+                        })}
+                      </Select>
+                    </Form.Item>
+
+                    {/* GPU 卡选择（仅当选择了节点且有 Prometheus 数据时显示） */}
+                    {selectedNode && hasPrometheus && (
+                      <div className="gpu-selector-wrapper">
+                        {(() => {
+                          const nodeInfo = getSelectedNodeInfo();
+                          if (!nodeInfo) return null;
+                          return (
+                            <GPUSelector
+                              slots={nodeInfo.slots}
+                              selectedDevices={selectedGPUDevices}
+                              timeSharingEnabled={nodeInfo.timeSharingEnabled}
+                              onChange={handleGPUDevicesChange}
+                            />
+                          );
+                        })()}
+                      </div>
+                    )}
+
+                    {/* 无 Prometheus 时的提示 */}
+                    {selectedNode && !hasPrometheus && (
+                      <Alert
+                        message="未配置 Prometheus，无法选择具体 GPU 卡"
+                        type="info"
+                        showIcon
+                        style={{ marginTop: 12 }}
+                      />
+                    )}
+                  </div>
+                ),
+              },
+            ]}
+          />
+        )}
 
         <div className="quota-preview">
           <div className="quota-preview-title">创建后配额使用</div>

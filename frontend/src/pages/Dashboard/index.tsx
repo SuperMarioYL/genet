@@ -1,6 +1,7 @@
-import { CloudDownloadOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import { CloudDownloadOutlined, HeatMapOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { Button, Col, Empty, Layout, message, Modal, Row, Space, Statistic, Typography } from 'antd';
 import React, { useEffect, useState } from 'react';
+import AcceleratorHeatmap from '../../components/AcceleratorHeatmap';
 import GlassCard from '../../components/GlassCard';
 import ThemeToggle from '../../components/ThemeToggle';
 import { downloadKubeconfig, getClusterInfo, getKubeconfig, listPods } from '../../services/api';
@@ -19,6 +20,7 @@ const Dashboard: React.FC = () => {
   const [kubeconfigModalVisible, setKubeconfigModalVisible] = useState(false);
   const [kubeconfigData, setKubeconfigData] = useState<any>(null);
   const [clusterInfo, setClusterInfo] = useState<any>(null);
+  const [heatmapModalVisible, setHeatmapModalVisible] = useState(false);
 
   const loadPods = async () => {
     setLoading(true);
@@ -38,8 +40,10 @@ const Dashboard: React.FC = () => {
     getClusterInfo().then((info) => {
       setClusterInfo(info);
     }).catch(() => {});
-    const timer = setInterval(loadPods, 30000);
+    // 每 10 秒轮询一次，提高响应速度
+    const timer = setInterval(loadPods, 10000);
     return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const showKubeconfigButton = clusterInfo?.kubeconfigMode === 'cert' || clusterInfo?.kubeconfigMode === 'oidc';
@@ -95,6 +99,13 @@ const Dashboard: React.FC = () => {
               className="action-btn"
             >
               创建 Pod
+            </Button>
+            <Button
+              icon={<HeatMapOutlined />}
+              onClick={() => setHeatmapModalVisible(true)}
+              className="action-btn glass-button"
+            >
+              加速卡热力图
             </Button>
             {showKubeconfigButton && (
               <Button
@@ -343,6 +354,27 @@ const Dashboard: React.FC = () => {
             </GlassCard>
           </div>
         )}
+      </Modal>
+
+      {/* 加速卡热力图对话框 */}
+      <Modal
+        title={
+          <div className="modal-title-custom">
+            <HeatMapOutlined />
+            <span>加速卡热力图</span>
+          </div>
+        }
+        open={heatmapModalVisible}
+        onCancel={() => setHeatmapModalVisible(false)}
+        width={1000}
+        style={{ top: 40 }}
+        footer={null}
+        destroyOnHidden
+      >
+        <AcceleratorHeatmap
+          refreshInterval={30000}
+          onError={(error) => message.error(`加载加速卡数据失败: ${error.message}`)}
+        />
       </Modal>
     </Layout>
   );

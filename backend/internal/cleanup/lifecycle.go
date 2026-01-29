@@ -3,12 +3,13 @@ package cleanup
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
 	"github.com/uc-package/genet/internal/k8s"
+	"github.com/uc-package/genet/internal/logger"
 	"github.com/uc-package/genet/internal/models"
+	"go.uber.org/zap"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -16,6 +17,7 @@ import (
 type PodCleaner struct {
 	k8sClient *k8s.Client
 	config    *models.Config
+	log       *zap.Logger
 }
 
 // NewPodCleaner 创建 Pod 清理器
@@ -23,6 +25,7 @@ func NewPodCleaner(k8sClient *k8s.Client, config *models.Config) *PodCleaner {
 	return &PodCleaner{
 		k8sClient: k8sClient,
 		config:    config,
+		log:       logger.Named("cleanup"),
 	}
 }
 
@@ -36,18 +39,22 @@ func (c *PodCleaner) isPodProtected(annotations map[string]string) bool {
 
 	protectedUntil, err := time.Parse(time.RFC3339, protectedStr)
 	if err != nil {
-		log.Printf("Invalid protected-until annotation: %s", protectedStr)
+		c.log.Warn("Invalid protected-until annotation",
+			zap.String("value", protectedStr),
+			zap.Error(err))
 		return false
 	}
 
-	// 如果保护截止时间 >= 当前时间，则受保护
-	return time.Now().Before(protectedUntil) || time.Now().Equal(protectedUntil)
+	// 使用 UTC 统一比较，避免时区问题
+	now := time.Now().UTC()
+	protectedUntilUTC := protectedUntil.UTC()
+	return now.Before(protectedUntilUTC) || now.Equal(protectedUntilUTC)
 }
 
 // CleanupAllPods 清理所有用户 Pod
 // 由 CronJob 在每天 23:00 触发，删除所有未受保护的用户 Pod
 func (c *PodCleaner) CleanupAllPods() error {
-	log.Println("Starting pod cleanup...")
+	c.log.Info("Starting pod cleanup")
 
 	ctx := context.Background()
 	clientset := c.k8sClient.GetClientset()
@@ -73,7 +80,9 @@ func (c *PodCleaner) CleanupAllPods() error {
 		// 列出该 namespace 下的所有 Pod
 		pods, err := c.k8sClient.ListPods(ctx, ns.Name)
 		if err != nil {
-			log.Printf("Error listing pods in namespace %s: %v", ns.Name, err)
+			c.log.Error("Error listing pods",
+				zap.String("namespace", ns.Name),
+				zap.Error(err))
 			continue
 		}
 
@@ -84,25 +93,35 @@ func (c *PodCleaner) CleanupAllPods() error {
 			// 检查是否受保护
 			if c.isPodProtected(pod.Annotations) {
 				protectedUntil := pod.Annotations["genet.io/protected-until"]
-				log.Printf("Skipping protected pod %s in namespace %s (protected until %s)",
-					pod.Name, ns.Name, protectedUntil)
+				c.log.Info("Skipping protected pod",
+					zap.String("pod", pod.Name),
+					zap.String("namespace", ns.Name),
+					zap.String("protectedUntil", protectedUntil))
 				totalProtected++
 				continue
 			}
 
-			log.Printf("Deleting pod %s in namespace %s (scheduled cleanup)", pod.Name, ns.Name)
+			c.log.Info("Deleting pod",
+				zap.String("pod", pod.Name),
+				zap.String("namespace", ns.Name),
+				zap.String("reason", "scheduled cleanup"))
 
 			err := c.k8sClient.DeletePod(ctx, ns.Name, pod.Name)
 			if err != nil {
-				log.Printf("Error deleting pod %s: %v", pod.Name, err)
+				c.log.Error("Error deleting pod",
+					zap.String("pod", pod.Name),
+					zap.Error(err))
 			} else {
 				totalDeleted++
-				log.Printf("Successfully deleted pod %s", pod.Name)
+				c.log.Info("Successfully deleted pod",
+					zap.String("pod", pod.Name))
 			}
 		}
 	}
 
-	log.Printf("Cleanup complete: checked %d pods, deleted %d, protected %d",
-		totalChecked, totalDeleted, totalProtected)
+	c.log.Info("Cleanup complete",
+		zap.Int("checked", totalChecked),
+		zap.Int("deleted", totalDeleted),
+		zap.Int("protected", totalProtected))
 	return nil
 }

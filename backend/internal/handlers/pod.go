@@ -37,10 +37,13 @@ func NewPodHandler(k8sClient *k8s.Client, config *models.Config) *PodHandler {
 // ListPods 列出用户的所有 Pod
 func (h *PodHandler) ListPods(c *gin.Context) {
 	username, _ := auth.GetUsername(c)
-	namespace := k8s.GetNamespaceForUser(username)
+	email, _ := auth.GetEmail(c)
+	userIdentifier := k8s.GetUserIdentifier(username, email)
+	namespace := k8s.GetNamespaceForUserIdentifier(userIdentifier)
 
 	h.log.Debug("Listing pods",
 		zap.String("user", username),
+		zap.String("userIdentifier", userIdentifier),
 		zap.String("namespace", namespace))
 
 	ctx := context.Background()
@@ -143,21 +146,64 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 		return
 	}
 
+	// 输入验证
+	if err := ValidateImageName(req.Image); err != nil {
+		h.log.Warn("Invalid image name", zap.String("image", req.Image), zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := ValidateCPU(req.CPU); err != nil {
+		h.log.Warn("Invalid CPU value", zap.String("cpu", req.CPU), zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := ValidateMemory(req.Memory); err != nil {
+		h.log.Warn("Invalid memory value", zap.String("memory", req.Memory), zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	username, _ := auth.GetUsername(c)
-	namespace := k8s.GetNamespaceForUser(username)
+	email, _ := auth.GetEmail(c)
+
+	// 使用 username 和邮箱前缀生成用户标识
+	userIdentifier := k8s.GetUserIdentifier(username, email)
+	namespace := k8s.GetNamespaceForUserIdentifier(userIdentifier)
 	ctx := context.Background()
 
 	h.log.Info("Creating pod",
 		zap.String("user", username),
+		zap.String("email", email),
+		zap.String("userIdentifier", userIdentifier),
 		zap.String("namespace", namespace),
 		zap.String("image", req.Image),
 		zap.Int("gpuCount", req.GPUCount),
-		zap.String("gpuType", req.GPUType))
+		zap.String("gpuType", req.GPUType),
+		zap.String("nodeName", req.NodeName),
+		zap.Ints("gpuDevices", req.GPUDevices),
+		zap.String("customName", req.Name))
+
+	// 如果指定了 GPUDevices，自动设置 GPUCount
+	if len(req.GPUDevices) > 0 {
+		// 指定 GPU 卡时必须同时指定节点
+		if req.NodeName == "" {
+			h.log.Warn("gpuDevices specified without nodeName",
+				zap.String("user", username),
+				zap.Ints("gpuDevices", req.GPUDevices))
+			c.JSON(http.StatusBadRequest, gin.H{"error": "指定 GPU 卡时必须同时指定节点"})
+			return
+		}
+		req.GPUCount = len(req.GPUDevices)
+		h.log.Debug("GPU count auto-set from gpuDevices",
+			zap.Int("gpuCount", req.GPUCount),
+			zap.Ints("gpuDevices", req.GPUDevices))
+	}
 
 	// 检查配额
-	if err := h.checkQuota(ctx, username, req.GPUCount); err != nil {
+	if err := h.checkQuota(ctx, userIdentifier, namespace, req.GPUCount); err != nil {
 		h.log.Warn("Quota exceeded",
 			zap.String("user", username),
+			zap.String("userIdentifier", userIdentifier),
 			zap.Error(err))
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return
@@ -181,6 +227,62 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 		}
 	}
 
+	// 验证指定的节点（如果有）
+	if req.NodeName != "" {
+		clientset := h.k8sClient.GetClientset()
+		node, err := clientset.CoreV1().Nodes().Get(ctx, req.NodeName, metav1.GetOptions{})
+		if err != nil {
+			h.log.Warn("Specified node not found",
+				zap.String("user", username),
+				zap.String("nodeName", req.NodeName),
+				zap.Error(err))
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("指定的节点不存在: %s", req.NodeName)})
+			return
+		}
+
+		// 验证节点 GPU 容量是否足够（如果需要 GPU）
+		if req.GPUCount > 0 {
+			// 查找对应的资源名称
+			resourceName := "nvidia.com/gpu"
+			for _, gpuType := range h.config.GPU.AvailableTypes {
+				if gpuType.Name == req.GPUType {
+					resourceName = gpuType.ResourceName
+					break
+				}
+			}
+
+			allocatable, ok := node.Status.Allocatable[corev1.ResourceName(resourceName)]
+			if !ok || allocatable.Value() < int64(req.GPUCount) {
+				h.log.Warn("Node GPU capacity insufficient",
+					zap.String("user", username),
+					zap.String("nodeName", req.NodeName),
+					zap.Int64("allocatable", allocatable.Value()),
+					zap.Int("requested", req.GPUCount))
+				c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("节点 %s 的 GPU 容量不足", req.NodeName)})
+				return
+			}
+
+			// 验证指定的 GPU 设备索引是否有效
+			if len(req.GPUDevices) > 0 {
+				totalDevices := int(allocatable.Value())
+				for _, deviceIndex := range req.GPUDevices {
+					if deviceIndex < 0 || deviceIndex >= totalDevices {
+						h.log.Warn("Invalid GPU device index",
+							zap.String("user", username),
+							zap.String("nodeName", req.NodeName),
+							zap.Int("deviceIndex", deviceIndex),
+							zap.Int("totalDevices", totalDevices))
+						c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("无效的 GPU 卡编号 %d，节点 %s 共有 %d 张卡", deviceIndex, req.NodeName, totalDevices)})
+						return
+					}
+				}
+			}
+		}
+
+		h.log.Debug("Node validation passed",
+			zap.String("nodeName", req.NodeName))
+	}
+
 	// 确保命名空间存在
 	h.log.Debug("Ensuring namespace exists", zap.String("namespace", namespace))
 	if err := h.k8sClient.EnsureNamespace(ctx, namespace); err != nil {
@@ -201,7 +303,7 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 		zap.String("namespace", namespace),
 		zap.String("storageClass", storageClass),
 		zap.String("size", storageSize))
-	if err := h.k8sClient.EnsurePVC(ctx, namespace, username, storageClass, storageSize); err != nil {
+	if err := h.k8sClient.EnsurePVC(ctx, namespace, userIdentifier, storageClass, storageSize); err != nil {
 		h.log.Error("Failed to create PVC",
 			zap.String("namespace", namespace),
 			zap.Error(err))
@@ -209,8 +311,31 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 		return
 	}
 
-	// 生成 Pod 名称
-	podName := k8s.GeneratePodName(username)
+	// 验证自定义 Pod 名称
+	if req.Name != "" {
+		if err := k8s.ValidatePodCustomName(req.Name); err != nil {
+			h.log.Warn("Invalid custom pod name",
+				zap.String("user", username),
+				zap.String("customName", req.Name),
+				zap.Error(err))
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
+	// 生成 Pod 名称（支持自定义）
+	podName := k8s.GeneratePodName(userIdentifier, req.Name)
+
+	// 检查同名 Pod 是否已存在（仅自定义名称时检查）
+	if req.Name != "" {
+		if h.k8sClient.PodExists(ctx, namespace, podName) {
+			h.log.Warn("Pod with same name already exists",
+				zap.String("user", username),
+				zap.String("podName", podName))
+			c.JSON(http.StatusConflict, gin.H{"error": "同名 Pod 已存在，请使用其他名称"})
+			return
+		}
+	}
 
 	// 使用默认值（如果用户未指定）
 	cpu := req.CPU
@@ -232,7 +357,7 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 	spec := &k8s.PodSpec{
 		Name:       podName,
 		Namespace:  namespace,
-		Username:   username,
+		Username:   userIdentifier, // 使用 userIdentifier 作为存储卷路径中的用户标识
 		Image:      req.Image,
 		GPUCount:   req.GPUCount,
 		GPUType:    req.GPUType,
@@ -241,6 +366,9 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 		HTTPProxy:  h.config.Proxy.HTTPProxy,
 		HTTPSProxy: h.config.Proxy.HTTPSProxy,
 		NoProxy:    h.config.Proxy.NoProxy,
+		// 高级配置
+		NodeName:   req.NodeName,
+		GPUDevices: req.GPUDevices,
 	}
 
 	h.log.Debug("Creating pod resource",
@@ -272,8 +400,10 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 // GetPod 获取 Pod 详情
 func (h *PodHandler) GetPod(c *gin.Context) {
 	username, _ := auth.GetUsername(c)
+	email, _ := auth.GetEmail(c)
 	podID := c.Param("id")
-	namespace := k8s.GetNamespaceForUser(username)
+	userIdentifier := k8s.GetUserIdentifier(username, email)
+	namespace := k8s.GetNamespaceForUserIdentifier(userIdentifier)
 	ctx := context.Background()
 
 	h.log.Debug("Getting pod details",
@@ -342,8 +472,10 @@ func (h *PodHandler) GetPod(c *gin.Context) {
 // 设置保护截止时间为明天 22:59，跳过下一次 23:00 清理
 func (h *PodHandler) ExtendPod(c *gin.Context) {
 	username, _ := auth.GetUsername(c)
+	email, _ := auth.GetEmail(c)
 	podID := c.Param("id")
-	namespace := k8s.GetNamespaceForUser(username)
+	userIdentifier := k8s.GetUserIdentifier(username, email)
+	namespace := k8s.GetNamespaceForUserIdentifier(userIdentifier)
 	ctx := context.Background()
 
 	h.log.Info("Extending pod protection",
@@ -399,8 +531,10 @@ func (h *PodHandler) ExtendPod(c *gin.Context) {
 // DeletePod 删除 Pod
 func (h *PodHandler) DeletePod(c *gin.Context) {
 	username, _ := auth.GetUsername(c)
+	email, _ := auth.GetEmail(c)
 	podID := c.Param("id")
-	namespace := k8s.GetNamespaceForUser(username)
+	userIdentifier := k8s.GetUserIdentifier(username, email)
+	namespace := k8s.GetNamespaceForUserIdentifier(userIdentifier)
 	ctx := context.Background()
 
 	h.log.Info("Deleting pod",
@@ -408,8 +542,23 @@ func (h *PodHandler) DeletePod(c *gin.Context) {
 		zap.String("podID", podID),
 		zap.String("namespace", namespace))
 
-	// 删除 Pod（保留 PVC）
-	err := h.k8sClient.DeletePod(ctx, namespace, podID)
+	// 检查是否有正在运行的 commit job
+	commitStatus, err := h.k8sClient.GetCommitJobStatus(ctx, namespace, podID)
+	if err == nil && commitStatus != nil {
+		if commitStatus.Status == "Running" || commitStatus.Status == "Pending" {
+			h.log.Warn("Cannot delete pod with active commit job",
+				zap.String("user", username),
+				zap.String("podID", podID),
+				zap.String("jobStatus", commitStatus.Status))
+			c.JSON(http.StatusConflict, gin.H{
+				"error": fmt.Sprintf("Pod 有正在进行的镜像保存任务（%s），请等待完成后再删除", commitStatus.Status),
+			})
+			return
+		}
+	}
+
+	// 删除 Pod
+	err = h.k8sClient.DeletePod(ctx, namespace, podID)
 	if err != nil {
 		h.log.Error("Failed to delete pod",
 			zap.String("user", username),
@@ -423,14 +572,40 @@ func (h *PodHandler) DeletePod(c *gin.Context) {
 		zap.String("user", username),
 		zap.String("podID", podID))
 
+	// 根据 ReclaimPolicy 决定是否删除 PVC
+	storageVolumes := h.k8sClient.GetStorageVolumes()
+	for _, vol := range storageVolumes {
+		// 只处理 PVC 类型且 ReclaimPolicy 为 Delete 的存储卷
+		if vol.Type == "pvc" && strings.ToLower(vol.ReclaimPolicy) == "delete" {
+			pvcName := h.k8sClient.GetPVCName(vol, username)
+			if pvcName != "" {
+				h.log.Info("Deleting PVC due to ReclaimPolicy=Delete",
+					zap.String("pvcName", pvcName),
+					zap.String("volumeName", vol.Name),
+					zap.String("user", username))
+
+				if err := h.k8sClient.DeletePVC(ctx, namespace, pvcName); err != nil {
+					h.log.Warn("Failed to delete PVC (continuing anyway)",
+						zap.String("pvcName", pvcName),
+						zap.Error(err))
+				} else {
+					h.log.Info("PVC deleted successfully",
+						zap.String("pvcName", pvcName))
+				}
+			}
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "Pod 删除成功"})
 }
 
 // GetPodLogs 获取 Pod 日志
 func (h *PodHandler) GetPodLogs(c *gin.Context) {
 	username, _ := auth.GetUsername(c)
+	email, _ := auth.GetEmail(c)
 	podID := c.Param("id")
-	namespace := k8s.GetNamespaceForUser(username)
+	userIdentifier := k8s.GetUserIdentifier(username, email)
+	namespace := k8s.GetNamespaceForUserIdentifier(userIdentifier)
 	ctx := context.Background()
 
 	h.log.Debug("Getting pod logs",
@@ -478,8 +653,10 @@ type CommitImageRequest struct {
 // CommitImage 将 Pod 保存为镜像（类似 docker commit）
 func (h *PodHandler) CommitImage(c *gin.Context) {
 	username, _ := auth.GetUsername(c)
+	email, _ := auth.GetEmail(c)
 	podID := c.Param("id")
-	namespace := k8s.GetNamespaceForUser(username)
+	userIdentifier := k8s.GetUserIdentifier(username, email)
+	namespace := k8s.GetNamespaceForUserIdentifier(userIdentifier)
 	ctx := c.Request.Context()
 
 	// 解析请求
@@ -552,8 +729,10 @@ func (h *PodHandler) CommitImage(c *gin.Context) {
 // GetCommitStatus 获取 commit 任务状态
 func (h *PodHandler) GetCommitStatus(c *gin.Context) {
 	username, _ := auth.GetUsername(c)
+	email, _ := auth.GetEmail(c)
 	podID := c.Param("id")
-	namespace := k8s.GetNamespaceForUser(username)
+	userIdentifier := k8s.GetUserIdentifier(username, email)
+	namespace := k8s.GetNamespaceForUserIdentifier(userIdentifier)
 	ctx := c.Request.Context()
 
 	h.log.Debug("Getting commit status",
@@ -591,8 +770,10 @@ func (h *PodHandler) GetCommitStatus(c *gin.Context) {
 // GetCommitLogs 获取 commit 任务日志
 func (h *PodHandler) GetCommitLogs(c *gin.Context) {
 	username, _ := auth.GetUsername(c)
+	email, _ := auth.GetEmail(c)
 	podID := c.Param("id")
-	namespace := k8s.GetNamespaceForUser(username)
+	userIdentifier := k8s.GetUserIdentifier(username, email)
+	namespace := k8s.GetNamespaceForUserIdentifier(userIdentifier)
 	ctx := c.Request.Context()
 
 	h.log.Debug("Getting commit logs",
@@ -620,8 +801,10 @@ func (h *PodHandler) BuildImage(c *gin.Context) {
 // GetPodEvents 获取 Pod 事件（类似 kubectl describe 的 Events 部分）
 func (h *PodHandler) GetPodEvents(c *gin.Context) {
 	username, _ := auth.GetUsername(c)
+	email, _ := auth.GetEmail(c)
 	podID := c.Param("id")
-	namespace := k8s.GetNamespaceForUser(username)
+	userIdentifier := k8s.GetUserIdentifier(username, email)
+	namespace := k8s.GetNamespaceForUserIdentifier(userIdentifier)
 
 	h.log.Debug("Getting pod events",
 		zap.String("user", username),
@@ -663,8 +846,10 @@ func (h *PodHandler) GetPodEvents(c *gin.Context) {
 // GetPodDescribe 获取 Pod 详细描述信息
 func (h *PodHandler) GetPodDescribe(c *gin.Context) {
 	username, _ := auth.GetUsername(c)
+	email, _ := auth.GetEmail(c)
 	podID := c.Param("id")
-	namespace := k8s.GetNamespaceForUser(username)
+	userIdentifier := k8s.GetUserIdentifier(username, email)
+	namespace := k8s.GetNamespaceForUserIdentifier(userIdentifier)
 
 	h.log.Debug("Getting pod description",
 		zap.String("user", username),
@@ -739,15 +924,13 @@ func (h *PodHandler) GetPodDescribe(c *gin.Context) {
 }
 
 // checkQuota 检查用户配额
-func (h *PodHandler) checkQuota(ctx context.Context, username string, requestGPUCount int) error {
-	namespace := k8s.GetNamespaceForUser(username)
-
+func (h *PodHandler) checkQuota(ctx context.Context, userIdentifier, namespace string, requestGPUCount int) error {
 	// 列出用户的 Pod
 	pods, err := h.k8sClient.ListPods(ctx, namespace)
 	if err != nil {
 		// 如果命名空间不存在，视为没有 Pod
 		h.log.Debug("Namespace not exists, quota check passed",
-			zap.String("user", username),
+			zap.String("userIdentifier", userIdentifier),
 			zap.String("namespace", namespace))
 		return nil
 	}
@@ -772,7 +955,7 @@ func (h *PodHandler) checkQuota(ctx context.Context, username string, requestGPU
 	}
 
 	h.log.Debug("Quota check passed",
-		zap.String("user", username),
+		zap.String("userIdentifier", userIdentifier),
 		zap.Int("currentPods", len(pods)),
 		zap.Int("podLimit", h.config.PodLimitPerUser),
 		zap.Int("currentGPU", totalGPU),
@@ -804,6 +987,155 @@ func (h *PodHandler) getNodeIP(ctx context.Context, nodeName string) string {
 	}
 
 	return ""
+}
+
+// SharedGPUPod 共用 GPU 的 Pod 信息
+type SharedGPUPod struct {
+	Name       string `json:"name"`       // Pod 名称
+	Namespace  string `json:"namespace"`  // 命名空间
+	User       string `json:"user"`       // 用户名
+	GPUDevices []int  `json:"gpuDevices"` // 该 Pod 使用的所有 GPU
+	SharedWith []int  `json:"sharedWith"` // 与当前 Pod 共用的 GPU 编号
+	CreatedAt  string `json:"createdAt"`  // 创建时间
+}
+
+// SharedGPUPodsResponse 共用 GPU 的 Pod 响应
+type SharedGPUPodsResponse struct {
+	Pods []SharedGPUPod `json:"pods"`
+}
+
+// GetSharedGPUPods 获取与当前 Pod 共用 GPU 的其他 Pod
+func (h *PodHandler) GetSharedGPUPods(c *gin.Context) {
+	username, _ := auth.GetUsername(c)
+	email, _ := auth.GetEmail(c)
+	podID := c.Param("id")
+	userIdentifier := k8s.GetUserIdentifier(username, email)
+	namespace := k8s.GetNamespaceForUserIdentifier(userIdentifier)
+	ctx := context.Background()
+
+	h.log.Debug("Getting shared GPU pods",
+		zap.String("user", username),
+		zap.String("podID", podID))
+
+	// 获取当前 Pod
+	pod, err := h.k8sClient.GetPod(ctx, namespace, podID)
+	if err != nil {
+		h.log.Warn("Pod not found",
+			zap.String("user", username),
+			zap.String("podID", podID),
+			zap.Error(err))
+		c.JSON(http.StatusNotFound, gin.H{"error": "Pod 不存在"})
+		return
+	}
+
+	// 如果 Pod 没有调度到节点，返回空列表
+	if pod.Spec.NodeName == "" {
+		c.JSON(http.StatusOK, SharedGPUPodsResponse{Pods: []SharedGPUPod{}})
+		return
+	}
+
+	// 获取当前 Pod 的 GPU 设备列表
+	currentGPUDevices := parseGPUDevicesFromAnnotation(pod.Annotations["genet.io/gpu-devices"])
+	if len(currentGPUDevices) == 0 {
+		// 如果没有指定具体设备，返回空列表
+		c.JSON(http.StatusOK, SharedGPUPodsResponse{Pods: []SharedGPUPod{}})
+		return
+	}
+
+	// 获取同节点的所有 Pod
+	clientset := h.k8sClient.GetClientset()
+	allPods, err := clientset.CoreV1().Pods("").List(ctx, metav1.ListOptions{
+		FieldSelector: fmt.Sprintf("spec.nodeName=%s", pod.Spec.NodeName),
+	})
+	if err != nil {
+		h.log.Error("Failed to list pods on node",
+			zap.String("nodeName", pod.Spec.NodeName),
+			zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取节点 Pod 列表失败"})
+		return
+	}
+
+	// 找出共用 GPU 的 Pod
+	var sharedPods []SharedGPUPod
+	currentGPUSet := make(map[int]bool)
+	for _, d := range currentGPUDevices {
+		currentGPUSet[d] = true
+	}
+
+	for _, otherPod := range allPods.Items {
+		// 跳过当前 Pod 自己
+		if otherPod.Name == podID && otherPod.Namespace == namespace {
+			continue
+		}
+
+		// 跳过非运行状态的 Pod
+		if otherPod.Status.Phase != corev1.PodRunning {
+			continue
+		}
+
+		// 获取其他 Pod 的 GPU 设备列表
+		otherGPUDevices := parseGPUDevicesFromAnnotation(otherPod.Annotations["genet.io/gpu-devices"])
+		if len(otherGPUDevices) == 0 {
+			continue
+		}
+
+		// 找出共用的 GPU
+		var sharedWith []int
+		for _, d := range otherGPUDevices {
+			if currentGPUSet[d] {
+				sharedWith = append(sharedWith, d)
+			}
+		}
+
+		if len(sharedWith) > 0 {
+			// 获取用户名
+			user := otherPod.Labels["genet.io/user"]
+			if user == "" {
+				user = "unknown"
+			}
+
+			// 获取创建时间
+			createdAt := ""
+			if otherPod.Annotations["genet.io/created-at"] != "" {
+				createdAt = otherPod.Annotations["genet.io/created-at"]
+			} else if otherPod.CreationTimestamp.Time.Year() > 1 {
+				createdAt = otherPod.CreationTimestamp.Format(time.RFC3339)
+			}
+
+			sharedPods = append(sharedPods, SharedGPUPod{
+				Name:       otherPod.Name,
+				Namespace:  otherPod.Namespace,
+				User:       user,
+				GPUDevices: otherGPUDevices,
+				SharedWith: sharedWith,
+				CreatedAt:  createdAt,
+			})
+		}
+	}
+
+	c.JSON(http.StatusOK, SharedGPUPodsResponse{Pods: sharedPods})
+}
+
+// parseGPUDevicesFromAnnotation 从 annotation 解析 GPU 设备列表
+// 格式: "0,2,5" -> [0, 2, 5]
+func parseGPUDevicesFromAnnotation(annotation string) []int {
+	if annotation == "" {
+		return nil
+	}
+
+	parts := strings.Split(annotation, ",")
+	var devices []int
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		var d int
+		if _, err := fmt.Sscanf(p, "%d", &d); err == nil {
+			devices = append(devices, d)
+		}
+	}
+	return devices
 }
 
 // getPodStatus 获取 Pod 状态（模拟 kubectl get pod 的 STATUS 列）

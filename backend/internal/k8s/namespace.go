@@ -38,8 +38,3 @@ func (c *Client) EnsureNamespace(ctx context.Context, namespace string) error {
 	return nil
 }
 
-// GetNamespaceForUser 获取用户的命名空间名称
-func GetNamespaceForUser(username string) string {
-	return fmt.Sprintf("user-%s", username)
-}
-

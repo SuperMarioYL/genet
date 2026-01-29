@@ -1,0 +1,174 @@
+.gpu-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.gpu-selector-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.gpu-selector-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.gpu-slot {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  position: relative;
+  border: 2px solid transparent;
+}
+
+.gpu-slot-index {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.gpu-slot-check {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  font-size: 10px;
+  color: white;
+}
+
+/* 空闲状态 */
+.gpu-slot-free {
+  background-color: var(--heatmap-free, #52c41a);
+  color: white;
+}
+
+.gpu-slot-free:hover {
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px rgba(82, 196, 26, 0.4);
+}
+
+/* 已选择状态 */
+.gpu-slot-selected {
+  background-color: #1890ff;
+  color: white;
+  border-color: #096dd9;
+}
+
+.gpu-slot-selected:hover {
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.4);
+}
+
+/* 已使用可共享（时分复用）*/
+.gpu-slot-shared {
+  background-color: #fa8c16;
+  color: white;
+}
+
+.gpu-slot-shared:hover {
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px rgba(250, 140, 22, 0.4);
+}
+
+/* 已使用不可选（独占）*/
+.gpu-slot-occupied {
+  background-color: #d9d9d9;
+  color: #8c8c8c;
+  cursor: not-allowed !important;
+}
+
+/* 图例 */
+.gpu-selector-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color, #f0f0f0);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary, #8c8c8c);
+}
+
+.legend-color {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+}
+
+.legend-free {
+  background-color: var(--heatmap-free, #52c41a);
+}
+
+.legend-selected {
+  background-color: #1890ff;
+}
+
+.legend-shared {
+  background-color: #fa8c16;
+}
+
+.legend-occupied {
+  background-color: #d9d9d9;
+}
+
+/* 警告提示 */
+.gpu-selector-warning {
+  padding: 8px 12px;
+  background-color: #fffbe6;
+  border: 1px solid #ffe58f;
+  border-radius: 6px;
+}
+
+/* Tooltip 样式 */
+.gpu-slot-tooltip {
+  font-size: 12px;
+}
+
+.gpu-slot-tooltip .tooltip-header {
+  margin-bottom: 4px;
+}
+
+.gpu-slot-tooltip .tooltip-divider {
+  height: 1px;
+  background-color: rgba(255, 255, 255, 0.2);
+  margin: 6px 0;
+}
+
+.gpu-slot-tooltip .tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 2px 0;
+}
+
+.gpu-slot-tooltip .tooltip-label {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.gpu-slot-tooltip .tooltip-value {
+  color: white;
+}
+
+/* 暗色主题适配 */
+[data-theme='dark'] .gpu-selector-warning {
+  background-color: rgba(250, 173, 20, 0.1);
+  border-color: rgba(250, 173, 20, 0.3);
+}
+
+[data-theme='dark'] .gpu-slot-occupied {
+  background-color: #434343;
+  color: #8c8c8c;
+}

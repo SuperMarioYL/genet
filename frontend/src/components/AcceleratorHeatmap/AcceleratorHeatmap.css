@@ -1,0 +1,353 @@
+/* 热力图颜色变量 */
+:root {
+  --heatmap-free: #e0e0e0;
+  --heatmap-border: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="dark"] {
+  --heatmap-free: #3a3a3a;
+  --heatmap-border: rgba(255, 255, 255, 0.1);
+}
+
+/* 主容器 */
+.accelerator-heatmap {
+  width: 100%;
+}
+
+/* 头部 */
+.heatmap-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.heatmap-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.title-icon {
+  font-size: 20px;
+}
+
+.heatmap-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.summary-stat {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.summary-value {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.summary-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.summary-divider {
+  color: var(--text-muted);
+}
+
+.refresh-btn {
+  margin-left: 8px;
+  color: var(--text-muted);
+}
+
+.refresh-btn:hover {
+  color: var(--primary);
+}
+
+/* 加速卡分组 */
+.accelerator-group {
+  margin-bottom: 24px;
+}
+
+.accelerator-group:last-child {
+  margin-bottom: 0;
+}
+
+.group-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  margin-bottom: 8px;
+  border-bottom: 2px solid var(--primary);
+}
+
+.group-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.group-stats {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* 列标题 */
+.column-headers {
+  display: flex;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.node-info-placeholder {
+  width: 140px;
+  min-width: 140px;
+  flex-shrink: 0;
+}
+
+.column-indices {
+  display: flex;
+  gap: 4px;
+}
+
+.column-index {
+  width: 36px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* 节点行 */
+.node-row {
+  display: flex;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--heatmap-border);
+}
+
+.node-row:last-child {
+  border-bottom: none;
+}
+
+.node-info {
+  width: 140px;
+  min-width: 140px;
+  flex-shrink: 0;
+  padding-right: 12px;
+}
+
+.node-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 130px;
+}
+
+.node-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.device-type {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-secondary);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.device-count {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* 设备槽位 */
+.device-slots {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.device-cell {
+  width: 36px;
+  height: 28px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: 1px solid transparent;
+}
+
+.device-cell:hover {
+  transform: scale(1.15);
+  z-index: 10;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.device-cell-free {
+  background-color: var(--heatmap-free);
+}
+
+.device-cell-used {
+  cursor: pointer;
+}
+
+.device-cell-empty {
+  visibility: hidden;
+}
+
+/* Tooltip 样式 */
+.heatmap-tooltip .ant-tooltip-inner {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: 0;
+}
+
+.heatmap-tooltip .ant-tooltip-arrow::before {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+}
+
+.device-tooltip {
+  padding: 12px;
+  min-width: 180px;
+}
+
+.tooltip-header {
+  margin-bottom: 8px;
+}
+
+.tooltip-divider {
+  height: 1px;
+  background: var(--border-color);
+  margin: 8px 0;
+}
+
+.tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+
+.tooltip-row:last-child {
+  margin-bottom: 0;
+}
+
+.tooltip-label {
+  color: var(--text-muted);
+}
+
+.tooltip-value {
+  color: var(--text-primary);
+  font-weight: 500;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 底部 */
+.heatmap-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-color);
+}
+
+.heatmap-legend {
+  display: flex;
+  gap: 16px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.legend-color {
+  width: 16px;
+  height: 12px;
+  border-radius: 2px;
+}
+
+.last-update {
+  font-size: 12px;
+}
+
+/* 加载和空状态 */
+.heatmap-loading,
+.heatmap-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  gap: 16px;
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .heatmap-header {
+    flex-direction: column;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
+  .node-info {
+    width: 100px;
+    min-width: 100px;
+  }
+
+  .node-info-placeholder {
+    width: 100px;
+    min-width: 100px;
+  }
+
+  .device-cell {
+    width: 28px;
+    height: 24px;
+  }
+
+  .column-index {
+    width: 28px;
+  }
+
+  .heatmap-footer {
+    flex-direction: column;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
+  .heatmap-legend {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+}

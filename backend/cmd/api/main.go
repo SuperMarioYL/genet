@@ -11,6 +11,7 @@ import (
 	"github.com/uc-package/genet/internal/logger"
 	"github.com/uc-package/genet/internal/models"
 	"github.com/uc-package/genet/internal/oidc"
+	"github.com/uc-package/genet/internal/prometheus"
 	"go.uber.org/zap"
 )
 
@@ -75,11 +76,24 @@ func main() {
 	}
 	log.Info("K8s client initialized successfully")
 
+	// 初始化 Prometheus 客户端
+	var promClient *prometheus.Client
+	if config.PrometheusURL != "" {
+		var err error
+		promClient, err = prometheus.NewClient(config.PrometheusURL)
+		if err != nil {
+			log.Warn("Failed to initialize Prometheus client", zap.Error(err))
+		} else {
+			log.Info("Prometheus client initialized", zap.String("url", config.PrometheusURL))
+		}
+	}
+
 	// 初始化处理器
 	podHandler := handlers.NewPodHandler(k8sClient, config)
 	configHandler := handlers.NewConfigHandler(config)
 	authHandler := handlers.NewAuthHandler(config)
 	kubeconfigHandler := handlers.NewKubeconfigHandler(config, k8sClient)
+	clusterHandler := handlers.NewClusterHandler(k8sClient, promClient, config)
 	log.Info("Handlers initialized")
 
 	// 初始化 OIDC Provider（如果启用）
@@ -143,6 +157,7 @@ func main() {
 
 		// 集群信息（公开）
 		api.GET("/cluster/info", kubeconfigHandler.GetClusterInfo)
+		api.GET("/cluster/gpu-overview", clusterHandler.GetGPUOverview)
 
 		// Pod 管理端点（需要认证）
 		pods := api.Group("/pods")
@@ -156,6 +171,7 @@ func main() {
 			pods.GET("/:id/logs", podHandler.GetPodLogs)
 			pods.GET("/:id/events", podHandler.GetPodEvents)
 			pods.GET("/:id/describe", podHandler.GetPodDescribe)
+			pods.GET("/:id/shared-gpus", podHandler.GetSharedGPUPods) // 获取共用 GPU 的 Pod
 			pods.POST("/:id/build", podHandler.BuildImage)
 			// 镜像 commit 相关
 			pods.POST("/:id/commit", podHandler.CommitImage)
