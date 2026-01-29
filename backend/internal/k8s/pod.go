@@ -339,15 +339,18 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 	} else {
 		// 向后兼容：使用旧的 Storage.ExtraVolumes 配置
 		for _, extraVol := range c.config.Storage.ExtraVolumes {
+			// 清理卷名称，确保符合 K8s 命名规范
+			sanitizedName := SanitizeK8sName(extraVol.Name)
+
 			// 添加 VolumeMount 到容器
 			pod.Spec.Containers[0].VolumeMounts = append(pod.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
-				Name:      extraVol.Name,
+				Name:      sanitizedName,
 				MountPath: extraVol.MountPath,
 				ReadOnly:  extraVol.ReadOnly,
 			})
 
 			// 添加 Volume 到 Pod
-			volume := corev1.Volume{Name: extraVol.Name}
+			volume := corev1.Volume{Name: sanitizedName}
 			if extraVol.PVC != "" {
 				volume.VolumeSource = corev1.VolumeSource{
 					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
@@ -502,8 +505,11 @@ func (c *Client) GetPodLogs(ctx context.Context, namespace, name string, tailLin
 
 // buildStorageVolume 根据存储卷配置构建 K8s Volume 和 VolumeMount
 func (c *Client) buildStorageVolume(storageVol models.StorageVolume, username string) (corev1.Volume, corev1.VolumeMount) {
+	// 清理卷名称，确保符合 K8s 命名规范（下划线转连字符等）
+	sanitizedVolumeName := SanitizeK8sName(storageVol.Name)
+
 	volumeMount := corev1.VolumeMount{
-		Name:      storageVol.Name,
+		Name:      sanitizedVolumeName,
 		MountPath: storageVol.MountPath,
 		ReadOnly:  storageVol.ReadOnly,
 	}
@@ -516,7 +522,7 @@ func (c *Client) buildStorageVolume(storageVol models.StorageVolume, username st
 		hostPath := expandPathTemplate(storageVol.HostPath, username, storageVol.Name)
 		hostPathType := corev1.HostPathDirectoryOrCreate
 		volume = corev1.Volume{
-			Name: storageVol.Name,
+			Name: sanitizedVolumeName,
 			VolumeSource: corev1.VolumeSource{
 				HostPath: &corev1.HostPathVolumeSource{
 					Path: hostPath,
@@ -529,14 +535,14 @@ func (c *Client) buildStorageVolume(storageVol models.StorageVolume, username st
 		pvcName := storageVol.PVCNameTemplate
 		if pvcName == "" {
 			// 默认 PVC 命名: genet-<username>-<volumeName>
-			pvcName = fmt.Sprintf("genet-%s-%s", username, storageVol.Name)
+			pvcName = fmt.Sprintf("genet-%s-%s", username, sanitizedVolumeName)
 		} else {
 			// 支持 {username}, {volumeName} 变量替换
 			pvcName = expandPathTemplate(pvcName, username, storageVol.Name)
 		}
 
 		volume = corev1.Volume{
-			Name: storageVol.Name,
+			Name: sanitizedVolumeName,
 			VolumeSource: corev1.VolumeSource{
 				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
 					ClaimName: pvcName,

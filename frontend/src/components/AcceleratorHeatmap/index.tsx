@@ -22,6 +22,15 @@ const getUtilizationColor = (utilization: number, status: string): string => {
   return `hsl(${Math.max(0, hue)}, 70%, 45%)`;
 };
 
+// 格式化显存 (MiB -> GB/MB)
+const formatMemory = (mib?: number): string => {
+  if (!mib || mib === 0) return '0';
+  if (mib >= 1024) {
+    return `${(mib / 1024).toFixed(1)}GB`;
+  }
+  return `${mib.toFixed(0)}MB`;
+};
+
 // 格式化运行时长
 const formatDuration = (startTime?: string): string => {
   if (!startTime) return '';
@@ -43,7 +52,14 @@ const DeviceCell: React.FC<{
   nodeName: string;
   onPodClick?: (podName: string, namespace: string) => void;
 }> = ({ slot, nodeName, onPodClick }) => {
-  const color = getUtilizationColor(slot.utilization, slot.status);
+  // 计算显存利用率
+  const memoryUtilization = (slot.memoryTotal && slot.memoryTotal > 0)
+    ? (slot.memoryUsed || 0) / slot.memoryTotal * 100
+    : 0;
+
+  // 取最大值决定颜色
+  const maxUtil = Math.max(slot.utilization, memoryUtilization);
+  const color = getUtilizationColor(maxUtil, slot.status);
 
   const tooltipContent = (
     <div className="device-tooltip">
@@ -52,9 +68,18 @@ const DeviceCell: React.FC<{
       </div>
       <div className="tooltip-divider" />
       <div className="tooltip-row">
-        <span className="tooltip-label">利用率:</span>
+        <span className="tooltip-label">Utilization:</span>
         <span className="tooltip-value">{slot.utilization.toFixed(0)}%</span>
       </div>
+      {slot.memoryTotal && slot.memoryTotal > 0 && (
+        <div className="tooltip-row">
+          <span className="tooltip-label">Memory:</span>
+          <span className="tooltip-value">
+            {formatMemory(slot.memoryUsed)} / {formatMemory(slot.memoryTotal)}
+            {' '}({memoryUtilization.toFixed(0)}%)
+          </span>
+        </div>
+      )}
       {slot.pod && (
         <>
           <div className="tooltip-divider" />
@@ -63,18 +88,18 @@ const DeviceCell: React.FC<{
             <span className="tooltip-value">{slot.pod.name}</span>
           </div>
           <div className="tooltip-row">
-            <span className="tooltip-label">用户:</span>
+            <span className="tooltip-label">User:</span>
             <span className="tooltip-value">{slot.pod.user || '-'}</span>
           </div>
           {slot.pod.email && (
             <div className="tooltip-row">
-              <span className="tooltip-label">邮箱:</span>
+              <span className="tooltip-label">Email:</span>
               <span className="tooltip-value">{slot.pod.email}</span>
             </div>
           )}
           {slot.pod.startTime && (
             <div className="tooltip-row">
-              <span className="tooltip-label">运行时长:</span>
+              <span className="tooltip-label">Duration:</span>
               <span className="tooltip-value">{formatDuration(slot.pod.startTime)}</span>
             </div>
           )}
@@ -108,12 +133,12 @@ const NodeRow: React.FC<{
 }> = ({ node, maxDevices, onPodClick }) => {
   return (
     <div className="node-row">
-      <div className="node-info">
-        <div className="node-name" title={node.nodeName}>{node.nodeName}</div>
-        <div className="node-meta">
-          {node.deviceType && <span className="device-type">{node.deviceType}</span>}
-          <span className="device-count">{node.usedDevices}/{node.totalDevices}</span>
-        </div>
+      <div className="node-info-line">
+        <span className="node-name" title={node.nodeName}>{node.nodeName}</span>
+        <span className="node-separator">|</span>
+        <span className="node-ip">{node.nodeIP || '-'}</span>
+        <span className="node-separator">|</span>
+        <span className="device-type">{node.deviceType || '-'}</span>
       </div>
       <div className="device-slots">
         {node.slots.map((slot) => (
@@ -213,7 +238,7 @@ const AcceleratorHeatmap: React.FC<AcceleratorHeatmapProps> = ({
     return (
       <div className="heatmap-loading">
         <Spin size="large" />
-        <Text type="secondary">加载中...</Text>
+        <Text type="secondary">Loading...</Text>
       </div>
     );
   }
@@ -222,7 +247,7 @@ const AcceleratorHeatmap: React.FC<AcceleratorHeatmapProps> = ({
     return (
       <div className="heatmap-empty">
         <Empty
-          description="暂无加速卡数据"
+          description="No accelerator data"
           image={Empty.PRESENTED_IMAGE_SIMPLE}
         />
       </div>
@@ -233,18 +258,12 @@ const AcceleratorHeatmap: React.FC<AcceleratorHeatmapProps> = ({
     <div className="accelerator-heatmap">
       <div className="heatmap-header">
         <div className="heatmap-title">
-          <span className="title-icon">🖥️</span>
-          <span>加速卡概览</span>
+          <span>Accelerator Heatmap</span>
         </div>
-        <div className="heatmap-summary">
-          <span className="summary-stat">
-            <span className="summary-value">{data.summary.totalDevices}</span>
-            <span className="summary-label">总计</span>
-          </span>
-          <span className="summary-divider">|</span>
+        <div className="heatmap-actions">
           <span className="summary-stat">
             <span className="summary-value">{data.summary.usedDevices}</span>
-            <span className="summary-label">使用中</span>
+            <span className="summary-label">/ {data.summary.totalDevices}</span>
           </span>
           <Button
             type="text"
@@ -269,7 +288,7 @@ const AcceleratorHeatmap: React.FC<AcceleratorHeatmapProps> = ({
         <div className="heatmap-legend">
           <div className="legend-item">
             <div className="legend-color" style={{ backgroundColor: 'var(--heatmap-free)' }} />
-            <span>空闲</span>
+            <span>Free</span>
           </div>
           <div className="legend-item">
             <div className="legend-color" style={{ backgroundColor: 'hsl(90, 70%, 45%)' }} />
@@ -290,7 +309,7 @@ const AcceleratorHeatmap: React.FC<AcceleratorHeatmapProps> = ({
         </div>
         {lastUpdate && (
           <Text type="secondary" className="last-update">
-            更新于 {lastUpdate.toLocaleTimeString()}
+            Updated {lastUpdate.toLocaleTimeString()}
           </Text>
         )}
       </div>

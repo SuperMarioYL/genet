@@ -9,13 +9,28 @@ gpu:
   # - name: UI 显示名称（创建 Pod 时选择）
   # - resourceName: K8s 资源名称
   # - type: 类型标识，用于热力图分组（如 nvidia、ascend）
-  # - metricName: Prometheus 指标名（用于热力图获取利用率）
+  # - metricName: Prometheus 利用率指标名（用于热力图）
+  # - memoryUsedMetric: 显存已用指标名（可选）
+  # - memoryTotalMetric: 显存总量指标名（可选）
+  # - metricLabels: 自定义指标标签映射（可选）
+  #   - deviceId: 设备ID标签名（默认自动识别 gpu/id/device/GPU_I/minor_number）
+  #   - node: 节点名标签名（默认自动识别 node/instance/Hostname/hostname）
+  #   - pod: Pod名标签名（默认自动识别 pod/exported_pod）
+  #   - namespace: Namespace标签名（默认自动识别 namespace/exported_namespace）
   # - nodeSelector: 节点选择器（可选）
   availableTypes:
     - name: "NVIDIA A100"
       resourceName: "nvidia.com/gpu"
       type: "nvidia"
       metricName: "DCGM_FI_DEV_GPU_UTIL"
+      memoryUsedMetric: "DCGM_FI_DEV_FB_USED"
+      memoryTotalMetric: "DCGM_FI_DEV_FB_FREE"
+      # 如果你的 Prometheus 指标标签与默认不同，可以自定义映射：
+      # metricLabels:
+      #   deviceId: "gpu"        # 或 GPU_I, minor_number 等
+      #   node: "Hostname"       # 或 instance, kubernetes_node 等
+      #   pod: "exported_pod"
+      #   namespace: "exported_namespace"
       nodeSelector:
         gpu-type: "a100"
     - name: "NVIDIA V100"

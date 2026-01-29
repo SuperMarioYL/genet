@@ -63,6 +63,8 @@ type DeviceSlot struct {
 	Index       int      `json:"index"`       // 设备编号
 	Status      string   `json:"status"`      // "free" | "used"
 	Utilization float64  `json:"utilization"` // 利用率 0-100
+	MemoryUsed  float64  `json:"memoryUsed"`  // 已用显存 (MiB)
+	MemoryTotal float64  `json:"memoryTotal"` // 总显存 (MiB)
 	Pod         *PodInfo `json:"pod"`         // 占用的 Pod 信息
 }
 
@@ -126,10 +128,18 @@ func (h *ClusterHandler) GetGPUOverview(c *gin.Context) {
 		promTypes := make([]prometheus.AcceleratorTypeConfig, len(acceleratorTypes))
 		for i, t := range acceleratorTypes {
 			promTypes[i] = prometheus.AcceleratorTypeConfig{
-				Type:         t.Type,
-				Label:        t.Label,
-				ResourceName: t.ResourceName,
-				MetricName:   t.MetricName,
+				Type:              t.Type,
+				Label:             t.Label,
+				ResourceName:      t.ResourceName,
+				MetricName:        t.MetricName,
+				MemoryUsedMetric:  t.MemoryUsedMetric,
+				MemoryTotalMetric: t.MemoryTotalMetric,
+				MetricLabels: prometheus.MetricLabelConfig{
+					DeviceID:  t.MetricLabels.DeviceID,
+					Node:      t.MetricLabels.Node,
+					Pod:       t.MetricLabels.Pod,
+					Namespace: t.MetricLabels.Namespace,
+				},
 			}
 		}
 		acceleratorMetrics, _ = h.promClient.QueryAcceleratorMetrics(ctx, promTypes)
@@ -249,6 +259,8 @@ func (h *ClusterHandler) buildAcceleratorGroup(
 				idx := prometheus.ParseDeviceID(deviceID)
 				if idx >= 0 && idx < totalDevices {
 					nodeInfo.Slots[idx].Utilization = metric.Utilization
+					nodeInfo.Slots[idx].MemoryUsed = metric.MemoryUsed
+					nodeInfo.Slots[idx].MemoryTotal = metric.MemoryTotal
 					if metric.Pod != "" {
 						nodeInfo.Slots[idx].Status = "used"
 						nodeInfo.Slots[idx].Pod = &PodInfo{

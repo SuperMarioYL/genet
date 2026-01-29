@@ -6,6 +6,7 @@
 bin/
 dist/
 .claude
+CLAUDE.md
 
 # Test binary
 *.test

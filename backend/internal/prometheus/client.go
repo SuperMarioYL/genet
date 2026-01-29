@@ -27,6 +27,8 @@ type DeviceMetric struct {
 	Pod         string  `json:"pod"`         // Pod 名称
 	Namespace   string  `json:"namespace"`   // 命名空间
 	Utilization float64 `json:"utilization"` // 利用率 0-100
+	MemoryUsed  float64 `json:"memoryUsed"`  // 已用显存 (MiB)
+	MemoryTotal float64 `json:"memoryTotal"` // 总显存 (MiB)
 }
 
 // AcceleratorMetrics 加速卡指标
@@ -78,12 +80,40 @@ func (c *Client) QueryAcceleratorMetrics(ctx context.Context, acceleratorTypes [
 	}
 
 	for _, accType := range acceleratorTypes {
-		metrics, err := c.queryMetric(ctx, accType.MetricName)
+		c.log.Debug("Querying accelerator metrics",
+			zap.String("type", accType.Type),
+			zap.String("metric", accType.MetricName),
+			zap.String("labelConfig.deviceId", accType.MetricLabels.DeviceID),
+			zap.String("labelConfig.node", accType.MetricLabels.Node))
+
+		// 查询利用率指标
+		metrics, err := c.queryMetricWithLabels(ctx, accType.MetricName, accType.MetricLabels)
 		if err != nil {
 			c.log.Warn("Failed to query metric",
 				zap.String("metric", accType.MetricName),
 				zap.Error(err))
 			continue
+		}
+
+		// 查询显存指标（如果配置了）
+		if accType.MemoryUsedMetric != "" {
+			memoryUsedMap := c.queryMemoryMetric(ctx, accType.MemoryUsedMetric, accType.MetricLabels)
+			memoryFreeMap := map[string]float64{}
+			if accType.MemoryTotalMetric != "" {
+				memoryFreeMap = c.queryMemoryMetric(ctx, accType.MemoryTotalMetric, accType.MetricLabels)
+			}
+
+			// 合并显存数据到利用率指标
+			for i := range metrics {
+				key := metrics[i].Node + "/" + metrics[i].DeviceID
+				if used, ok := memoryUsedMap[key]; ok {
+					metrics[i].MemoryUsed = used
+				}
+				if free, ok := memoryFreeMap[key]; ok {
+					// MemoryTotal = Used + Free
+					metrics[i].MemoryTotal = metrics[i].MemoryUsed + free
+				}
+			}
 		}
 
 		switch accType.Type {
@@ -97,16 +127,52 @@ func (c *Client) QueryAcceleratorMetrics(ctx context.Context, acceleratorTypes [
 	return result, nil
 }
 
+// queryMemoryMetric 查询显存指标，返回 node/deviceID -> value 的映射
+func (c *Client) queryMemoryMetric(ctx context.Context, metricName string, labelConfig MetricLabelConfig) map[string]float64 {
+	result := make(map[string]float64)
+
+	metrics, err := c.queryMetricWithLabels(ctx, metricName, labelConfig)
+	if err != nil {
+		c.log.Warn("Failed to query memory metric",
+			zap.String("metric", metricName),
+			zap.Error(err))
+		return result
+	}
+
+	for _, m := range metrics {
+		key := m.Node + "/" + m.DeviceID
+		result[key] = m.Utilization // Utilization 字段临时存储显存值
+	}
+
+	return result
+}
+
 // AcceleratorTypeConfig 加速卡类型配置
 type AcceleratorTypeConfig struct {
-	Type         string `json:"type"`         // "nvidia" | "ascend"
-	Label        string `json:"label"`        // "NVIDIA GPU" | "华为昇腾 NPU"
-	ResourceName string `json:"resourceName"` // "nvidia.com/gpu" | "huawei.com/Ascend910"
-	MetricName   string `json:"metricName"`   // "DCGM_FI_DEV_GPU_UTIL" | "npu_chip_info_utilization"
+	Type              string            `json:"type"`              // "nvidia" | "ascend"
+	Label             string            `json:"label"`             // "NVIDIA GPU" | "华为昇腾 NPU"
+	ResourceName      string            `json:"resourceName"`      // "nvidia.com/gpu" | "huawei.com/Ascend910"
+	MetricName        string            `json:"metricName"`        // 利用率指标名
+	MemoryUsedMetric  string            `json:"memoryUsedMetric"`  // 显存已用指标名
+	MemoryTotalMetric string            `json:"memoryTotalMetric"` // 显存总量指标名
+	MetricLabels      MetricLabelConfig `json:"metricLabels"`      // 标签映射配置
+}
+
+// MetricLabelConfig 指标标签映射配置
+type MetricLabelConfig struct {
+	DeviceID  string `json:"deviceId"`  // 设备ID标签名
+	Node      string `json:"node"`      // 节点名标签名
+	Pod       string `json:"pod"`       // Pod名标签名
+	Namespace string `json:"namespace"` // Namespace标签名
 }
 
 // queryMetric 查询单个指标
 func (c *Client) queryMetric(ctx context.Context, metricName string) ([]DeviceMetric, error) {
+	return c.queryMetricWithLabels(ctx, metricName, MetricLabelConfig{})
+}
+
+// queryMetricWithLabels 查询指标并使用自定义标签映射
+func (c *Client) queryMetricWithLabels(ctx context.Context, metricName string, labelConfig MetricLabelConfig) ([]DeviceMetric, error) {
 	result, warnings, err := c.api.Query(ctx, metricName, time.Now())
 	if err != nil {
 		return nil, fmt.Errorf("failed to query prometheus: %w", err)
@@ -127,26 +193,56 @@ func (c *Client) queryMetric(ctx context.Context, metricName string) ([]DeviceMe
 			Utilization: float64(sample.Value),
 		}
 
-		// 提取标签
+		// 提取标签 - 优先使用自定义标签名，然后是默认标签名
 		for name, value := range sample.Metric {
-			switch string(name) {
-			case "gpu", "id", "device":
-				metric.DeviceID = string(value)
-			case "node", "instance", "Hostname":
-				metric.Node = string(value)
-			case "pod", "exported_pod":
-				metric.Pod = string(value)
-			case "namespace", "exported_namespace":
-				metric.Namespace = string(value)
-			}
-		}
+			labelName := string(name)
 
-		// 如果没有从标签中获取到设备ID，尝试从 gpu_id 或其他字段
-		if metric.DeviceID == "" {
-			if gpuID, ok := sample.Metric["gpu_id"]; ok {
-				metric.DeviceID = string(gpuID)
-			} else if deviceID, ok := sample.Metric["device_id"]; ok {
-				metric.DeviceID = string(deviceID)
+			// 设备ID
+			if labelConfig.DeviceID != "" && labelName == labelConfig.DeviceID {
+				metric.DeviceID = string(value)
+			} else if labelConfig.DeviceID == "" {
+				switch labelName {
+				case "gpu", "id", "device", "gpu_id", "device_id", "GPU_I", "minor_number":
+					if metric.DeviceID == "" {
+						metric.DeviceID = string(value)
+					}
+				}
+			}
+
+			// 节点名
+			if labelConfig.Node != "" && labelName == labelConfig.Node {
+				metric.Node = string(value)
+			} else if labelConfig.Node == "" {
+				switch labelName {
+				case "node", "instance", "Hostname", "hostname", "kubernetes_node", "node_name":
+					if metric.Node == "" {
+						metric.Node = string(value)
+					}
+				}
+			}
+
+			// Pod名
+			if labelConfig.Pod != "" && labelName == labelConfig.Pod {
+				metric.Pod = string(value)
+			} else if labelConfig.Pod == "" {
+				switch labelName {
+				case "pod", "exported_pod", "pod_name", "kubernetes_pod":
+					if metric.Pod == "" {
+						metric.Pod = string(value)
+					}
+				}
+			}
+
+			// Namespace
+			if labelConfig.Namespace != "" && labelName == labelConfig.Namespace {
+				metric.Namespace = string(value)
+			} else if labelConfig.Namespace == "" {
+				switch labelName {
+				case "namespace", "exported_namespace", "kubernetes_namespace":
+					if metric.Namespace == "" {
+						metric.Namespace = string(value)
+					}
+				}
 			}
 		}
 
@@ -163,6 +259,10 @@ func (c *Client) queryMetric(ctx context.Context, metricName string) ([]DeviceMe
 
 		metrics = append(metrics, metric)
 	}
+
+	c.log.Debug("Queried prometheus metric",
+		zap.String("metric", metricName),
+		zap.Int("count", len(metrics)))
 
 	return metrics, nil
 }

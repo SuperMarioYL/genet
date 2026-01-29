@@ -189,6 +189,8 @@ export interface DeviceSlot {
   index: number;
   status: 'free' | 'used';
   utilization: number;
+  memoryUsed?: number;   // 已用显存 (MiB)
+  memoryTotal?: number;  // 总显存 (MiB)
   pod?: {
     name: string;
     namespace: string;

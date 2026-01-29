@@ -276,15 +276,30 @@ type GPUType struct {
 	NodeSelector map[string]string `yaml:"nodeSelector" json:"nodeSelector"`
 	// 以下字段用于热力图展示（可选，如果不填则使用默认值）
 	Type       string `yaml:"type,omitempty" json:"type,omitempty"`             // 类型标识，如 "nvidia"、"ascend"，用于分组
-	MetricName string `yaml:"metricName,omitempty" json:"metricName,omitempty"` // Prometheus 指标名
+	MetricName string `yaml:"metricName,omitempty" json:"metricName,omitempty"` // Prometheus 利用率指标名
+	// 扩展指标配置
+	MemoryUsedMetric  string            `yaml:"memoryUsedMetric,omitempty" json:"memoryUsedMetric,omitempty"`   // 显存已用指标名
+	MemoryTotalMetric string            `yaml:"memoryTotalMetric,omitempty" json:"memoryTotalMetric,omitempty"` // 显存总量指标名
+	MetricLabels      MetricLabelConfig `yaml:"metricLabels,omitempty" json:"metricLabels,omitempty"`           // 指标标签映射
+}
+
+// MetricLabelConfig 指标标签映射配置
+type MetricLabelConfig struct {
+	DeviceID  string `yaml:"deviceId,omitempty" json:"deviceId,omitempty"`   // 设备ID标签名，默认 gpu/id/device
+	Node      string `yaml:"node,omitempty" json:"node,omitempty"`           // 节点名标签名，默认 node/instance/Hostname
+	Pod       string `yaml:"pod,omitempty" json:"pod,omitempty"`             // Pod名标签名，默认 pod/exported_pod
+	Namespace string `yaml:"namespace,omitempty" json:"namespace,omitempty"` // Namespace标签名，默认 namespace/exported_namespace
 }
 
 // AcceleratorType 加速卡类型配置（用于热力图）
 type AcceleratorType struct {
-	Type         string `yaml:"type" json:"type"`                 // "nvidia" | "ascend"
-	Label        string `yaml:"label" json:"label"`               // "NVIDIA GPU" | "华为昇腾 NPU"
-	ResourceName string `yaml:"resourceName" json:"resourceName"` // "nvidia.com/gpu" | "huawei.com/Ascend910"
-	MetricName   string `yaml:"metricName" json:"metricName"`     // "DCGM_FI_DEV_GPU_UTIL" | "npu_chip_info_utilization"
+	Type              string            `yaml:"type" json:"type"`                           // "nvidia" | "ascend"
+	Label             string            `yaml:"label" json:"label"`                         // "NVIDIA GPU" | "华为昇腾 NPU"
+	ResourceName      string            `yaml:"resourceName" json:"resourceName"`           // "nvidia.com/gpu" | "huawei.com/Ascend910"
+	MetricName        string            `yaml:"metricName" json:"metricName"`               // 利用率指标名
+	MemoryUsedMetric  string            `yaml:"memoryUsedMetric" json:"memoryUsedMetric"`   // 显存已用指标名
+	MemoryTotalMetric string            `yaml:"memoryTotalMetric" json:"memoryTotalMetric"` // 显存总量指标名
+	MetricLabels      MetricLabelConfig `yaml:"metricLabels" json:"metricLabels"`           // 指标标签映射
 }
 
 // GetAcceleratorTypes 从 GPU.AvailableTypes 推导出热力图需要的加速卡类型
@@ -302,9 +317,12 @@ func (c *Config) GetAcceleratorTypes() []AcceleratorType {
 
 		// 推导类型标识和标签
 		accType := AcceleratorType{
-			ResourceName: gpuType.ResourceName,
-			Type:         gpuType.Type,
-			MetricName:   gpuType.MetricName,
+			ResourceName:      gpuType.ResourceName,
+			Type:              gpuType.Type,
+			MetricName:        gpuType.MetricName,
+			MemoryUsedMetric:  gpuType.MemoryUsedMetric,
+			MemoryTotalMetric: gpuType.MemoryTotalMetric,
+			MetricLabels:      gpuType.MetricLabels,
 		}
 
 		// 如果没有配置 type，根据 resourceName 推导
@@ -337,6 +355,20 @@ func (c *Config) GetAcceleratorTypes() []AcceleratorType {
 				accType.MetricName = "DCGM_FI_DEV_GPU_UTIL"
 			case "ascend":
 				accType.MetricName = "npu_chip_info_utilization"
+			}
+		}
+
+		// 设置默认显存指标
+		if accType.MemoryUsedMetric == "" {
+			switch accType.Type {
+			case "nvidia":
+				accType.MemoryUsedMetric = "DCGM_FI_DEV_FB_USED"
+			}
+		}
+		if accType.MemoryTotalMetric == "" {
+			switch accType.Type {
+			case "nvidia":
+				accType.MemoryTotalMetric = "DCGM_FI_DEV_FB_FREE" // 用 free + used = total
 			}
 		}
 
