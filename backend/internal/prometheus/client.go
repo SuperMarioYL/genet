@@ -265,14 +265,14 @@ func (c *Client) queryMetricWithLabels(ctx context.Context, metricName string, l
 		metrics = append(metrics, metric)
 	}
 
-	c.log.Debug("Queried prometheus metric",
+	c.log.Info("Queried prometheus metric",
 		zap.String("metric", metricName),
 		zap.Int("count", len(metrics)))
 
 	// 打印详细的指标信息便于调试
 	for i, m := range metrics {
-		if i < 3 { // 只打印前3个
-			c.log.Debug("Metric sample",
+		if i < 5 { // 只打印前5个
+			c.log.Info("Metric sample",
 				zap.String("metric", metricName),
 				zap.String("node", m.Node),
 				zap.String("deviceId", m.DeviceID),

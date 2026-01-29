@@ -125,7 +125,7 @@ func (h *ClusterHandler) GetGPUOverview(c *gin.Context) {
 	// 从 Prometheus 获取 GPU 指标
 	var acceleratorMetrics *prometheus.AcceleratorMetrics
 	if h.promClient != nil && h.promClient.IsEnabled() {
-		h.log.Debug("Prometheus is enabled, querying accelerator metrics",
+		h.log.Info("Prometheus is enabled, querying accelerator metrics",
 			zap.Int("acceleratorTypes", len(acceleratorTypes)))
 
 		promTypes := make([]prometheus.AcceleratorTypeConfig, len(acceleratorTypes))
@@ -161,7 +161,7 @@ func (h *ClusterHandler) GetGPUOverview(c *gin.Context) {
 				zap.Int("ascendNPUs", len(acceleratorMetrics.AscendNPUs)))
 		}
 	} else {
-		h.log.Debug("Prometheus is not enabled or client is nil",
+		h.log.Info("Prometheus is not enabled or client is nil",
 			zap.Bool("clientNil", h.promClient == nil),
 			zap.Bool("enabled", h.promClient != nil && h.promClient.IsEnabled()))
 	}
@@ -276,13 +276,13 @@ func (h *ClusterHandler) buildAcceleratorGroup(
 
 		// 从 Prometheus 指标填充利用率和显存信息
 		if nodeMetrics, ok := metricsMap[node.Name]; ok {
-			h.log.Debug("Found Prometheus metrics for node",
+			h.log.Info("Found Prometheus metrics for node",
 				zap.String("nodeName", node.Name),
 				zap.Int("deviceCount", len(nodeMetrics)))
 
 			for deviceID, metric := range nodeMetrics {
 				idx := prometheus.ParseDeviceID(deviceID)
-				h.log.Debug("Processing device metric",
+				h.log.Info("Processing device metric",
 					zap.String("node", node.Name),
 					zap.String("deviceID", deviceID),
 					zap.Int("parsedIdx", idx),
@@ -298,7 +298,7 @@ func (h *ClusterHandler) buildAcceleratorGroup(
 				}
 			}
 		} else {
-			h.log.Debug("No Prometheus metrics found for node",
+			h.log.Info("No Prometheus metrics found for node",
 				zap.String("nodeName", node.Name),
 				zap.Any("availableNodes", getMapKeys(metricsMap)))
 		}
