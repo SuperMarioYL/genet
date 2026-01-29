@@ -13,12 +13,14 @@ interface AcceleratorHeatmapProps {
 }
 
 // 根据利用率计算颜色
+// 空闲: 绿色, 占用: 黄(60°) → 橙(30°) → 红(0°) 渐变
 const getUtilizationColor = (utilization: number, status: string): string => {
-  if (status === 'free' || utilization === 0) {
-    return 'var(--heatmap-free)';
+  if (status === 'free') {
+    return 'hsl(120, 70%, 45%)'; // 绿色 - 空闲
   }
-  // 绿(120°) → 黄(60°) → 红(0°) 连续渐变
-  const hue = 120 - (utilization * 1.2);
+  // 占用时: 黄(60°) → 橙(30°) → 红(0°)
+  // utilization 0-100 映射到 hue 60-0
+  const hue = 60 - (utilization * 0.6);
   return `hsl(${Math.max(0, hue)}, 70%, 45%)`;
 };
 
@@ -287,24 +289,13 @@ const AcceleratorHeatmap: React.FC<AcceleratorHeatmapProps> = ({
       <div className="heatmap-footer">
         <div className="heatmap-legend">
           <div className="legend-item">
-            <div className="legend-color" style={{ backgroundColor: 'var(--heatmap-free)' }} />
+            <div className="legend-color" style={{ backgroundColor: 'hsl(120, 70%, 45%)' }} />
             <span>Free</span>
           </div>
-          <div className="legend-item">
-            <div className="legend-color" style={{ backgroundColor: 'hsl(90, 70%, 45%)' }} />
-            <span>&lt;25%</span>
-          </div>
-          <div className="legend-item">
-            <div className="legend-color" style={{ backgroundColor: 'hsl(60, 70%, 45%)' }} />
-            <span>50%</span>
-          </div>
-          <div className="legend-item">
-            <div className="legend-color" style={{ backgroundColor: 'hsl(30, 70%, 45%)' }} />
-            <span>75%</span>
-          </div>
-          <div className="legend-item">
-            <div className="legend-color" style={{ backgroundColor: 'hsl(0, 70%, 45%)' }} />
-            <span>100%</span>
+          <div className="legend-gradient-section">
+            <span className="legend-gradient-label">0%</span>
+            <div className="legend-gradient-bar" />
+            <span className="legend-gradient-label">100%</span>
           </div>
         </div>
         {lastUpdate && (

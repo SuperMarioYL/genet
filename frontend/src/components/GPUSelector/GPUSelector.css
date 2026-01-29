@@ -44,15 +44,15 @@
   color: white;
 }
 
-/* 空闲状态 */
+/* 空闲状态 - 绿色，与热力图一致 */
 .gpu-slot-free {
-  background-color: var(--heatmap-free, #52c41a);
+  background-color: hsl(120, 70%, 45%);
   color: white;
 }
 
 .gpu-slot-free:hover {
   transform: scale(1.05);
-  box-shadow: 0 2px 8px rgba(82, 196, 26, 0.4);
+  box-shadow: 0 2px 8px hsla(120, 70%, 45%, 0.4);
 }
 
 /* 已选择状态 */
@@ -67,15 +67,15 @@
   box-shadow: 0 2px 8px rgba(24, 144, 255, 0.4);
 }
 
-/* 已使用可共享（时分复用）*/
+/* 已使用可共享（时分复用）- 橙色，与热力图一致 */
 .gpu-slot-shared {
-  background-color: #fa8c16;
+  background-color: hsl(30, 70%, 45%);
   color: white;
 }
 
 .gpu-slot-shared:hover {
   transform: scale(1.05);
-  box-shadow: 0 2px 8px rgba(250, 140, 22, 0.4);
+  box-shadow: 0 2px 8px hsla(30, 70%, 45%, 0.4);
 }
 
 /* 已使用不可选（独占）*/
@@ -109,7 +109,7 @@
 }
 
 .legend-free {
-  background-color: var(--heatmap-free, #52c41a);
+  background-color: hsl(120, 70%, 45%);
 }
 
 .legend-selected {
@@ -117,7 +117,7 @@
 }
 
 .legend-shared {
-  background-color: #fa8c16;
+  background-color: hsl(30, 70%, 45%);
 }
 
 .legend-occupied {

@@ -290,6 +290,42 @@
   border-radius: 2px;
 }
 
+/* 渐变图例条 */
+.legend-gradient-section {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 16px;
+}
+
+.legend-gradient-bar {
+  width: 120px;
+  height: 10px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    hsl(60, 70%, 45%) 0%,    /* 黄色 - 0% 利用率 */
+    hsl(45, 70%, 45%) 25%,   /* 黄橙 */
+    hsl(30, 70%, 45%) 50%,   /* 橙色 */
+    hsl(15, 70%, 45%) 75%,   /* 橙红 */
+    hsl(0, 70%, 45%) 100%    /* 红色 - 100% 利用率 */
+  );
+}
+
+.legend-gradient-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  min-width: 24px;
+}
+
+.legend-gradient-label:first-child {
+  text-align: right;
+}
+
+.legend-gradient-label:last-child {
+  text-align: left;
+}
+
 .last-update {
   font-size: 11px;
 }
@@ -355,5 +391,13 @@
   .heatmap-legend {
     flex-wrap: wrap;
     gap: 8px;
+  }
+
+  .legend-gradient-section {
+    margin-left: 0;
+  }
+
+  .legend-gradient-bar {
+    width: 80px;
   }
 }

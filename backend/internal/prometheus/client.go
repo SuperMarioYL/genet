@@ -209,12 +209,17 @@ func (c *Client) queryMetricWithLabels(ctx context.Context, metricName string, l
 				}
 			}
 
-			// 节点名
+			// 节点名 - 优先级: Hostname > node > hostname > kubernetes_node > node_name > instance
+			// instance 通常是 IP:port 格式，优先级最低
 			if labelConfig.Node != "" && labelName == labelConfig.Node {
 				metric.Node = string(value)
 			} else if labelConfig.Node == "" {
 				switch labelName {
-				case "node", "instance", "Hostname", "hostname", "kubernetes_node", "node_name":
+				case "Hostname", "node", "hostname", "kubernetes_node", "node_name":
+					// 高优先级标签，直接覆盖
+					metric.Node = string(value)
+				case "instance":
+					// instance 优先级最低，只在没有其他值时使用
 					if metric.Node == "" {
 						metric.Node = string(value)
 					}
@@ -263,6 +268,18 @@ func (c *Client) queryMetricWithLabels(ctx context.Context, metricName string, l
 	c.log.Debug("Queried prometheus metric",
 		zap.String("metric", metricName),
 		zap.Int("count", len(metrics)))
+
+	// 打印详细的指标信息便于调试
+	for i, m := range metrics {
+		if i < 3 { // 只打印前3个
+			c.log.Debug("Metric sample",
+				zap.String("metric", metricName),
+				zap.String("node", m.Node),
+				zap.String("deviceId", m.DeviceID),
+				zap.String("pod", m.Pod),
+				zap.Float64("value", m.Utilization))
+		}
+	}
 
 	return metrics, nil
 }

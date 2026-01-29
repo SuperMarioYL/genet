@@ -125,8 +125,17 @@ func (h *ClusterHandler) GetGPUOverview(c *gin.Context) {
 	// 从 Prometheus 获取 GPU 指标
 	var acceleratorMetrics *prometheus.AcceleratorMetrics
 	if h.promClient != nil && h.promClient.IsEnabled() {
+		h.log.Debug("Prometheus is enabled, querying accelerator metrics",
+			zap.Int("acceleratorTypes", len(acceleratorTypes)))
+
 		promTypes := make([]prometheus.AcceleratorTypeConfig, len(acceleratorTypes))
 		for i, t := range acceleratorTypes {
+			h.log.Debug("Accelerator type config",
+				zap.String("type", t.Type),
+				zap.String("metricName", t.MetricName),
+				zap.String("memoryUsedMetric", t.MemoryUsedMetric),
+				zap.String("memoryTotalMetric", t.MemoryTotalMetric))
+
 			promTypes[i] = prometheus.AcceleratorTypeConfig{
 				Type:              t.Type,
 				Label:             t.Label,
@@ -142,7 +151,19 @@ func (h *ClusterHandler) GetGPUOverview(c *gin.Context) {
 				},
 			}
 		}
-		acceleratorMetrics, _ = h.promClient.QueryAcceleratorMetrics(ctx, promTypes)
+		var err error
+		acceleratorMetrics, err = h.promClient.QueryAcceleratorMetrics(ctx, promTypes)
+		if err != nil {
+			h.log.Error("Failed to query accelerator metrics", zap.Error(err))
+		} else {
+			h.log.Debug("Got accelerator metrics",
+				zap.Int("nvidiaGPUs", len(acceleratorMetrics.NvidiaGPUs)),
+				zap.Int("ascendNPUs", len(acceleratorMetrics.AscendNPUs)))
+		}
+	} else {
+		h.log.Debug("Prometheus is not enabled or client is nil",
+			zap.Bool("clientNil", h.promClient == nil),
+			zap.Bool("enabled", h.promClient != nil && h.promClient.IsEnabled()))
 	}
 
 	// 构建响应
@@ -253,46 +274,52 @@ func (h *ClusterHandler) buildAcceleratorGroup(
 			}
 		}
 
-		// 从 Prometheus 指标填充槽位信息
+		// 从 Prometheus 指标填充利用率和显存信息
 		if nodeMetrics, ok := metricsMap[node.Name]; ok {
+			h.log.Debug("Found Prometheus metrics for node",
+				zap.String("nodeName", node.Name),
+				zap.Int("deviceCount", len(nodeMetrics)))
+
 			for deviceID, metric := range nodeMetrics {
 				idx := prometheus.ParseDeviceID(deviceID)
+				h.log.Debug("Processing device metric",
+					zap.String("node", node.Name),
+					zap.String("deviceID", deviceID),
+					zap.Int("parsedIdx", idx),
+					zap.Float64("utilization", metric.Utilization),
+					zap.Float64("memoryUsed", metric.MemoryUsed),
+					zap.Float64("memoryTotal", metric.MemoryTotal))
+
 				if idx >= 0 && idx < totalDevices {
 					nodeInfo.Slots[idx].Utilization = metric.Utilization
 					nodeInfo.Slots[idx].MemoryUsed = metric.MemoryUsed
 					nodeInfo.Slots[idx].MemoryTotal = metric.MemoryTotal
-					if metric.Pod != "" {
-						nodeInfo.Slots[idx].Status = "used"
-						nodeInfo.Slots[idx].Pod = &PodInfo{
-							Name:      metric.Pod,
-							Namespace: metric.Namespace,
-							User:      extractUsername(metric.Pod),
-						}
-						nodeInfo.UsedDevices++
-					}
+					// 注意：不从 Prometheus 获取 Pod 信息，因为 DCGM 的 pod/namespace 是 exporter 自己的
 				}
 			}
+		} else {
+			h.log.Debug("No Prometheus metrics found for node",
+				zap.String("nodeName", node.Name),
+				zap.Any("availableNodes", getMapKeys(metricsMap)))
 		}
 
-		// 如果没有 Prometheus 数据，从 K8s Pod 信息推断
-		if len(metricsMap[node.Name]) == 0 {
-			slotIndex := 0
-			for _, pod := range nodePods[node.Name] {
-				gpuCount := getPodGPUCount(pod, resourceName)
-				if gpuCount > 0 {
-					for i := 0; i < gpuCount && slotIndex < totalDevices; i++ {
-						nodeInfo.Slots[slotIndex].Status = "used"
-						nodeInfo.Slots[slotIndex].Pod = &PodInfo{
-							Name:      pod.Name,
-							Namespace: pod.Namespace,
-							User:      extractUsernameFromPod(pod),
-							Email:     extractEmailFromPod(pod),
-							GPUCount:  gpuCount,
-							StartTime: formatStartTime(pod.Status.StartTime),
-						}
-						slotIndex++
-						nodeInfo.UsedDevices++
+		// 从 K8s Pod 信息获取 GPU 使用者（始终执行，不依赖 Prometheus）
+		slotIndex := 0
+		for _, pod := range nodePods[node.Name] {
+			gpuCount := getPodGPUCount(pod, resourceName)
+			if gpuCount > 0 {
+				for i := 0; i < gpuCount && slotIndex < totalDevices; i++ {
+					nodeInfo.Slots[slotIndex].Status = "used"
+					nodeInfo.Slots[slotIndex].Pod = &PodInfo{
+						Name:      pod.Name,
+						Namespace: pod.Namespace,
+						User:      extractUsernameFromPod(pod),
+						Email:     extractEmailFromPod(pod),
+						GPUCount:  gpuCount,
+						StartTime: formatStartTime(pod.Status.StartTime),
 					}
+					slotIndex++
+					nodeInfo.UsedDevices++
 				}
 			}
 		}
@@ -426,6 +453,15 @@ func detectTimeSharing(node corev1.Node, resourceName corev1.ResourceName) (bool
 
 	// 默认不启用时分复用
 	return false, 1
+}
+
+// getMapKeys 获取 map 的所有 key（用于调试日志）
+func getMapKeys(m map[string]map[string]prometheus.DeviceMetric) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 // 确保 resource 包被使用
