@@ -13,11 +13,14 @@ interface AcceleratorHeatmapProps {
 }
 
 // 根据利用率计算颜色
-// 利用率 0-100: 绿(120°) → 黄(60°) → 橙(30°) → 红(0°) 渐变
+// 绿色区间小，低利用率时变化明显
+// 0% = 绿(120°), 10% = 黄绿(90°), 30% = 黄(60°), 60% = 橙(30°), 100% = 红(0°)
 const getUtilizationColor = (utilization: number): string => {
-  // utilization 0-100 映射到 hue 120-0
-  // 0% = 绿色(120°), 50% = 黄色(60°), 100% = 红色(0°)
-  const hue = 120 - (utilization * 1.2);
+  // 使用平方根函数使低利用率时变化更明显
+  // sqrt(utilization/100) * 120 使得：
+  // 0% -> 120°(绿), 10% -> 82°(黄绿), 25% -> 60°(黄), 50% -> 35°(橙), 100% -> 0°(红)
+  const normalized = Math.sqrt(utilization / 100);
+  const hue = 120 - (normalized * 120);
   return `hsl(${Math.max(0, hue)}, 70%, 45%)`;
 };
 
