@@ -358,6 +358,7 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 		Name:       podName,
 		Namespace:  namespace,
 		Username:   userIdentifier, // 使用 userIdentifier 作为存储卷路径中的用户标识
+		Email:      email,          // 用户邮箱
 		Image:      req.Image,
 		GPUCount:   req.GPUCount,
 		GPUType:    req.GPUType,

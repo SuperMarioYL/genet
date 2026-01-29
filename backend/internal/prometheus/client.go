@@ -97,15 +97,17 @@ func (c *Client) QueryAcceleratorMetrics(ctx context.Context, acceleratorTypes [
 
 		// 查询显存指标（如果配置了）
 		if accType.MemoryUsedMetric != "" {
-			memoryUsedMap := c.queryMemoryMetric(ctx, accType.MemoryUsedMetric, accType.MetricLabels)
+			memoryUsedMap := c.queryMemoryMetricNormalized(ctx, accType.MemoryUsedMetric, accType.MetricLabels)
 			memoryFreeMap := map[string]float64{}
 			if accType.MemoryTotalMetric != "" {
-				memoryFreeMap = c.queryMemoryMetric(ctx, accType.MemoryTotalMetric, accType.MetricLabels)
+				memoryFreeMap = c.queryMemoryMetricNormalized(ctx, accType.MemoryTotalMetric, accType.MetricLabels)
 			}
 
 			// 合并显存数据到利用率指标
+			// 使用解析后的数字 ID 作为 key，避免 nvidia0 vs 0 不匹配的问题
 			for i := range metrics {
-				key := metrics[i].Node + "/" + metrics[i].DeviceID
+				parsedID := ParseDeviceID(metrics[i].DeviceID)
+				key := metrics[i].Node + "/" + strconv.Itoa(parsedID)
 				if used, ok := memoryUsedMap[key]; ok {
 					metrics[i].MemoryUsed = used
 				}
@@ -141,6 +143,29 @@ func (c *Client) queryMemoryMetric(ctx context.Context, metricName string, label
 
 	for _, m := range metrics {
 		key := m.Node + "/" + m.DeviceID
+		result[key] = m.Utilization // Utilization 字段临时存储显存值
+	}
+
+	return result
+}
+
+// queryMemoryMetricNormalized 查询显存指标，使用解析后的数字 ID 作为 key
+// 解决 nvidia0 vs 0 格式不匹配的问题
+func (c *Client) queryMemoryMetricNormalized(ctx context.Context, metricName string, labelConfig MetricLabelConfig) map[string]float64 {
+	result := make(map[string]float64)
+
+	metrics, err := c.queryMetricWithLabels(ctx, metricName, labelConfig)
+	if err != nil {
+		c.log.Warn("Failed to query memory metric",
+			zap.String("metric", metricName),
+			zap.Error(err))
+		return result
+	}
+
+	for _, m := range metrics {
+		// 使用解析后的数字 ID，确保 nvidia0 和 0 都能匹配
+		parsedID := ParseDeviceID(m.DeviceID)
+		key := m.Node + "/" + strconv.Itoa(parsedID)
 		result[key] = m.Utilization // Utilization 字段临时存储显存值
 	}
 

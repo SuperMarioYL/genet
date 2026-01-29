@@ -207,32 +207,37 @@
   visibility: hidden;
 }
 
-/* Tooltip 样式 */
+/* Tooltip 样式 - 深色背景风格 */
 .heatmap-tooltip .ant-tooltip-inner {
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  border: 1px solid var(--border-color);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  padding: 0;
+  background: #1a1a2e !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+  padding: 0 !important;
 }
 
 .heatmap-tooltip .ant-tooltip-arrow::before {
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
+  background: #1a1a2e !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
 }
 
 .device-tooltip {
   padding: 12px;
   min-width: 200px;
+  color: #ffffff;
 }
 
 .tooltip-header {
   margin-bottom: 8px;
 }
 
+.tooltip-header .ant-typography {
+  color: #ffffff !important;
+}
+
 .tooltip-divider {
   height: 1px;
-  background: var(--border-color);
+  background: rgba(255, 255, 255, 0.15);
   margin: 8px 0;
 }
 
@@ -249,11 +254,11 @@
 }
 
 .tooltip-label {
-  color: var(--text-muted);
+  color: rgba(255, 255, 255, 0.6);
 }
 
 .tooltip-value {
-  color: var(--text-primary);
+  color: #ffffff;
   font-weight: 500;
   max-width: 140px;
   overflow: hidden;

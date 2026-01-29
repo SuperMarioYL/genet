@@ -21,6 +21,7 @@ type PodSpec struct {
 	Name       string
 	Namespace  string
 	Username   string
+	Email      string // 用户邮箱
 	Image      string
 	GPUCount   int
 	GPUType    string
@@ -282,6 +283,7 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 			},
 			Annotations: map[string]string{
 				"genet.io/created-at":   time.Now().Format(time.RFC3339),
+				"genet.io/email":        spec.Email, // 用户邮箱
 				"genet.io/gpu-type":     spec.GPUType,
 				"genet.io/gpu-count":    fmt.Sprintf("%d", spec.GPUCount),
 				"genet.io/cpu":          cpuRequest,
