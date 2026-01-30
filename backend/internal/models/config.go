@@ -261,6 +261,11 @@ type PodConfig struct {
 	// 可用变量: {{.ProxyScript}}
 	// 如果为空，使用默认脚本
 	StartupScript string `yaml:"startupScript,omitempty" json:"startupScript,omitempty"`
+
+	// Lifecycle 容器生命周期 Hook（K8s 原生格式）
+	// 用于在容器启动后或停止前执行自定义命令
+	// 文档: https://kubernetes.io/docs/concepts/containers/container-lifecycle-hooks/
+	Lifecycle *corev1.Lifecycle `yaml:"lifecycle,omitempty" json:"lifecycle,omitempty"`
 }
 
 // GPUConfig GPU 相关配置

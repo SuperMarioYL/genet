@@ -163,6 +163,11 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 		}
 	}
 
+	// 应用 Lifecycle Hook（preStop/postStart）
+	if c.config.Pod.Lifecycle != nil {
+		container.Lifecycle = c.config.Pod.Lifecycle
+	}
+
 	// 添加代理环境变量
 	if spec.HTTPProxy != "" {
 		container.Env = append(container.Env,

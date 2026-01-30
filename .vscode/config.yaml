@@ -242,6 +242,23 @@ pod:
   #     mountPath: /etc/credentials
   #     readOnly: true
 
+  # 容器生命周期 Hook（K8s 原生格式，可选）
+  # 用于在容器启动后或停止前执行自定义命令
+  # 文档: https://kubernetes.io/docs/concepts/containers/container-lifecycle-hooks/
+  # lifecycle:
+  #   preStop:
+  #     exec:
+  #       command:
+  #         - /bin/sh
+  #         - -c
+  #         - "mv /workspace/output/* /data/archive/ || true"
+  #   postStart:
+  #     exec:
+  #       command:
+  #         - /bin/sh
+  #         - -c
+  #         - "echo 'Container started'"
+
   # 容器启动脚本模板
   # 可用变量: {{.ProxyScript}}
   startupScript: |
