@@ -495,10 +495,23 @@ func (h *PodHandler) ExtendPod(c *gin.Context) {
 		return
 	}
 
-	// 计算保护截止时间：明天 22:59
-	now := time.Now()
+	// 获取配置的时区，默认使用 Asia/Shanghai
+	timezone := h.config.Lifecycle.Timezone
+	if timezone == "" {
+		timezone = "Asia/Shanghai"
+	}
+	loc, err := time.LoadLocation(timezone)
+	if err != nil {
+		h.log.Warn("Invalid timezone config, using UTC",
+			zap.String("timezone", timezone),
+			zap.Error(err))
+		loc = time.UTC
+	}
+
+	// 计算保护截止时间：明天 22:59（使用配置的时区）
+	now := time.Now().In(loc)
 	tomorrow := now.AddDate(0, 0, 1)
-	protectedUntil := time.Date(tomorrow.Year(), tomorrow.Month(), tomorrow.Day(), 22, 59, 0, 0, now.Location())
+	protectedUntil := time.Date(tomorrow.Year(), tomorrow.Month(), tomorrow.Day(), 22, 59, 0, 0, loc)
 
 	// 更新 Pod 注解
 	if pod.Annotations == nil {
