@@ -25,6 +25,9 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
   const [config, setConfig] = useState<any>(null);
   const [selectedGPUCount, setSelectedGPUCount] = useState(1);
 
+  // 监听 GPU 类型变化，用于节点过滤
+  const watchedGPUType = Form.useWatch('gpuType', form);
+
   // 高级配置状态
   const [gpuOverview, setGpuOverview] = useState<GPUOverviewResponse | null>(null);
   const [selectedNode, setSelectedNode] = useState<string | undefined>(undefined);
@@ -174,17 +177,39 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
     return undefined;
   };
 
-  // 获取可选择的节点列表
+  // 获取可选择的节点列表（根据选中的 GPU 类型过滤）
   const getAvailableNodes = (): NodeGPUInfo[] => {
     if (!gpuOverview) return [];
-    const nodes: NodeGPUInfo[] = [];
 
-    for (const group of gpuOverview.acceleratorGroups) {
-      // 显示所有有 GPU 的节点
-      nodes.push(...group.nodes);
+    // 如果没有选中 GPU 类型，返回所有节点
+    if (!watchedGPUType || !config?.gpuTypes) {
+      const nodes: NodeGPUInfo[] = [];
+      for (const group of gpuOverview.acceleratorGroups) {
+        nodes.push(...group.nodes);
+      }
+      return nodes;
     }
 
-    return nodes;
+    // 找到选中 GPU 类型对应的 resourceName
+    const gpuTypeConfig = config.gpuTypes.find((g: any) => g.name === watchedGPUType);
+    if (!gpuTypeConfig) {
+      // 找不到配置时返回所有节点
+      const nodes: NodeGPUInfo[] = [];
+      for (const group of gpuOverview.acceleratorGroups) {
+        nodes.push(...group.nodes);
+      }
+      return nodes;
+    }
+
+    // 只返回匹配 resourceName 的 AcceleratorGroup 中的节点
+    const resourceName = gpuTypeConfig.resourceName;
+    for (const group of gpuOverview.acceleratorGroups) {
+      if (group.resourceName === resourceName) {
+        return group.nodes;
+      }
+    }
+
+    return [];
   };
 
   // 处理节点选择变化
@@ -429,7 +454,15 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
                 hidden={effectiveGPUCount === 0}
                 className="form-col"
               >
-                <Select placeholder="选择 GPU 类型" allowClear>
+                <Select
+                  placeholder="选择 GPU 类型"
+                  allowClear
+                  onChange={() => {
+                    // GPU 类型变化时清空节点和 GPU 卡选择
+                    setSelectedNode(undefined);
+                    setSelectedGPUDevices([]);
+                  }}
+                >
                   {config?.gpuTypes?.map((gpu: any) => (
                     <Select.Option key={gpu.name} value={gpu.name}>{gpu.name}</Select.Option>
                   ))}
