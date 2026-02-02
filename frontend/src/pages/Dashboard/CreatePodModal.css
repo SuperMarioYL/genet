@@ -10,6 +10,51 @@
 .form-row { display: flex; gap: 16px; }
 .form-col { flex: 1; }
 
+/* 两栏布局 */
+.create-pod-layout {
+  display: flex;
+  gap: 24px;
+}
+
+.create-pod-left {
+  flex: 1;
+  min-width: 0;
+}
+
+.create-pod-right {
+  width: 360px;
+  flex-shrink: 0;
+}
+
+/* 右栏 GPU 选择面板 */
+.gpu-selection-panel {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.gpu-selection-panel-title {
+  font-weight: 500;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+}
+
+/* 共享模式下的 GPU 数量显示 */
+.sharing-gpu-count {
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+[data-theme="dark"] .gpu-selection-panel {
+  background: #1a1a2e;
+}
+
 .quota-preview { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
 .quota-preview-title { font-size: 13px; color: var(--text-muted); margin-bottom: 12px; font-weight: 500; }
 .quota-preview-items { display: flex; gap: 24px; }

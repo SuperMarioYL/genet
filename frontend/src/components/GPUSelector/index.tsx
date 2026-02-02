@@ -16,30 +16,20 @@ export interface GPUSelectorProps {
   maxPodsPerGPU?: number;
 }
 
-// 根据状态获取槽位样式类
-const getSlotClassName = (
-  slot: DeviceSlot,
-  isSelected: boolean,
-  timeSharingEnabled: boolean,
-  isSharing: boolean
-): string => {
-  const classes = ['gpu-slot'];
+// 热力图颜色计算函数（与 AcceleratorHeatmap 一致）
+const getUtilizationColor = (utilization: number): string => {
+  const normalized = Math.sqrt(utilization / 100);
+  const hue = 120 - (normalized * 120);
+  return `hsl(${Math.max(0, hue)}, 70%, 45%)`;
+};
 
-  if (isSelected) {
-    classes.push('gpu-slot-selected');
-  } else if (slot.status === 'free') {
-    classes.push('gpu-slot-free');
-  } else if (slot.status === 'full') {
-    classes.push('gpu-slot-full'); // 共享模式已满，不可选择
-  } else if (slot.status === 'used') {
-    if (isSharing || timeSharingEnabled) {
-      classes.push('gpu-slot-shared'); // 共享模式或时分复用节点，可选择
-    } else {
-      classes.push('gpu-slot-occupied'); // 独占模式，不可选择
-    }
+// 格式化显存大小
+const formatMemory = (mib: number | undefined): string => {
+  if (mib === undefined) return '-';
+  if (mib >= 1024) {
+    return `${(mib / 1024).toFixed(1)} GiB`;
   }
-
-  return classes.join(' ');
+  return `${mib} MiB`;
 };
 
 // 单个 GPU 槽位组件
@@ -60,22 +50,70 @@ const GPUSlot: React.FC<{
     (slot.status === 'used' && (isSharing || timeSharingEnabled))
   );
 
+  // 计算显存利用率
+  const memoryUtilization = (slot.memoryTotal && slot.memoryTotal > 0)
+    ? (slot.memoryUsed || 0) / slot.memoryTotal * 100
+    : 0;
+
+  // 计算 Pod 占用率
+  const podUtilization = (maxPodsPerGPU > 0)
+    ? (slot.currentShare / maxPodsPerGPU) * 100
+    : 0;
+
+  // 取三者最大值决定颜色
+  const smUtilization = slot.utilization || 0;
+  const maxUtil = Math.max(smUtilization, memoryUtilization, podUtilization);
+
+  // 决定背景色：选中蓝色 > 已满红色 > 利用率渐变色
+  const backgroundColor = isSelected
+    ? '#1890ff'
+    : slot.status === 'full'
+      ? '#ff7875'
+      : getUtilizationColor(maxUtil);
+
   const tooltipContent = (
     <div className="gpu-slot-tooltip">
       <div className="tooltip-header">
         <Text strong>GPU {slot.index}</Text>
-        {isSharing && maxPodsPerGPU > 0 && (
-          <Text type="secondary" style={{ marginLeft: 8 }}>
-            ({slot.currentShare}/{maxPodsPerGPU} 已用)
-          </Text>
+        {slot.status === 'full' && (
+          <Text type="danger" style={{ marginLeft: 8 }}>(已满)</Text>
         )}
       </div>
-      {/* 共享模式：显示所有共享的 Pod */}
-      {isSharing && slot.sharedPods && slot.sharedPods.length > 0 && (
+      <div className="tooltip-divider" />
+
+      {/* SM 利用率 */}
+      <div className="tooltip-row">
+        <span className="tooltip-label">SM 利用率:</span>
+        <span className="tooltip-value">{smUtilization.toFixed(0)}%</span>
+      </div>
+
+      {/* 显存利用率 */}
+      {slot.memoryTotal && slot.memoryTotal > 0 && (
+        <div className="tooltip-row">
+          <span className="tooltip-label">显存:</span>
+          <span className="tooltip-value">
+            {formatMemory(slot.memoryUsed)} / {formatMemory(slot.memoryTotal)}
+            ({memoryUtilization.toFixed(0)}%)
+          </span>
+        </div>
+      )}
+
+      {/* Pod 占用（共享模式） */}
+      {isSharing && maxPodsPerGPU > 0 && (
+        <div className="tooltip-row">
+          <span className="tooltip-label">Pod 占用:</span>
+          <span className="tooltip-value">
+            {slot.currentShare} / {maxPodsPerGPU} ({podUtilization.toFixed(0)}%)
+          </span>
+        </div>
+      )}
+
+      {/* 共享 Pod 列表 */}
+      {slot.sharedPods && slot.sharedPods.length > 0 && (
         <>
           <div className="tooltip-divider" />
           <div className="tooltip-row">
-            <span className="tooltip-label">共享 Pod:</span>
+            <span className="tooltip-label">占用 Pod:</span>
           </div>
           {slot.sharedPods.map((pod, idx) => (
             <div key={idx} className="tooltip-row" style={{ paddingLeft: 8 }}>
@@ -84,6 +122,7 @@ const GPUSlot: React.FC<{
           ))}
         </>
       )}
+
       {/* 独占模式或时分复用：显示单个占用者 */}
       {!isSharing && slot.status === 'used' && slot.pod && (
         <>
@@ -100,32 +139,20 @@ const GPUSlot: React.FC<{
           )}
         </>
       )}
-      {slot.status === 'free' && (
-        <div className="tooltip-row">
-          <span className="tooltip-label">状态:</span>
-          <span className="tooltip-value">空闲</span>
-        </div>
-      )}
-      {slot.status === 'full' && (
-        <div className="tooltip-row">
-          <span className="tooltip-label">状态:</span>
-          <span className="tooltip-value" style={{ color: '#ff4d4f' }}>已满 (不可选)</span>
-        </div>
-      )}
     </div>
   );
 
   return (
     <Tooltip title={tooltipContent} placement="top">
       <div
-        className={getSlotClassName(slot, isSelected, timeSharingEnabled, isSharing)}
+        className={`gpu-slot ${isSelected ? 'gpu-slot-selected' : ''} ${slot.status === 'full' ? 'gpu-slot-full' : ''}`}
         onClick={canClick ? onClick : undefined}
-        style={{ cursor: canClick ? 'pointer' : 'not-allowed' }}
+        style={{
+          backgroundColor,
+          cursor: canClick ? 'pointer' : 'not-allowed',
+        }}
       >
         <span className="gpu-slot-index">{slot.index}</span>
-        {isSharing && slot.currentShare > 0 && !isSelected && (
-          <span className="gpu-slot-share-count">{slot.currentShare}</span>
-        )}
         {isSelected && <span className="gpu-slot-check">✓</span>}
       </div>
     </Tooltip>
@@ -231,30 +258,21 @@ const GPUSelector: React.FC<GPUSelectorProps> = ({
       </div>
 
       <div className="gpu-selector-legend">
-        <div className="legend-item">
-          <div className="legend-color legend-free" />
-          <span>空闲</span>
+        {/* 渐变色图例 */}
+        <div className="legend-gradient">
+          <span className="legend-gradient-label">利用率</span>
+          <div className="legend-gradient-bar" />
+          <span className="legend-gradient-range">0% → 100%</span>
         </div>
+        {/* 特殊状态图例 */}
         <div className="legend-item">
           <div className="legend-color legend-selected" />
           <span>已选择</span>
         </div>
-        {(isSharing || timeSharingEnabled) && (
-          <div className="legend-item">
-            <div className="legend-color legend-shared" />
-            <span>已使用(可共享)</span>
-          </div>
-        )}
         {isSharing && (
           <div className="legend-item">
             <div className="legend-color legend-full" />
-            <span>已满(不可选)</span>
-          </div>
-        )}
-        {!isSharing && !timeSharingEnabled && (
-          <div className="legend-item">
-            <div className="legend-color legend-occupied" />
-            <span>已使用(不可选)</span>
+            <span>已满</span>
           </div>
         )}
       </div>
