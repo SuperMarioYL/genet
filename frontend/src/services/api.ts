@@ -135,6 +135,7 @@ export interface CommitStatus {
   message?: string;
   startTime?: string;
   endTime?: string;
+  targetImage?: string;
 }
 
 export const commitImage = (id: string, imageName: string): Promise<any> => {
@@ -185,20 +186,26 @@ export const downloadKubeconfig = () => {
 };
 
 // GPU 热力图相关
+export interface PodInfo {
+  name: string;
+  namespace: string;
+  user: string;
+  email?: string;
+  gpuCount?: number;
+  startTime?: string;
+}
+
 export interface DeviceSlot {
   index: number;
-  status: 'free' | 'used';
+  status: 'free' | 'used' | 'full';  // full: 共享模式已满
   utilization: number;
   memoryUsed?: number;   // 已用显存 (MiB)
   memoryTotal?: number;  // 总显存 (MiB)
-  pod?: {
-    name: string;
-    namespace: string;
-    user: string;
-    email?: string;
-    gpuCount?: number;
-    startTime?: string;
-  };
+  pod?: PodInfo;         // 主 Pod 信息（兼容独占模式）
+  // 共享模式字段
+  sharedPods?: PodInfo[];  // 共享该卡的所有 Pod
+  currentShare: number;     // 当前共享数
+  maxShare: number;         // 共享上限，0 表示不限
 }
 
 export interface NodeGPUInfo {
@@ -230,6 +237,8 @@ export interface GPUOverviewResponse {
   };
   updatedAt: string;
   prometheusEnabled: boolean;  // Prometheus 是否已配置
+  schedulingMode: 'sharing' | 'exclusive';  // 调度模式
+  maxPodsPerGPU: number;  // 每卡最大共享数
 }
 
 export const getGPUOverview = (): Promise<GPUOverviewResponse> => {

@@ -61,11 +61,15 @@ type NodeInfo struct {
 // DeviceSlot 设备槽位
 type DeviceSlot struct {
 	Index       int      `json:"index"`       // 设备编号
-	Status      string   `json:"status"`      // "free" | "used"
+	Status      string   `json:"status"`      // "free" | "used" | "full"（共享模式已满）
 	Utilization float64  `json:"utilization"` // 利用率 0-100
 	MemoryUsed  float64  `json:"memoryUsed"`  // 已用显存 (MiB)
 	MemoryTotal float64  `json:"memoryTotal"` // 总显存 (MiB)
-	Pod         *PodInfo `json:"pod"`         // 占用的 Pod 信息
+	Pod         *PodInfo `json:"pod"`         // 占用的 Pod 信息（独占模式）
+	// 共享模式字段
+	SharedPods   []PodInfo `json:"sharedPods,omitempty"` // 共享该卡的所有 Pod
+	CurrentShare int       `json:"currentShare"`         // 当前共享数
+	MaxShare     int       `json:"maxShare"`             // 共享上限，0 表示不限
 }
 
 // PodInfo Pod 简要信息
@@ -84,6 +88,8 @@ type GPUOverviewResponse struct {
 	Summary           Summary            `json:"summary"`           // 汇总信息
 	UpdatedAt         time.Time          `json:"updatedAt"`         // 更新时间
 	PrometheusEnabled bool               `json:"prometheusEnabled"` // Prometheus 是否已配置
+	SchedulingMode    string             `json:"schedulingMode"`    // 调度模式: "sharing" | "exclusive"
+	MaxPodsPerGPU     int                `json:"maxPodsPerGPU"`     // 每卡最大共享数（共享模式）
 }
 
 // Summary 汇总信息
@@ -166,6 +172,12 @@ func (h *ClusterHandler) GetGPUOverview(c *gin.Context) {
 			zap.Bool("enabled", h.promClient != nil && h.promClient.IsEnabled()))
 	}
 
+	// 获取调度模式配置
+	schedulingMode := h.config.GPU.SchedulingMode
+	if schedulingMode == "" {
+		schedulingMode = "exclusive" // 默认独占模式
+	}
+
 	// 构建响应
 	response := GPUOverviewResponse{
 		AcceleratorGroups: []AcceleratorGroup{},
@@ -176,6 +188,8 @@ func (h *ClusterHandler) GetGPUOverview(c *gin.Context) {
 		},
 		UpdatedAt:         time.Now(),
 		PrometheusEnabled: h.promClient != nil && h.promClient.IsEnabled(),
+		SchedulingMode:    schedulingMode,
+		MaxPodsPerGPU:     h.config.GPU.MaxPodsPerGPU,
 	}
 
 	// 为每种加速卡类型构建分组
@@ -303,26 +317,47 @@ func (h *ClusterHandler) buildAcceleratorGroup(
 				zap.Any("availableNodes", getMapKeys(metricsMap)))
 		}
 
-		// 从 K8s Pod 信息获取 GPU 使用者（始终执行，不依赖 Prometheus）
-		slotIndex := 0
-		for _, pod := range nodePods[node.Name] {
-			gpuCount := getPodGPUCount(pod, resourceName)
-			if gpuCount > 0 {
-				for i := 0; i < gpuCount && slotIndex < totalDevices; i++ {
-					nodeInfo.Slots[slotIndex].Status = "used"
-					nodeInfo.Slots[slotIndex].Pod = &PodInfo{
-						Name:      pod.Name,
-						Namespace: pod.Namespace,
-						User:      extractUsernameFromPod(pod),
-						Email:     extractEmailFromPod(pod),
-						GPUCount:  gpuCount,
-						StartTime: formatStartTime(pod.Status.StartTime),
+		// 获取调度模式配置
+		isSharing := h.config.GPU.SchedulingMode == "sharing"
+		maxPodsPerGPU := h.config.GPU.MaxPodsPerGPU
+
+		// 设置每个槽位的共享上限
+		for i := range nodeInfo.Slots {
+			nodeInfo.Slots[i].MaxShare = maxPodsPerGPU
+		}
+
+		// 从多数据源获取 GPU 使用情况
+		gpuUsage := h.getGPUUsageForNode(node.Name, accType.Type, nodePods[node.Name], deviceMetrics, resourceName)
+
+		// 填充槽位信息
+		usedSlots := make(map[int]bool)
+		for deviceIdx, podInfos := range gpuUsage {
+			if deviceIdx < 0 || deviceIdx >= totalDevices {
+				continue
+			}
+			slot := &nodeInfo.Slots[deviceIdx]
+			slot.SharedPods = podInfos
+			slot.CurrentShare = len(podInfos)
+
+			if len(podInfos) > 0 {
+				usedSlots[deviceIdx] = true
+				// 设置状态
+				if isSharing {
+					if maxPodsPerGPU > 0 && len(podInfos) >= maxPodsPerGPU {
+						slot.Status = "full" // 共享模式已满
+					} else {
+						slot.Status = "used" // 共享模式已用但未满
 					}
-					slotIndex++
-					nodeInfo.UsedDevices++
+				} else {
+					slot.Status = "used" // 独占模式
 				}
+				// 兼容：设置第一个 Pod 为主 Pod 信息
+				slot.Pod = &podInfos[0]
 			}
 		}
+
+		// 统计已用设备数
+		nodeInfo.UsedDevices = len(usedSlots)
 
 		group.Nodes = append(group.Nodes, nodeInfo)
 		group.TotalDevices += nodeInfo.TotalDevices
@@ -466,3 +501,156 @@ func getMapKeys(m map[string]map[string]prometheus.DeviceMetric) []string {
 
 // 确保 resource 包被使用
 var _ = resource.MustParse
+
+// getGPUUsageForNode 从多数据源获取指定节点上每张 GPU 的使用情况
+// 数据源优先级：1. Prometheus 指标（exported_pod）2. Pod 环境变量 3. K8s 资源请求
+func (h *ClusterHandler) getGPUUsageForNode(
+	nodeName string,
+	deviceType string,
+	nodePods []corev1.Pod,
+	deviceMetrics []prometheus.DeviceMetric,
+	resourceName corev1.ResourceName,
+) map[int][]PodInfo {
+	result := make(map[int][]PodInfo)
+	seen := make(map[string]bool) // podKey -> bool，防止重复
+
+	// 1. 从 Prometheus 指标获取（最准确，真正在运行的）
+	// NVIDIA: exported_pod 标签；昇腾: pod_name 标签
+	for _, metric := range deviceMetrics {
+		if metric.Node != nodeName || metric.Pod == "" {
+			continue
+		}
+		idx := prometheus.ParseDeviceID(metric.DeviceID)
+		if idx < 0 {
+			continue
+		}
+
+		podKey := metric.Namespace + "/" + metric.Pod
+		if seen[podKey] {
+			continue
+		}
+		seen[podKey] = true
+
+		// 尝试从 nodePods 中找到该 Pod 以获取更多信息
+		podInfo := PodInfo{
+			Name:      metric.Pod,
+			Namespace: metric.Namespace,
+		}
+		for _, pod := range nodePods {
+			if pod.Name == metric.Pod && pod.Namespace == metric.Namespace {
+				podInfo.User = extractUsernameFromPod(pod)
+				podInfo.Email = extractEmailFromPod(pod)
+				podInfo.StartTime = formatStartTime(pod.Status.StartTime)
+				break
+			}
+		}
+
+		result[idx] = append(result[idx], podInfo)
+	}
+
+	// 2. 从 Pod 环境变量获取（声明使用的）
+	for _, pod := range nodePods {
+		if pod.Status.Phase != corev1.PodRunning {
+			continue
+		}
+
+		podKey := pod.Namespace + "/" + pod.Name
+		if seen[podKey] {
+			continue
+		}
+
+		// 根据设备类型检查对应的环境变量
+		devices := h.getDeviceEnvValue(pod, deviceType)
+		if devices == "" || devices == "all" || devices == "none" {
+			continue
+		}
+
+		seen[podKey] = true
+		podInfo := PodInfo{
+			Name:      pod.Name,
+			Namespace: pod.Namespace,
+			User:      extractUsernameFromPod(pod),
+			Email:     extractEmailFromPod(pod),
+			StartTime: formatStartTime(pod.Status.StartTime),
+		}
+
+		for _, idx := range parseDeviceIndices(devices) {
+			result[idx] = append(result[idx], podInfo)
+		}
+	}
+
+	// 3. 从 K8s 资源请求获取（后备，独占模式，不知道具体卡号）
+	// 仅当上述方式都没检测到时使用
+	if len(result) == 0 {
+		slotIndex := 0
+		for _, pod := range nodePods {
+			if pod.Status.Phase != corev1.PodRunning {
+				continue
+			}
+
+			podKey := pod.Namespace + "/" + pod.Name
+			if seen[podKey] {
+				continue
+			}
+
+			gpuCount := getPodGPUCount(pod, resourceName)
+			if gpuCount > 0 {
+				seen[podKey] = true
+				podInfo := PodInfo{
+					Name:      pod.Name,
+					Namespace: pod.Namespace,
+					User:      extractUsernameFromPod(pod),
+					Email:     extractEmailFromPod(pod),
+					GPUCount:  gpuCount,
+					StartTime: formatStartTime(pod.Status.StartTime),
+				}
+
+				// 由于不知道具体卡号，按顺序分配
+				for i := 0; i < gpuCount; i++ {
+					result[slotIndex] = append(result[slotIndex], podInfo)
+					slotIndex++
+				}
+			}
+		}
+	}
+
+	return result
+}
+
+// getDeviceEnvValue 从 Pod 中获取设备环境变量的值
+func (h *ClusterHandler) getDeviceEnvValue(pod corev1.Pod, deviceType string) string {
+	var envName string
+	switch deviceType {
+	case "ascend":
+		envName = "ASCEND_RT_VISIBLE_DEVICES"
+	default: // nvidia
+		envName = "NVIDIA_VISIBLE_DEVICES"
+	}
+
+	for _, container := range pod.Spec.Containers {
+		for _, env := range container.Env {
+			if env.Name == envName {
+				return env.Value
+			}
+		}
+	}
+	return ""
+}
+
+// parseDeviceIndices 解析设备索引列表字符串（如 "0,1,2"）
+func parseDeviceIndices(devices string) []int {
+	if devices == "" {
+		return nil
+	}
+	var result []int
+	for _, s := range strings.Split(devices, ",") {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		if idx := prometheus.ParseDeviceID(s); idx >= 0 {
+			result = append(result, idx)
+		}
+	}
+	return result
+}

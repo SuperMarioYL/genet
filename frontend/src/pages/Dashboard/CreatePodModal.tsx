@@ -31,6 +31,10 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
   const [selectedGPUDevices, setSelectedGPUDevices] = useState<number[]>([]);
   const [hasPrometheus, setHasPrometheus] = useState(false);
 
+  // 获取调度模式
+  const isSharing = gpuOverview?.schedulingMode === 'sharing';
+  const maxPodsPerGPU = gpuOverview?.maxPodsPerGPU || 0;
+
   useEffect(() => {
     if (visible) {
       loadConfig();
@@ -80,6 +84,19 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
+
+      // 共享模式下必须选择节点和 GPU 卡
+      if (isSharing && values.gpuCount > 0) {
+        if (!selectedNode) {
+          message.error('共享模式下必须选择节点');
+          return;
+        }
+        if (selectedGPUDevices.length === 0) {
+          message.error('共享模式下必须选择 GPU 卡');
+          return;
+        }
+      }
+
       setLoading(true);
 
       const payload: CreatePodRequest = {
@@ -344,36 +361,53 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
           </Form.Item>
         </div>
 
-        {/* 高级配置 */}
+        {/* 共享模式提示 */}
+        {isSharing && selectedGPUCount > 0 && (
+          <Alert
+            message="共享模式"
+            description="当前为 GPU 共享模式，需要手动选择节点和 GPU 卡，多个 Pod 可共享同一张卡"
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+          />
+        )}
+
+        {/* 高级配置 / 共享模式下的必选配置 */}
         {selectedGPUCount > 0 && gpuOverview && gpuOverview.acceleratorGroups.length > 0 && (
           <Collapse
             ghost
             className="advanced-settings-collapse"
+            defaultActiveKey={isSharing ? ['advanced'] : []}
             items={[
               {
                 key: 'advanced',
                 label: (
                   <span className="advanced-settings-label">
                     <SettingOutlined />
-                    <span>高级设置</span>
+                    <span>{isSharing ? '节点和 GPU 选择（必填）' : '高级设置'}</span>
                     {selectedNode && <Text type="secondary" style={{ marginLeft: 8 }}>已选节点: {selectedNode}</Text>}
                   </span>
                 ),
                 children: (
                   <div className="advanced-settings-content">
                     {/* 节点选择 */}
-                    <Form.Item label="选择节点" className="node-select-item">
+                    <Form.Item
+                      label={isSharing ? "选择节点 *" : "选择节点"}
+                      className="node-select-item"
+                      validateStatus={isSharing && !selectedNode ? 'error' : undefined}
+                      help={isSharing && !selectedNode ? '共享模式下必须选择节点' : undefined}
+                    >
                       <Select
-                        placeholder="自动调度（推荐）"
-                        allowClear
+                        placeholder={isSharing ? "请选择节点" : "自动调度（推荐）"}
+                        allowClear={!isSharing}
                         value={selectedNode}
                         onChange={handleNodeChange}
                         style={{ width: '100%' }}
                       >
                         {getAvailableNodes().map(node => {
                           const freeDevices = node.totalDevices - node.usedDevices;
-                          // 非时分复用节点且无空闲卡时禁用
-                          const isDisabled = !node.timeSharingEnabled && freeDevices === 0;
+                          // 共享模式下只要有卡就可选；独占模式需要空闲卡
+                          const isDisabled = !isSharing && !node.timeSharingEnabled && freeDevices === 0;
                           return (
                             <Select.Option
                               key={node.nodeName}
@@ -382,8 +416,9 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
                             >
                               {node.nodeName}
                               <Text type="secondary" style={{ marginLeft: 8 }}>
-                                ({freeDevices}/{node.totalDevices} 可用)
-                                {node.timeSharingEnabled && ' [时分复用]'}
+                                ({freeDevices}/{node.totalDevices} 空闲)
+                                {isSharing && maxPodsPerGPU > 0 && ` [每卡最多 ${maxPodsPerGPU} Pod]`}
+                                {!isSharing && node.timeSharingEnabled && ' [时分复用]'}
                               </Text>
                             </Select.Option>
                           );
@@ -391,26 +426,34 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
                       </Select>
                     </Form.Item>
 
-                    {/* GPU 卡选择（仅当选择了节点且有 Prometheus 数据时显示） */}
-                    {selectedNode && hasPrometheus && (
+                    {/* GPU 卡选择 */}
+                    {selectedNode && (hasPrometheus || isSharing) && (
                       <div className="gpu-selector-wrapper">
-                        {(() => {
-                          const nodeInfo = getSelectedNodeInfo();
-                          if (!nodeInfo) return null;
-                          return (
-                            <GPUSelector
-                              slots={nodeInfo.slots}
-                              selectedDevices={selectedGPUDevices}
-                              timeSharingEnabled={nodeInfo.timeSharingEnabled}
-                              onChange={handleGPUDevicesChange}
-                            />
-                          );
-                        })()}
+                        <Form.Item
+                          label={isSharing ? "选择 GPU 卡 *" : "选择 GPU 卡"}
+                          validateStatus={isSharing && selectedGPUDevices.length === 0 ? 'error' : undefined}
+                          help={isSharing && selectedGPUDevices.length === 0 ? '共享模式下必须选择 GPU 卡' : undefined}
+                        >
+                          {(() => {
+                            const nodeInfo = getSelectedNodeInfo();
+                            if (!nodeInfo) return null;
+                            return (
+                              <GPUSelector
+                                slots={nodeInfo.slots}
+                                selectedDevices={selectedGPUDevices}
+                                timeSharingEnabled={nodeInfo.timeSharingEnabled}
+                                onChange={handleGPUDevicesChange}
+                                schedulingMode={gpuOverview?.schedulingMode || 'exclusive'}
+                                maxPodsPerGPU={maxPodsPerGPU}
+                              />
+                            );
+                          })()}
+                        </Form.Item>
                       </div>
                     )}
 
-                    {/* 无 Prometheus 时的提示 */}
-                    {selectedNode && !hasPrometheus && (
+                    {/* 无 Prometheus 且非共享模式时的提示 */}
+                    {selectedNode && !hasPrometheus && !isSharing && (
                       <Alert
                         message="未配置 Prometheus，无法选择具体 GPU 卡"
                         type="info"

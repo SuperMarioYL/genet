@@ -85,6 +85,26 @@
   cursor: not-allowed !important;
 }
 
+/* 共享模式已满（不可选）*/
+.gpu-slot-full {
+  background-color: #ff7875;
+  color: white;
+  cursor: not-allowed !important;
+}
+
+/* 共享数量标记 */
+.gpu-slot-share-count {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  font-size: 9px;
+  background-color: rgba(0, 0, 0, 0.3);
+  color: white;
+  padding: 1px 4px;
+  border-radius: 4px;
+  line-height: 1;
+}
+
 /* 图例 */
 .gpu-selector-legend {
   display: flex;
@@ -122,6 +142,10 @@
 
 .legend-occupied {
   background-color: #d9d9d9;
+}
+
+.legend-full {
+  background-color: #ff7875;
 }
 
 /* 警告提示 */

@@ -11,13 +11,17 @@ export interface GPUSelectorProps {
   timeSharingEnabled: boolean;
   onChange: (devices: number[]) => void;
   disabled?: boolean;
+  // 新增：共享模式相关
+  schedulingMode?: 'sharing' | 'exclusive';
+  maxPodsPerGPU?: number;
 }
 
 // 根据状态获取槽位样式类
 const getSlotClassName = (
   slot: DeviceSlot,
   isSelected: boolean,
-  timeSharingEnabled: boolean
+  timeSharingEnabled: boolean,
+  isSharing: boolean
 ): string => {
   const classes = ['gpu-slot'];
 
@@ -25,11 +29,13 @@ const getSlotClassName = (
     classes.push('gpu-slot-selected');
   } else if (slot.status === 'free') {
     classes.push('gpu-slot-free');
+  } else if (slot.status === 'full') {
+    classes.push('gpu-slot-full'); // 共享模式已满，不可选择
   } else if (slot.status === 'used') {
-    if (timeSharingEnabled) {
-      classes.push('gpu-slot-shared'); // 时分复用节点，可选择
+    if (isSharing || timeSharingEnabled) {
+      classes.push('gpu-slot-shared'); // 共享模式或时分复用节点，可选择
     } else {
-      classes.push('gpu-slot-occupied'); // 独占节点，不可选择
+      classes.push('gpu-slot-occupied'); // 独占模式，不可选择
     }
   }
 
@@ -41,18 +47,45 @@ const GPUSlot: React.FC<{
   slot: DeviceSlot;
   isSelected: boolean;
   timeSharingEnabled: boolean;
+  isSharing: boolean;
+  maxPodsPerGPU: number;
   onClick: (e: React.MouseEvent) => void;
   disabled?: boolean;
-}> = ({ slot, isSelected, timeSharingEnabled, onClick, disabled }) => {
+}> = ({ slot, isSelected, timeSharingEnabled, isSharing, maxPodsPerGPU, onClick, disabled }) => {
   // 判断是否可点击
-  const canClick = !disabled && (slot.status === 'free' || (slot.status === 'used' && timeSharingEnabled));
+  // 共享模式：free 和 used 可选，full 不可选
+  // 独占模式或时分复用：原有逻辑
+  const canClick = !disabled && (
+    slot.status === 'free' ||
+    (slot.status === 'used' && (isSharing || timeSharingEnabled))
+  );
 
   const tooltipContent = (
     <div className="gpu-slot-tooltip">
       <div className="tooltip-header">
         <Text strong>GPU {slot.index}</Text>
+        {isSharing && maxPodsPerGPU > 0 && (
+          <Text type="secondary" style={{ marginLeft: 8 }}>
+            ({slot.currentShare}/{maxPodsPerGPU} 已用)
+          </Text>
+        )}
       </div>
-      {slot.status === 'used' && slot.pod && (
+      {/* 共享模式：显示所有共享的 Pod */}
+      {isSharing && slot.sharedPods && slot.sharedPods.length > 0 && (
+        <>
+          <div className="tooltip-divider" />
+          <div className="tooltip-row">
+            <span className="tooltip-label">共享 Pod:</span>
+          </div>
+          {slot.sharedPods.map((pod, idx) => (
+            <div key={idx} className="tooltip-row" style={{ paddingLeft: 8 }}>
+              <span className="tooltip-value">• {pod.user || pod.name}</span>
+            </div>
+          ))}
+        </>
+      )}
+      {/* 独占模式或时分复用：显示单个占用者 */}
+      {!isSharing && slot.status === 'used' && slot.pod && (
         <>
           <div className="tooltip-divider" />
           <div className="tooltip-row">
@@ -73,17 +106,26 @@ const GPUSlot: React.FC<{
           <span className="tooltip-value">空闲</span>
         </div>
       )}
+      {slot.status === 'full' && (
+        <div className="tooltip-row">
+          <span className="tooltip-label">状态:</span>
+          <span className="tooltip-value" style={{ color: '#ff4d4f' }}>已满 (不可选)</span>
+        </div>
+      )}
     </div>
   );
 
   return (
     <Tooltip title={tooltipContent} placement="top">
       <div
-        className={getSlotClassName(slot, isSelected, timeSharingEnabled)}
+        className={getSlotClassName(slot, isSelected, timeSharingEnabled, isSharing)}
         onClick={canClick ? onClick : undefined}
         style={{ cursor: canClick ? 'pointer' : 'not-allowed' }}
       >
         <span className="gpu-slot-index">{slot.index}</span>
+        {isSharing && slot.currentShare > 0 && !isSelected && (
+          <span className="gpu-slot-share-count">{slot.currentShare}</span>
+        )}
         {isSelected && <span className="gpu-slot-check">✓</span>}
       </div>
     </Tooltip>
@@ -97,14 +139,22 @@ const GPUSelector: React.FC<GPUSelectorProps> = ({
   timeSharingEnabled,
   onChange,
   disabled = false,
+  schedulingMode = 'exclusive',
+  maxPodsPerGPU = 0,
 }) => {
   const selectedSet = new Set(selectedDevices);
   const [lastClickedIndex, setLastClickedIndex] = useState<number | null>(null);
+  const isSharing = schedulingMode === 'sharing';
 
   // 检查槽位是否可选择
   const isSlotSelectable = (slotIndex: number): boolean => {
     const slot = slots.find(s => s.index === slotIndex);
     if (!slot) return false;
+    // 共享模式：free 和 used 可选，full 不可选
+    if (isSharing) {
+      return slot.status === 'free' || slot.status === 'used';
+    }
+    // 独占模式或时分复用
     return slot.status === 'free' || (slot.status === 'used' && timeSharingEnabled);
   };
 
@@ -115,8 +165,8 @@ const GPUSelector: React.FC<GPUSelectorProps> = ({
     if (!slot) return;
 
     // 检查是否可选择
-    if (slot.status === 'used' && !timeSharingEnabled) {
-      return; // 独占节点上已占用的卡不可选择
+    if (!isSlotSelectable(index)) {
+      return;
     }
 
     // Shift+Click 范围选择
@@ -152,14 +202,17 @@ const GPUSelector: React.FC<GPUSelectorProps> = ({
   // 统计选中的卡中有多少是已被占用的
   const sharedCount = selectedDevices.filter(d => {
     const slot = slots.find(s => s.index === d);
-    return slot && slot.status === 'used';
+    return slot && (slot.status === 'used' || slot.currentShare > 0);
   }).length;
 
   return (
     <div className="gpu-selector">
       <div className="gpu-selector-header">
         <Text>选择 GPU 卡</Text>
-        <Text type="secondary">已选 {selectedDevices.length} 张 · 按住 Shift 可范围选择</Text>
+        <Text type="secondary">
+          已选 {selectedDevices.length} 张 · 按住 Shift 可范围选择
+          {isSharing && maxPodsPerGPU > 0 && ` · 每卡最多 ${maxPodsPerGPU} Pod`}
+        </Text>
       </div>
 
       <div className="gpu-selector-grid">
@@ -169,6 +222,8 @@ const GPUSelector: React.FC<GPUSelectorProps> = ({
             slot={slot}
             isSelected={selectedSet.has(slot.index)}
             timeSharingEnabled={timeSharingEnabled}
+            isSharing={isSharing}
+            maxPodsPerGPU={maxPodsPerGPU}
             onClick={(e) => handleSlotClick(slot.index, e)}
             disabled={disabled}
           />
@@ -184,13 +239,19 @@ const GPUSelector: React.FC<GPUSelectorProps> = ({
           <div className="legend-color legend-selected" />
           <span>已选择</span>
         </div>
-        {timeSharingEnabled && (
+        {(isSharing || timeSharingEnabled) && (
           <div className="legend-item">
             <div className="legend-color legend-shared" />
             <span>已使用(可共享)</span>
           </div>
         )}
-        {!timeSharingEnabled && (
+        {isSharing && (
+          <div className="legend-item">
+            <div className="legend-color legend-full" />
+            <span>已满(不可选)</span>
+          </div>
+        )}
+        {!isSharing && !timeSharingEnabled && (
           <div className="legend-item">
             <div className="legend-color legend-occupied" />
             <span>已使用(不可选)</span>
@@ -198,7 +259,7 @@ const GPUSelector: React.FC<GPUSelectorProps> = ({
         )}
       </div>
 
-      {sharedCount > 0 && (
+      {sharedCount > 0 && !isSharing && (
         <div className="gpu-selector-warning">
           <Text type="warning">
             注意: 选择了 {sharedCount} 张已被使用的 GPU，将启用时分复用模式

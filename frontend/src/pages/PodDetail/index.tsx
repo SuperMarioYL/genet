@@ -452,6 +452,9 @@ const PodDetail: React.FC = () => {
                   <Descriptions.Item label="状态">
                     <Tag color={commitStatus.status === 'Succeeded' ? 'green' : commitStatus.status === 'Failed' ? 'red' : commitStatus.status === 'Running' ? 'blue' : 'default'}>{commitStatus.status}</Tag>
                   </Descriptions.Item>
+                  <Descriptions.Item label="目标镜像" span={2}>
+                    <Text code className="mono" copyable>{commitStatus.targetImage}</Text>
+                  </Descriptions.Item>
                   <Descriptions.Item label="消息" span={2}>{commitStatus.message}</Descriptions.Item>
                 </Descriptions>
                 <Progress percent={getCommitProgress()} status={commitStatus.status === 'Failed' ? 'exception' : commitStatus.status === 'Succeeded' ? 'success' : 'active'} />

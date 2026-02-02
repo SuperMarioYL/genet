@@ -25,11 +25,12 @@ type CommitSpec struct {
 
 // CommitJobStatus commit job 状态
 type CommitJobStatus struct {
-	JobName   string `json:"jobName"`
-	Status    string `json:"status"`    // Pending, Running, Succeeded, Failed
-	Message   string `json:"message"`   // 状态消息
-	StartTime string `json:"startTime"` // 开始时间
-	EndTime   string `json:"endTime"`   // 结束时间
+	JobName     string `json:"jobName"`
+	Status      string `json:"status"`      // Pending, Running, Succeeded, Failed
+	Message     string `json:"message"`     // 状态消息
+	StartTime   string `json:"startTime"`   // 开始时间
+	EndTime     string `json:"endTime"`     // 结束时间
+	TargetImage string `json:"targetImage"` // 目标镜像名称
 }
 
 // CreateCommitJob 创建镜像 commit Job
@@ -165,7 +166,8 @@ func (c *Client) GetCommitJobStatus(ctx context.Context, namespace, podName stri
 	}
 
 	status := &CommitJobStatus{
-		JobName: latestJob.Name,
+		JobName:     latestJob.Name,
+		TargetImage: latestJob.Annotations["genet.io/target-image"],
 	}
 
 	// 解析状态

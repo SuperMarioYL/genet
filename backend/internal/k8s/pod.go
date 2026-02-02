@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"text/template"
 	"time"
@@ -189,10 +190,12 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 	}
 
 	// 如果需要加速卡（GPU/NPU）
+	var runtimeClassName *string
 	if spec.GPUCount > 0 {
 		c.log.Debug("Configuring accelerator resources",
 			zap.Int("count", spec.GPUCount),
-			zap.String("type", spec.GPUType))
+			zap.String("type", spec.GPUType),
+			zap.String("schedulingMode", c.config.GPU.SchedulingMode))
 
 		// 从配置中查找对应的资源名称和类型
 		resourceName := "nvidia.com/gpu" // 默认 NVIDIA GPU
@@ -207,47 +210,91 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 			}
 		}
 
-		// 设置资源请求和限制
-		container.Resources.Requests[corev1.ResourceName(resourceName)] = resource.MustParse(fmt.Sprintf("%d", spec.GPUCount))
-		container.Resources.Limits[corev1.ResourceName(resourceName)] = resource.MustParse(fmt.Sprintf("%d", spec.GPUCount))
+		// 判断调度模式
+		isSharing := c.config.GPU.SchedulingMode == "sharing"
 
-		// 根据加速卡类型设置环境变量
-		switch acceleratorType {
-		case "nvidia":
-			// NVIDIA GPU: 设置 DRIVER_CAPABILITIES
-			container.Env = append(container.Env,
-				corev1.EnvVar{Name: "NVIDIA_DRIVER_CAPABILITIES", Value: "compute,utility"},
-			)
-			// 如果用户指定了具体的 GPU 卡，设置 NVIDIA_VISIBLE_DEVICES
-			// 否则让 Device Plugin 自动注入
-			if len(spec.GPUDevices) > 0 {
-				deviceStr := intsToCommaString(spec.GPUDevices)
+		if isSharing {
+			// 共享模式：必须指定节点和 GPU 卡
+			if spec.NodeName == "" || len(spec.GPUDevices) == 0 {
+				return nil, fmt.Errorf("共享模式下必须指定节点和 GPU 卡")
+			}
+
+			// 检查共享上限
+			if c.config.GPU.MaxPodsPerGPU > 0 {
+				podsPerGPU := c.countPodsPerGPU(ctx, spec.NodeName)
+				for _, deviceIdx := range spec.GPUDevices {
+					if podsPerGPU[deviceIdx] >= c.config.GPU.MaxPodsPerGPU {
+						return nil, fmt.Errorf("GPU 卡 %d 已达到共享上限 (%d 个 Pod)", deviceIdx, c.config.GPU.MaxPodsPerGPU)
+					}
+				}
+			}
+
+			// 共享模式：只设置环境变量，不请求 K8s GPU 资源
+			deviceStr := intsToCommaString(spec.GPUDevices)
+			switch acceleratorType {
+			case "nvidia":
 				container.Env = append(container.Env,
 					corev1.EnvVar{Name: "NVIDIA_VISIBLE_DEVICES", Value: deviceStr},
+					corev1.EnvVar{Name: "NVIDIA_DRIVER_CAPABILITIES", Value: "compute,utility"},
 				)
-				c.log.Debug("Set NVIDIA_VISIBLE_DEVICES for specific GPU selection",
-					zap.String("devices", deviceStr))
-			}
-		case "ascend":
-			// 华为昇腾 NPU: 设置 ASCEND 相关环境变量
-			container.Env = append(container.Env,
-				corev1.EnvVar{Name: "ASCEND_GLOBAL_LOG_LEVEL", Value: "3"}, // 日志级别: 0-DEBUG, 1-INFO, 2-WARNING, 3-ERROR
-			)
-			// 如果用户指定了具体的 NPU 卡，设置 ASCEND_VISIBLE_DEVICES
-			if len(spec.GPUDevices) > 0 {
-				deviceStr := intsToCommaString(spec.GPUDevices)
+			case "ascend":
 				container.Env = append(container.Env,
-					corev1.EnvVar{Name: "ASCEND_VISIBLE_DEVICES", Value: deviceStr},
+					corev1.EnvVar{Name: "ASCEND_RT_VISIBLE_DEVICES", Value: deviceStr},
+					corev1.EnvVar{Name: "ASCEND_GLOBAL_LOG_LEVEL", Value: "3"},
 				)
-				c.log.Debug("Set ASCEND_VISIBLE_DEVICES for specific NPU selection",
-					zap.String("devices", deviceStr))
 			}
-		}
 
-		c.log.Debug("Accelerator configured",
-			zap.String("resourceName", resourceName),
-			zap.String("acceleratorType", acceleratorType),
-			zap.Int("count", spec.GPUCount))
+			// 设置 RuntimeClassName（如果配置了）
+			if c.config.GPU.RuntimeClassName != "" {
+				runtimeClassName = &c.config.GPU.RuntimeClassName
+			}
+
+			c.log.Debug("Accelerator configured in sharing mode",
+				zap.String("acceleratorType", acceleratorType),
+				zap.String("devices", deviceStr))
+		} else {
+			// 独占模式：请求 K8s GPU 资源
+			container.Resources.Requests[corev1.ResourceName(resourceName)] = resource.MustParse(fmt.Sprintf("%d", spec.GPUCount))
+			container.Resources.Limits[corev1.ResourceName(resourceName)] = resource.MustParse(fmt.Sprintf("%d", spec.GPUCount))
+
+			// 根据加速卡类型设置环境变量
+			switch acceleratorType {
+			case "nvidia":
+				// NVIDIA GPU: 设置 DRIVER_CAPABILITIES
+				container.Env = append(container.Env,
+					corev1.EnvVar{Name: "NVIDIA_DRIVER_CAPABILITIES", Value: "compute,utility"},
+				)
+				// 如果用户指定了具体的 GPU 卡，设置 NVIDIA_VISIBLE_DEVICES
+				// 否则让 Device Plugin 自动注入
+				if len(spec.GPUDevices) > 0 {
+					deviceStr := intsToCommaString(spec.GPUDevices)
+					container.Env = append(container.Env,
+						corev1.EnvVar{Name: "NVIDIA_VISIBLE_DEVICES", Value: deviceStr},
+					)
+					c.log.Debug("Set NVIDIA_VISIBLE_DEVICES for specific GPU selection",
+						zap.String("devices", deviceStr))
+				}
+			case "ascend":
+				// 华为昇腾 NPU: 设置 ASCEND 相关环境变量
+				container.Env = append(container.Env,
+					corev1.EnvVar{Name: "ASCEND_GLOBAL_LOG_LEVEL", Value: "3"}, // 日志级别: 0-DEBUG, 1-INFO, 2-WARNING, 3-ERROR
+				)
+				// 如果用户指定了具体的 NPU 卡，设置 ASCEND_VISIBLE_DEVICES
+				if len(spec.GPUDevices) > 0 {
+					deviceStr := intsToCommaString(spec.GPUDevices)
+					container.Env = append(container.Env,
+						corev1.EnvVar{Name: "ASCEND_RT_VISIBLE_DEVICES", Value: deviceStr},
+					)
+					c.log.Debug("Set ASCEND_RT_VISIBLE_DEVICES for specific NPU selection",
+						zap.String("devices", deviceStr))
+				}
+			}
+
+			c.log.Debug("Accelerator configured in exclusive mode",
+				zap.String("resourceName", resourceName),
+				zap.String("acceleratorType", acceleratorType),
+				zap.Int("count", spec.GPUCount))
+		}
 	}
 
 	// 构建存储卷（支持多存储卷配置）
@@ -305,6 +352,11 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 			Containers:                   []corev1.Container{container},
 			Volumes:                      volumes,
 		},
+	}
+
+	// 应用 RuntimeClassName（共享模式下可能需要）
+	if runtimeClassName != nil {
+		pod.Spec.RuntimeClassName = runtimeClassName
 	}
 
 	// 应用 DNS Policy
@@ -419,6 +471,53 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 		zap.String("uid", string(createdPod.UID)))
 
 	return createdPod, nil
+}
+
+// countPodsPerGPU 统计指定节点上每张 GPU 卡被多少个 Pod 使用
+func (c *Client) countPodsPerGPU(ctx context.Context, nodeName string) map[int]int {
+	result := make(map[int]int)
+
+	pods, err := c.clientset.CoreV1().Pods("").List(ctx, metav1.ListOptions{
+		FieldSelector: fmt.Sprintf("spec.nodeName=%s,status.phase=Running", nodeName),
+	})
+	if err != nil {
+		c.log.Warn("Failed to list pods for GPU counting",
+			zap.String("nodeName", nodeName),
+			zap.Error(err))
+		return result
+	}
+
+	for _, pod := range pods.Items {
+		if devices := pod.Annotations["genet.io/gpu-devices"]; devices != "" {
+			for _, d := range parseGPUDevices(devices) {
+				result[d]++
+			}
+		}
+	}
+
+	c.log.Debug("Counted pods per GPU",
+		zap.String("nodeName", nodeName),
+		zap.Any("podsPerGPU", result))
+
+	return result
+}
+
+// parseGPUDevices 解析 GPU 设备列表字符串（如 "0,1,2"）
+func parseGPUDevices(devices string) []int {
+	if devices == "" {
+		return nil
+	}
+	var result []int
+	for _, s := range strings.Split(devices, ",") {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		if idx, err := strconv.Atoi(s); err == nil {
+			result = append(result, idx)
+		}
+	}
+	return result
 }
 
 // DeletePod 删除 Pod

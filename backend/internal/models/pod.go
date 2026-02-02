@@ -55,4 +55,7 @@ type ConfigResponse struct {
 	GPUTypes        []GPUType     `json:"gpuTypes"` // 注意：JSON 字段名用小写
 	PresetImages    []PresetImage `json:"presetImages"`
 	UI              UIConfig      `json:"ui"`
+	// GPU 调度相关
+	GPUSchedulingMode string `json:"gpuSchedulingMode"` // "sharing" | "exclusive"
+	MaxPodsPerGPU     int    `json:"maxPodsPerGPU"`     // 每卡最大共享数
 }

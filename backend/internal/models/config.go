@@ -270,6 +270,20 @@ type PodConfig struct {
 
 // GPUConfig GPU 相关配置
 type GPUConfig struct {
+	// GPU 调度模式
+	// "sharing": 共享模式，通过环境变量控制，不请求 K8s GPU 资源
+	// "exclusive": 独占模式，使用 K8s 原生调度（默认）
+	SchedulingMode string `yaml:"schedulingMode,omitempty" json:"schedulingMode,omitempty"`
+
+	// 共享模式下的 Runtime Class（可选）
+	// NVIDIA: 通常为 "nvidia"
+	// 昇腾: 通常无需配置
+	RuntimeClassName string `yaml:"runtimeClassName,omitempty" json:"runtimeClassName,omitempty"`
+
+	// 每张 GPU 卡最多可被多少个 Pod 共享（共享模式生效）
+	// 默认值 0 表示不限制
+	MaxPodsPerGPU int `yaml:"maxPodsPerGPU,omitempty" json:"maxPodsPerGPU,omitempty"`
+
 	AvailableTypes []GPUType     `yaml:"availableTypes"`
 	PresetImages   []PresetImage `yaml:"presetImages"`
 }
