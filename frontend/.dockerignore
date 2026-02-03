@@ -1,0 +1,17 @@
+node_modules
+build
+dist
+.git
+.gitignore
+.env
+.env.*
+.vscode
+.idea
+*.md
+*.log
+*.swp
+*.swo
+*~
+.DS_Store
+coverage
+.eslintcache
