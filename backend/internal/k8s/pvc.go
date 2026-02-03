@@ -5,28 +5,47 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/uc-package/genet/internal/models"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"go.uber.org/zap"
 )
 
-// EnsurePVC 确保 PVC 存在，不存在则创建
-// 如果使用 HostPath 模式，则跳过 PVC 创建
-// userIdentifier: 用户标识（username-emailPrefix）
-func (c *Client) EnsurePVC(ctx context.Context, namespace, userIdentifier, storageClass, size string) error {
-	// 如果使用 HostPath 模式，不需要创建 PVC
-	storageType := c.config.Storage.Type
-	if storageType == "hostpath" {
-		return nil
+// EnsureVolumePVCs 根据 storage.volumes 配置，确保所有 PVC 类型的卷对应的 PVC 存在
+// 使用与 buildStorageVolume 相同的命名逻辑，避免 PVC 名称不匹配
+func (c *Client) EnsureVolumePVCs(ctx context.Context, namespace, userIdentifier string) error {
+	storageVolumes := c.config.Storage.GetEffectiveVolumes()
+
+	for _, vol := range storageVolumes {
+		if vol.Type == "hostpath" {
+			continue // HostPath 不需要 PVC
+		}
+
+		// 使用与 buildStorageVolume 相同的 PVC 命名逻辑
+		pvcName := vol.PVCNameTemplate
+		sanitizedVolumeName := SanitizeK8sName(vol.Name)
+		if pvcName == "" {
+			pvcName = fmt.Sprintf("genet-%s-%s", userIdentifier, sanitizedVolumeName)
+		} else {
+			pvcName = expandPathTemplate(pvcName, userIdentifier, vol.Name)
+		}
+
+		if err := c.ensureSinglePVC(ctx, namespace, userIdentifier, pvcName, vol); err != nil {
+			return fmt.Errorf("确保卷 %s 的 PVC 失败: %w", vol.Name, err)
+		}
 	}
 
-	pvcName := fmt.Sprintf("%s-workspace", userIdentifier)
+	return nil
+}
 
+// ensureSinglePVC 确保单个 PVC 存在
+func (c *Client) ensureSinglePVC(ctx context.Context, namespace, userIdentifier, pvcName string, vol models.StorageVolume) error {
 	// 检查是否已存在
 	_, err := c.clientset.CoreV1().PersistentVolumeClaims(namespace).Get(ctx, pvcName, metav1.GetOptions{})
 	if err == nil {
-		return nil // 已存在，直接返回
+		return nil // 已存在
 	}
 
 	if !errors.IsNotFound(err) {
@@ -34,15 +53,22 @@ func (c *Client) EnsurePVC(ctx context.Context, namespace, userIdentifier, stora
 	}
 
 	// 解析访问模式
-	accessMode := c.parseAccessMode(c.config.Storage.AccessMode)
+	accessMode := c.parseAccessMode(vol.AccessMode)
 
-	// 创建新 PVC
+	// 解析大小
+	size := vol.Size
+	if size == "" {
+		size = "50Gi" // 默认大小
+	}
+
+	// 创建 PVC
 	pvc := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      pvcName,
 			Namespace: namespace,
 			Labels: map[string]string{
 				"genet.io/user-identifier": userIdentifier,
+				"genet.io/volume-name":     vol.Name,
 				"genet.io/managed":         "true",
 			},
 		},
@@ -56,10 +82,17 @@ func (c *Client) EnsurePVC(ctx context.Context, namespace, userIdentifier, stora
 		},
 	}
 
-	// 设置 StorageClass（如果指定）
-	if storageClass != "" {
-		pvc.Spec.StorageClassName = &storageClass
+	// 设置 StorageClass
+	if vol.StorageClass != "" {
+		pvc.Spec.StorageClassName = &vol.StorageClass
 	}
+
+	c.log.Info("Creating PVC",
+		zap.String("name", pvcName),
+		zap.String("namespace", namespace),
+		zap.String("storageClass", vol.StorageClass),
+		zap.String("size", size),
+		zap.String("volumeName", vol.Name))
 
 	_, err = c.clientset.CoreV1().PersistentVolumeClaims(namespace).Create(ctx, pvc, metav1.CreateOptions{})
 	if err != nil && !errors.IsAlreadyExists(err) {

@@ -382,18 +382,12 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 		return
 	}
 
-	// 确保 PVC 存在（用户级别共享）
-	storageClass := h.config.Storage.StorageClass
-	storageSize := h.config.Storage.Size
-	if storageSize == "" {
-		storageSize = "50Gi"
-	}
-	h.log.Debug("Ensuring PVC exists",
+	// 确保所有 PVC 类型的存储卷对应的 PVC 存在
+	h.log.Debug("Ensuring volume PVCs exist",
 		zap.String("namespace", namespace),
-		zap.String("storageClass", storageClass),
-		zap.String("size", storageSize))
-	if err := h.k8sClient.EnsurePVC(ctx, namespace, userIdentifier, storageClass, storageSize); err != nil {
-		h.log.Error("Failed to create PVC",
+		zap.String("userIdentifier", userIdentifier))
+	if err := h.k8sClient.EnsureVolumePVCs(ctx, namespace, userIdentifier); err != nil {
+		h.log.Error("Failed to create PVCs",
 			zap.String("namespace", namespace),
 			zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("创建存储失败: %v", err)})

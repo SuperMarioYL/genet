@@ -419,50 +419,10 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 		pod.Spec.Affinity = c.config.Pod.Affinity
 	}
 
-	// 添加额外的通用存储（优先使用新的 K8s 原生格式）
+	// 添加额外的通用存储（K8s 原生格式）
 	if len(c.config.Pod.ExtraVolumes) > 0 || len(c.config.Pod.ExtraVolumeMounts) > 0 {
-		// 使用 K8s 原生格式配置
 		pod.Spec.Containers[0].VolumeMounts = append(pod.Spec.Containers[0].VolumeMounts, c.config.Pod.ExtraVolumeMounts...)
 		pod.Spec.Volumes = append(pod.Spec.Volumes, c.config.Pod.ExtraVolumes...)
-	} else {
-		// 向后兼容：使用旧的 Storage.ExtraVolumes 配置
-		for _, extraVol := range c.config.Storage.ExtraVolumes {
-			// 清理卷名称，确保符合 K8s 命名规范
-			sanitizedName := SanitizeK8sName(extraVol.Name)
-
-			// 添加 VolumeMount 到容器
-			pod.Spec.Containers[0].VolumeMounts = append(pod.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
-				Name:      sanitizedName,
-				MountPath: extraVol.MountPath,
-				ReadOnly:  extraVol.ReadOnly,
-			})
-
-			// 添加 Volume 到 Pod
-			volume := corev1.Volume{Name: sanitizedName}
-			if extraVol.PVC != "" {
-				volume.VolumeSource = corev1.VolumeSource{
-					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: extraVol.PVC,
-						ReadOnly:  extraVol.ReadOnly,
-					},
-				}
-			} else if extraVol.HostPath != "" {
-				volume.VolumeSource = corev1.VolumeSource{
-					HostPath: &corev1.HostPathVolumeSource{
-						Path: extraVol.HostPath,
-					},
-				}
-			} else if extraVol.NFS != nil {
-				volume.VolumeSource = corev1.VolumeSource{
-					NFS: &corev1.NFSVolumeSource{
-						Server:   extraVol.NFS.Server,
-						Path:     extraVol.NFS.Path,
-						ReadOnly: extraVol.ReadOnly,
-					},
-				}
-			}
-			pod.Spec.Volumes = append(pod.Spec.Volumes, volume)
-		}
 	}
 
 	// 如果需要 GPU，合并 GPU 特定的 NodeSelector（GPU 配置优先）

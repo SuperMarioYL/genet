@@ -235,19 +235,6 @@ backend:
         #   hostPath: "/data/cache/{username}"
         #   description: "用户缓存目录，用于存放模型缓存等"
 
-      # ============================================
-      # 旧格式配置（向后兼容，不推荐）
-      # ============================================
-      # 如果配置了上面的 volumes，以下配置会被忽略
-      # type: "pvc"
-      # storageClass: "standard"
-      # size: "50Gi"
-      # accessMode: "ReadWriteOnce"
-      # hostPathRoot: "/data/genet/workspaces"
-
-      # 注意：extraVolumes 已废弃，请使用上面的 volumes 或 pod.extraVolumes
-      # extraVolumes: []
-
     # Pod 配置（Kubernetes 原生格式）
     # 使用 K8s 标准 YAML，直接参考 K8s 官方文档配置
     # 文档: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#podspec-v1-core

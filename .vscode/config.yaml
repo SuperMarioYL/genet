@@ -115,19 +115,6 @@ storage:
     #   type: "hostpath"
     #   hostPath: "/data/cache/{username}"
 
-  # ============================================
-  # 旧格式配置（向后兼容，不推荐）
-  # ============================================
-  # 如果配置了上面的 volumes，以下配置会被忽略
-  # type: "pvc"
-  # storageClass: "hostpath"
-  # size: "10Gi"
-  # accessMode: "ReadWriteOnce"
-  # hostPathRoot: "/data/genet/workspaces"
-
-  # 注意：extraVolumes 已废弃，请使用上面的 volumes 或 pod.extraVolumes
-  # extraVolumes: []
-
 # ============================================
 # Pod 配置（Kubernetes 原生格式）
 # ============================================

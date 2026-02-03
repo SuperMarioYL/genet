@@ -123,7 +123,6 @@ type KubeconfigConfig struct {
 
 // StorageConfig 存储配置
 type StorageConfig struct {
-	// ========== 新配置格式（推荐）==========
 	// 存储卷列表，支持配置多个存储卷
 	Volumes []StorageVolume `yaml:"volumes,omitempty" json:"volumes,omitempty"`
 
@@ -137,23 +136,6 @@ type StorageConfig struct {
 	// 例如: ["^/data/.*", "^/mnt/datasets/.*"]
 	// 如果为空且 AllowUserMounts=true，则允许任意路径（不推荐）
 	UserMountAllowedPaths []string `yaml:"userMountAllowedPaths,omitempty" json:"userMountAllowedPaths,omitempty"`
-
-	// ========== 旧配置格式（向后兼容）==========
-	// 存储类型: "pvc" 或 "hostpath"
-	// pvc: 使用 PersistentVolumeClaim（默认）
-	// hostpath: 使用宿主机目录，路径为 HostPathRoot/<username>
-	Type string `yaml:"type,omitempty" json:"type,omitempty"`
-
-	// PVC 模式配置
-	StorageClass string `yaml:"storageClass,omitempty" json:"storageClass,omitempty"` // 用户 workspace PVC 的 StorageClass
-	Size         string `yaml:"size,omitempty" json:"size,omitempty"`                 // 用户 workspace PVC 的大小
-	AccessMode   string `yaml:"accessMode,omitempty" json:"accessMode,omitempty"`     // PVC 访问模式: ReadWriteOnce (RWO) 或 ReadWriteMany (RWX)
-
-	// HostPath 模式配置
-	HostPathRoot string `yaml:"hostPathRoot,omitempty" json:"hostPathRoot,omitempty"` // HostPath 根目录，实际挂载路径为 HostPathRoot/<username>
-
-	// 注意：ExtraVolumes 已废弃，请使用 Pod.ExtraVolumes 和 Pod.ExtraVolumeMounts（K8s 原生格式）
-	ExtraVolumes []ExtraVolume `yaml:"extraVolumes,omitempty" json:"extraVolumes,omitempty"` // 废弃：请使用 pod.extraVolumes
 }
 
 // StorageVolume 存储卷配置
@@ -198,52 +180,9 @@ type StorageVolume struct {
 	HostPath string `yaml:"hostPath,omitempty" json:"hostPath,omitempty"`
 }
 
-// GetEffectiveVolumes 获取有效的存储卷配置（兼容新旧格式）
+// GetEffectiveVolumes 获取有效的存储卷配置
 func (s *StorageConfig) GetEffectiveVolumes() []StorageVolume {
-	// 如果配置了新格式，直接返回
-	if len(s.Volumes) > 0 {
-		return s.Volumes
-	}
-
-	// 兼容旧格式：转换为新格式
-	vol := StorageVolume{
-		Name:      "workspace",
-		MountPath: "/workspace",
-		Type:      s.Type,
-		ReadOnly:  false,
-	}
-
-	if s.Type == "" {
-		vol.Type = "pvc" // 默认 PVC
-	}
-
-	if vol.Type == "pvc" {
-		vol.StorageClass = s.StorageClass
-		vol.Size = s.Size
-		vol.AccessMode = s.AccessMode
-	} else {
-		// hostpath 模式：使用旧的 HostPathRoot/<username> 格式
-		vol.HostPath = s.HostPathRoot + "/{username}"
-	}
-
-	return []StorageVolume{vol}
-}
-
-// ExtraVolume 额外存储配置
-type ExtraVolume struct {
-	Name      string `yaml:"name" json:"name"`           // 卷名称
-	MountPath string `yaml:"mountPath" json:"mountPath"` // 挂载路径
-	ReadOnly  bool   `yaml:"readOnly" json:"readOnly"`   // 是否只读
-	// 以下三种类型只能选一种
-	PVC      string `yaml:"pvc" json:"pvc"`           // PVC 名称
-	HostPath string `yaml:"hostPath" json:"hostPath"` // 主机路径
-	NFS      *NFS   `yaml:"nfs" json:"nfs"`           // NFS 配置
-}
-
-// NFS NFS 存储配置
-type NFS struct {
-	Server string `yaml:"server" json:"server"` // NFS 服务器地址
-	Path   string `yaml:"path" json:"path"`     // NFS 路径
+	return s.Volumes
 }
 
 // PodConfig Pod 配置（使用 K8s 原生格式）
@@ -489,12 +428,16 @@ func DefaultConfig() *Config {
 			Timezone:       "Asia/Shanghai",
 		},
 		Storage: StorageConfig{
-			Type:         "pvc", // 默认使用 PVC
-			StorageClass: "hostpath",
-			Size:         "50Gi",
-			AccessMode:   "ReadWriteMany",          // 默认 RWX
-			HostPathRoot: "/data/genet/workspaces", // HostPath 模式的根目录
-			ExtraVolumes: []ExtraVolume{},
+			Volumes: []StorageVolume{
+				{
+					Name:         "workspace",
+					MountPath:    "/workspace",
+					Type:         "pvc",
+					StorageClass: "hostpath",
+					Size:         "50Gi",
+					AccessMode:   "ReadWriteMany",
+				},
+			},
 		},
 		Pod: PodConfig{
 			HostNetwork: true,
