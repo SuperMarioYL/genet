@@ -398,10 +398,28 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 		pod.Spec.DNSConfig = c.config.Pod.DNSConfig
 	}
 
-	// 如果指定了节点名称，直接调度到该节点
+	// 如果指定了节点名称，使用 nodeAffinity 调度（而非直接设置 NodeName）
+	// 直接设置 NodeName 会绕过调度器，导致 WaitForFirstConsumer 类型的 PVC 无法获得 selected-node annotation
 	if spec.NodeName != "" {
-		pod.Spec.NodeName = spec.NodeName
-		c.log.Debug("Pod scheduled to specific node",
+		if pod.Spec.Affinity == nil {
+			pod.Spec.Affinity = &corev1.Affinity{}
+		}
+		pod.Spec.Affinity.NodeAffinity = &corev1.NodeAffinity{
+			RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+				NodeSelectorTerms: []corev1.NodeSelectorTerm{
+					{
+						MatchExpressions: []corev1.NodeSelectorRequirement{
+							{
+								Key:      "kubernetes.io/hostname",
+								Operator: corev1.NodeSelectorOpIn,
+								Values:   []string{spec.NodeName},
+							},
+						},
+					},
+				},
+			},
+		}
+		c.log.Debug("Pod scheduled to specific node via nodeAffinity",
 			zap.String("nodeName", spec.NodeName))
 	}
 
@@ -414,9 +432,32 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 		}
 	}
 
-	// 应用 Affinity
+	// 应用全局 Affinity（与已设置的 nodeAffinity 合并，而非覆盖）
 	if c.config.Pod.Affinity != nil {
-		pod.Spec.Affinity = c.config.Pod.Affinity
+		if pod.Spec.Affinity == nil {
+			pod.Spec.Affinity = c.config.Pod.Affinity
+		} else {
+			// 保留已设置的 NodeAffinity（指定节点），合并其他 Affinity 配置
+			existingNodeAffinity := pod.Spec.Affinity.NodeAffinity
+			*pod.Spec.Affinity = *c.config.Pod.Affinity
+			if existingNodeAffinity != nil {
+				if pod.Spec.Affinity.NodeAffinity == nil {
+					pod.Spec.Affinity.NodeAffinity = existingNodeAffinity
+				} else {
+					// 合并 RequiredDuringScheduling 的 NodeSelectorTerms
+					if existingNodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution != nil {
+						if pod.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution == nil {
+							pod.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution = existingNodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution
+						} else {
+							pod.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms = append(
+								existingNodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms,
+								pod.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms...,
+							)
+						}
+					}
+				}
+			}
+		}
 	}
 
 	// 添加额外的通用存储（K8s 原生格式）

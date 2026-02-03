@@ -107,8 +107,8 @@ func (c *Client) parseAccessMode(mode string) corev1.PersistentVolumeAccessMode 
 	case "readwriteoncepod", "rwop":
 		return corev1.ReadWriteOncePod
 	default:
-		// 默认使用 ReadWriteMany
-		return corev1.ReadWriteMany
+		// 默认使用 ReadWriteOnce（最通用，兼容 local-path 等本地存储）
+		return corev1.ReadWriteOnce
 	}
 }
 
