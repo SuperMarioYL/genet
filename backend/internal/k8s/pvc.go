@@ -14,22 +14,15 @@ import (
 )
 
 // EnsureVolumePVCs 根据 storage.volumes 配置，确保所有 PVC 类型的卷对应的 PVC 存在
-// 使用与 buildStorageVolume 相同的命名逻辑，避免 PVC 名称不匹配
-func (c *Client) EnsureVolumePVCs(ctx context.Context, namespace, userIdentifier string) error {
+// 使用 GetPVCName 统一命名逻辑，支持 scope 区分
+func (c *Client) EnsureVolumePVCs(ctx context.Context, namespace, userIdentifier, podName string) error {
 	storageVolumes := c.config.Storage.GetEffectiveVolumes()
 
 	for _, vol := range storageVolumes {
-		if vol.Type == "hostpath" {
-			continue // HostPath 不需要 PVC
-		}
-
-		// 使用与 buildStorageVolume 相同的 PVC 命名逻辑
-		pvcName := vol.PVCNameTemplate
-		sanitizedVolumeName := SanitizeK8sName(vol.Name)
+		// 使用 GetPVCName 统一命名（处理 scope、sanitize 等）
+		pvcName := c.GetPVCName(vol, userIdentifier, podName)
 		if pvcName == "" {
-			pvcName = fmt.Sprintf("genet-%s-%s", userIdentifier, sanitizedVolumeName)
-		} else {
-			pvcName = expandPathTemplate(pvcName, userIdentifier, vol.Name)
+			continue // HostPath 不需要 PVC
 		}
 
 		if err := c.ensureSinglePVC(ctx, namespace, userIdentifier, pvcName, vol); err != nil {

@@ -382,18 +382,6 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 		return
 	}
 
-	// 确保所有 PVC 类型的存储卷对应的 PVC 存在
-	h.log.Debug("Ensuring volume PVCs exist",
-		zap.String("namespace", namespace),
-		zap.String("userIdentifier", userIdentifier))
-	if err := h.k8sClient.EnsureVolumePVCs(ctx, namespace, userIdentifier); err != nil {
-		h.log.Error("Failed to create PVCs",
-			zap.String("namespace", namespace),
-			zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("创建存储失败: %v", err)})
-		return
-	}
-
 	// 验证自定义 Pod 名称
 	if req.Name != "" {
 		if err := k8s.ValidatePodCustomName(req.Name); err != nil {
@@ -418,6 +406,19 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"error": "同名 Pod 已存在，请使用其他名称"})
 			return
 		}
+	}
+
+	// 确保所有 PVC 类型的存储卷对应的 PVC 存在
+	h.log.Debug("Ensuring volume PVCs exist",
+		zap.String("namespace", namespace),
+		zap.String("userIdentifier", userIdentifier),
+		zap.String("podName", podName))
+	if err := h.k8sClient.EnsureVolumePVCs(ctx, namespace, userIdentifier, podName); err != nil {
+		h.log.Error("Failed to create PVCs",
+			zap.String("namespace", namespace),
+			zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("创建存储失败: %v", err)})
+		return
 	}
 
 	// 使用默认值（如果用户未指定）
@@ -680,10 +681,6 @@ func (h *PodHandler) DeletePod(c *gin.Context) {
 		}
 
 		scope := strings.ToLower(vol.Scope)
-		// 兼容旧的 reclaimPolicy 配置
-		if scope == "" && strings.ToLower(vol.ReclaimPolicy) == "delete" {
-			scope = "pod"
-		}
 
 		// 只有 scope="pod" 时才删除 PVC
 		if scope == "pod" {

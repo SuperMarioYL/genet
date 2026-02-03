@@ -173,9 +173,9 @@ backend:
       # - accessMode: 访问模式 (ReadWriteOnce, ReadWriteMany, ReadOnlyMany)
       # - pvcNameTemplate: PVC 命名模板，支持 {username}, {volumeName}
       #                    默认: "genet-{username}-{volumeName}"
-      # - reclaimPolicy: PVC 删除策略，决定 Pod 删除时 PVC 的处理方式
-      #                  - "Retain": 保留 PVC（默认，用户数据持久化）
-      #                  - "Delete": 随 Pod 删除（临时存储场景）
+      # - scope: PVC 作用域，决定 PVC 的生命周期
+      #          - "user": 用户级（默认）- 同用户所有 Pod 共享，数据持久化
+      #          - "pod": Pod 级 - 每个 Pod 独立 PVC，Pod 删除时 PVC 也删除
       #
       # HostPath 模式字段:
       # - hostPath: 路径模板，支持 {username}

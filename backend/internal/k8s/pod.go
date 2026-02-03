@@ -305,7 +305,7 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 	var storageTypeAnnotation string
 
 	for _, storageVol := range storageVolumes {
-		volume, volumeMount := c.buildStorageVolume(storageVol, spec.Username)
+		volume, volumeMount := c.buildStorageVolume(storageVol, spec.Username, spec.Name)
 		volumes = append(volumes, volume)
 		volumeMounts = append(volumeMounts, volumeMount)
 
@@ -599,7 +599,7 @@ func (c *Client) GetPodLogs(ctx context.Context, namespace, name string, tailLin
 }
 
 // buildStorageVolume 根据存储卷配置构建 K8s Volume 和 VolumeMount
-func (c *Client) buildStorageVolume(storageVol models.StorageVolume, username string) (corev1.Volume, corev1.VolumeMount) {
+func (c *Client) buildStorageVolume(storageVol models.StorageVolume, username, podName string) (corev1.Volume, corev1.VolumeMount) {
 	// 清理卷名称，确保符合 K8s 命名规范（下划线转连字符等）
 	sanitizedVolumeName := SanitizeK8sName(storageVol.Name)
 
@@ -613,7 +613,6 @@ func (c *Client) buildStorageVolume(storageVol models.StorageVolume, username st
 
 	if storageVol.Type == "hostpath" {
 		// HostPath 模式
-		// 支持 {username} 变量替换
 		hostPath := expandPathTemplate(storageVol.HostPath, username, storageVol.Name)
 		hostPathType := corev1.HostPathDirectoryOrCreate
 		volume = corev1.Volume{
@@ -626,15 +625,8 @@ func (c *Client) buildStorageVolume(storageVol models.StorageVolume, username st
 			},
 		}
 	} else {
-		// PVC 模式（默认）
-		pvcName := storageVol.PVCNameTemplate
-		if pvcName == "" {
-			// 默认 PVC 命名: genet-<username>-<volumeName>
-			pvcName = fmt.Sprintf("genet-%s-%s", username, sanitizedVolumeName)
-		} else {
-			// 支持 {username}, {volumeName} 变量替换
-			pvcName = expandPathTemplate(pvcName, username, storageVol.Name)
-		}
+		// PVC 模式（默认）- 使用 GetPVCName 统一命名逻辑
+		pvcName := c.GetPVCName(storageVol, username, podName)
 
 		volume = corev1.Volume{
 			Name: sanitizedVolumeName,
@@ -688,7 +680,7 @@ func intsToCommaString(nums []int) string {
 
 // GetPVCName 获取存储卷对应的 PVC 名称
 // storageVol: 存储卷配置
-// username: 用户名
+// username: 用户标识（userIdentifier）
 // podName: Pod 名称（scope="pod" 时需要）
 // 返回 PVC 名称，如果是 HostPath 类型则返回空字符串
 func (c *Client) GetPVCName(storageVol models.StorageVolume, username, podName string) string {
@@ -696,22 +688,21 @@ func (c *Client) GetPVCName(storageVol models.StorageVolume, username, podName s
 		return ""
 	}
 
+	sanitizedVolumeName := SanitizeK8sName(storageVol.Name)
 	scope := strings.ToLower(storageVol.Scope)
 	pvcName := storageVol.PVCNameTemplate
 
 	if scope == "pod" {
 		// Pod 级作用域：每个 Pod 独立 PVC
 		if pvcName == "" {
-			// 默认 PVC 命名: genet-<username>-<podName>-<volumeName>
-			pvcName = fmt.Sprintf("genet-%s-%s-%s", username, podName, storageVol.Name)
+			pvcName = fmt.Sprintf("genet-%s-%s-%s", username, podName, sanitizedVolumeName)
 		} else {
 			pvcName = expandPathTemplateWithPod(pvcName, username, storageVol.Name, podName)
 		}
 	} else {
 		// 用户级作用域（默认）：同一用户共享 PVC
 		if pvcName == "" {
-			// 默认 PVC 命名: genet-<username>-<volumeName>
-			pvcName = fmt.Sprintf("genet-%s-%s", username, storageVol.Name)
+			pvcName = fmt.Sprintf("genet-%s-%s", username, sanitizedVolumeName)
 		} else {
 			pvcName = expandPathTemplate(pvcName, username, storageVol.Name)
 		}

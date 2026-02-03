@@ -167,12 +167,6 @@ type StorageVolume struct {
 	// "pod": Pod 级 - 每个 Pod 独立 PVC，Pod 删除时 PVC 也删除
 	Scope string `yaml:"scope,omitempty" json:"scope,omitempty"`
 
-	// [已废弃] 请使用 scope 替代
-	// PVC 删除策略，决定 Pod 删除时 PVC 的处理方式
-	// "Retain": 保留 PVC（默认，用户数据持久化）
-	// "Delete": 随 Pod 删除（临时存储场景）
-	ReclaimPolicy string `yaml:"reclaimPolicy,omitempty" json:"reclaimPolicy,omitempty"`
-
 	// ========== HostPath 模式配置 ==========
 	// 路径模板，支持变量: {username}
 	// 例如: "/data/workspaces/{username}" 会生成 "/data/workspaces/alice"
