@@ -137,6 +137,68 @@ func (h *PodHandler) ListPods(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+// validateUserMount 验证用户自定义挂载
+func (h *PodHandler) validateUserMount(mount models.UserMount) error {
+	// 验证路径不为空
+	if mount.HostPath == "" {
+		return fmt.Errorf("宿主机路径不能为空")
+	}
+	if mount.MountPath == "" {
+		return fmt.Errorf("挂载路径不能为空")
+	}
+
+	// 验证路径格式（必须是绝对路径）
+	if !strings.HasPrefix(mount.HostPath, "/") {
+		return fmt.Errorf("宿主机路径必须是绝对路径: %s", mount.HostPath)
+	}
+	if !strings.HasPrefix(mount.MountPath, "/") {
+		return fmt.Errorf("挂载路径必须是绝对路径: %s", mount.MountPath)
+	}
+
+	// 防止路径遍历攻击
+	if strings.Contains(mount.HostPath, "..") {
+		return fmt.Errorf("宿主机路径不能包含 '..': %s", mount.HostPath)
+	}
+	if strings.Contains(mount.MountPath, "..") {
+		return fmt.Errorf("挂载路径不能包含 '..': %s", mount.MountPath)
+	}
+
+	// 检查白名单（如果配置了）
+	allowedPaths := h.config.Storage.UserMountAllowedPaths
+	if len(allowedPaths) > 0 {
+		matched := false
+		for _, pattern := range allowedPaths {
+			if matchPath(mount.HostPath, pattern) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return fmt.Errorf("宿主机路径 %s 不在允许的路径白名单中", mount.HostPath)
+		}
+	}
+
+	return nil
+}
+
+// matchPath 检查路径是否匹配模式（支持简单的前缀匹配和通配符）
+func matchPath(path, pattern string) bool {
+	// 如果模式以 * 结尾，则做前缀匹配
+	if strings.HasSuffix(pattern, "*") {
+		prefix := strings.TrimSuffix(pattern, "*")
+		return strings.HasPrefix(path, prefix)
+	}
+	// 否则做精确匹配或前缀匹配（路径在模式目录下）
+	if path == pattern {
+		return true
+	}
+	// 检查是否在该目录下
+	if strings.HasPrefix(path, pattern+"/") {
+		return true
+	}
+	return false
+}
+
 // CreatePod 创建 Pod
 func (h *PodHandler) CreatePod(c *gin.Context) {
 	var req models.PodRequest
@@ -283,6 +345,33 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 			zap.String("nodeName", req.NodeName))
 	}
 
+	// 验证用户自定义挂载
+	if len(req.UserMounts) > 0 {
+		if !h.config.Storage.AllowUserMounts {
+			h.log.Warn("User mounts not allowed",
+				zap.String("user", username),
+				zap.Int("mountCount", len(req.UserMounts)))
+			c.JSON(http.StatusForbidden, gin.H{"error": "管理员未开启用户自定义挂载功能"})
+			return
+		}
+
+		// 验证挂载路径是否在白名单中
+		for _, mount := range req.UserMounts {
+			if err := h.validateUserMount(mount); err != nil {
+				h.log.Warn("Invalid user mount",
+					zap.String("user", username),
+					zap.String("hostPath", mount.HostPath),
+					zap.String("mountPath", mount.MountPath),
+					zap.Error(err))
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+		}
+
+		h.log.Debug("User mounts validation passed",
+			zap.Int("mountCount", len(req.UserMounts)))
+	}
+
 	// 确保命名空间存在
 	h.log.Debug("Ensuring namespace exists", zap.String("namespace", namespace))
 	if err := h.k8sClient.EnsureNamespace(ctx, namespace); err != nil {
@@ -370,6 +459,7 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 		// 高级配置
 		NodeName:   req.NodeName,
 		GPUDevices: req.GPUDevices,
+		UserMounts: req.UserMounts,
 	}
 
 	h.log.Debug("Creating pod resource",
@@ -586,14 +676,26 @@ func (h *PodHandler) DeletePod(c *gin.Context) {
 		zap.String("user", username),
 		zap.String("podID", podID))
 
-	// 根据 ReclaimPolicy 决定是否删除 PVC
+	// 根据 Scope 决定是否删除 PVC
+	// scope="pod": Pod 删除时同时删除 PVC
+	// scope="user"（默认）: 保留 PVC，用户的其他 Pod 可继续使用
 	storageVolumes := h.k8sClient.GetStorageVolumes()
 	for _, vol := range storageVolumes {
-		// 只处理 PVC 类型且 ReclaimPolicy 为 Delete 的存储卷
-		if vol.Type == "pvc" && strings.ToLower(vol.ReclaimPolicy) == "delete" {
-			pvcName := h.k8sClient.GetPVCName(vol, username)
+		if vol.Type != "pvc" {
+			continue
+		}
+
+		scope := strings.ToLower(vol.Scope)
+		// 兼容旧的 reclaimPolicy 配置
+		if scope == "" && strings.ToLower(vol.ReclaimPolicy) == "delete" {
+			scope = "pod"
+		}
+
+		// 只有 scope="pod" 时才删除 PVC
+		if scope == "pod" {
+			pvcName := h.k8sClient.GetPVCName(vol, username, podID)
 			if pvcName != "" {
-				h.log.Info("Deleting PVC due to ReclaimPolicy=Delete",
+				h.log.Info("Deleting PVC due to scope=pod",
 					zap.String("pvcName", pvcName),
 					zap.String("volumeName", vol.Name),
 					zap.String("user", username))

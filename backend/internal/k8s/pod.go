@@ -32,8 +32,9 @@ type PodSpec struct {
 	HTTPSProxy string // HTTPS 代理
 	NoProxy    string // 不代理列表
 	// 高级配置
-	NodeName   string // 指定调度节点（可选）
-	GPUDevices []int  // 指定 GPU 卡编号（可选），如 [0, 2, 5]
+	NodeName   string              // 指定调度节点（可选）
+	GPUDevices []int               // 指定 GPU 卡编号（可选），如 [0, 2, 5]
+	UserMounts []models.UserMount  // 用户自定义挂载（可选）
 }
 
 // CreatePod 创建 Pod
@@ -312,6 +313,34 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 			zap.String("name", storageVol.Name),
 			zap.String("type", storageVol.Type),
 			zap.String("mountPath", storageVol.MountPath),
+			zap.String("user", spec.Username))
+	}
+
+	// 添加用户自定义挂载
+	for i, userMount := range spec.UserMounts {
+		volName := fmt.Sprintf("user-mount-%d", i)
+		hostPathType := corev1.HostPathDirectoryOrCreate
+
+		volumes = append(volumes, corev1.Volume{
+			Name: volName,
+			VolumeSource: corev1.VolumeSource{
+				HostPath: &corev1.HostPathVolumeSource{
+					Path: userMount.HostPath,
+					Type: &hostPathType,
+				},
+			},
+		})
+
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      volName,
+			MountPath: userMount.MountPath,
+			ReadOnly:  userMount.ReadOnly,
+		})
+
+		c.log.Info("User mount configured",
+			zap.String("hostPath", userMount.HostPath),
+			zap.String("mountPath", userMount.MountPath),
+			zap.Bool("readOnly", userMount.ReadOnly),
 			zap.String("user", spec.Username))
 	}
 
@@ -662,13 +691,25 @@ func (c *Client) buildStorageVolume(storageVol models.StorageVolume, username st
 }
 
 // expandPathTemplate 展开路径模板中的变量
-// 支持: {username}, {volumeName}
+// 支持: {username}, {volumeName}, {podName}
 func expandPathTemplate(tmpl, username, volumeName string) string {
 	if tmpl == "" {
 		return tmpl
 	}
 	result := strings.ReplaceAll(tmpl, "{username}", username)
 	result = strings.ReplaceAll(result, "{volumeName}", volumeName)
+	return result
+}
+
+// expandPathTemplateWithPod 展开路径模板中的变量（包含 podName）
+// 支持: {username}, {volumeName}, {podName}
+func expandPathTemplateWithPod(tmpl, username, volumeName, podName string) string {
+	if tmpl == "" {
+		return tmpl
+	}
+	result := strings.ReplaceAll(tmpl, "{username}", username)
+	result = strings.ReplaceAll(result, "{volumeName}", volumeName)
+	result = strings.ReplaceAll(result, "{podName}", podName)
 	return result
 }
 
@@ -688,19 +729,34 @@ func intsToCommaString(nums []int) string {
 // GetPVCName 获取存储卷对应的 PVC 名称
 // storageVol: 存储卷配置
 // username: 用户名
+// podName: Pod 名称（scope="pod" 时需要）
 // 返回 PVC 名称，如果是 HostPath 类型则返回空字符串
-func (c *Client) GetPVCName(storageVol models.StorageVolume, username string) string {
+func (c *Client) GetPVCName(storageVol models.StorageVolume, username, podName string) string {
 	if storageVol.Type == "hostpath" {
 		return ""
 	}
+
+	scope := strings.ToLower(storageVol.Scope)
 	pvcName := storageVol.PVCNameTemplate
-	if pvcName == "" {
-		// 默认 PVC 命名: genet-<username>-<volumeName>
-		pvcName = fmt.Sprintf("genet-%s-%s", username, storageVol.Name)
+
+	if scope == "pod" {
+		// Pod 级作用域：每个 Pod 独立 PVC
+		if pvcName == "" {
+			// 默认 PVC 命名: genet-<username>-<podName>-<volumeName>
+			pvcName = fmt.Sprintf("genet-%s-%s-%s", username, podName, storageVol.Name)
+		} else {
+			pvcName = expandPathTemplateWithPod(pvcName, username, storageVol.Name, podName)
+		}
 	} else {
-		// 支持 {username}, {volumeName} 变量替换
-		pvcName = expandPathTemplate(pvcName, username, storageVol.Name)
+		// 用户级作用域（默认）：同一用户共享 PVC
+		if pvcName == "" {
+			// 默认 PVC 命名: genet-<username>-<volumeName>
+			pvcName = fmt.Sprintf("genet-%s-%s", username, storageVol.Name)
+		} else {
+			pvcName = expandPathTemplate(pvcName, username, storageVol.Name)
+		}
 	}
+
 	return pvcName
 }
 

@@ -165,6 +165,7 @@ backend:
       # - mountPath: 挂载路径（必填）
       # - type: "pvc" 或 "hostpath"
       # - readOnly: 是否只读，默认 false
+      # - description: 描述信息（可选，用于前端展示，说明该目录的用途）
       #
       # PVC 模式字段:
       # - storageClass: StorageClass 名称
@@ -180,16 +181,44 @@ backend:
       # - hostPath: 路径模板，支持 {username}
       #             例如: "/data/workspaces/{username}" -> "/data/workspaces/alice"
       #             如果不包含 {username}，所有用户共享同一路径
+
+      # 是否允许用户在创建 Pod 时自定义挂载宿主机目录
+      # 默认 false（出于安全考虑）
+      allowUserMounts: false
+
+      # 用户自定义挂载的路径白名单
+      # 只有匹配白名单的 hostPath 才允许挂载
+      # 支持前缀匹配（以 * 结尾）或精确匹配
+      # 例如: ["/data/*", "/mnt/datasets/*", "/home/shared"]
+      # 如果为空且 allowUserMounts=true，则允许任意路径（不推荐）
+      userMountAllowedPaths: []
+      # userMountAllowedPaths:
+      #   - "/data/*"
+      #   - "/mnt/datasets/*"
+      #   - "/mnt/models/*"
+
       volumes:
-        # 用户工作空间（每用户独立 PVC）
+        # 用户工作空间（用户级 PVC，同一用户的所有 Pod 共享）
         - name: "workspace"
           mountPath: "/workspace"
           type: "pvc"
           storageClass: "standard"
           size: "50Gi"
-          accessMode: "ReadWriteOnce"
-          reclaimPolicy: "Retain"  # Retain=保留数据, Delete=随Pod删除
-          # pvcNameTemplate: "genet-{username}-workspace"  # 可选，自定义 PVC 名称
+          accessMode: "ReadWriteOnce"  # 注意：如需跨节点共享，改为 ReadWriteMany（需支持的存储类）
+          scope: "user"  # user=用户级（默认，多 Pod 共享）, pod=Pod 级（每 Pod 独立，随 Pod 删除）
+          description: "用户工作空间，代码和数据持久化存储，同一用户的所有 Pod 共享"
+          # pvcNameTemplate: "genet-{username}-{volumeName}"  # 可选，自定义 PVC 名称
+
+        # 示例：Pod 级存储（每个 Pod 独立 PVC，Pod 删除时自动清理）
+        # - name: "scratch"
+        #   mountPath: "/scratch"
+        #   type: "pvc"
+        #   storageClass: "standard"
+        #   size: "100Gi"
+        #   accessMode: "ReadWriteOnce"
+        #   scope: "pod"  # Pod 级作用域
+        #   description: "临时存储，Pod 删除后自动清理"
+        #   pvcNameTemplate: "genet-{username}-{podName}-{volumeName}"
 
         # 示例：共享数据目录（HostPath，所有用户共享，只读）
         # - name: "shared-data"
@@ -197,12 +226,14 @@ backend:
         #   type: "hostpath"
         #   hostPath: "/mnt/shared-data"
         #   readOnly: true
+        #   description: "公共数据集，所有用户共享（只读）"
 
         # 示例：用户独立的 HostPath 目录
         # - name: "user-cache"
         #   mountPath: "/cache"
         #   type: "hostpath"
         #   hostPath: "/data/cache/{username}"
+        #   description: "用户缓存目录，用于存放模型缓存等"
 
       # ============================================
       # 旧格式配置（向后兼容，不推荐）

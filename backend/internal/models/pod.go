@@ -14,6 +14,15 @@ type PodRequest struct {
 	GPUDevices []int  `json:"gpuDevices,omitempty"` // 指定 GPU 卡编号（可选），如 [0, 2, 5]
 	// Pod 名称自定义
 	Name string `json:"name,omitempty"` // 自定义 Pod 名称后缀（可选），如 "train", "dev"，为空则使用时间戳
+	// 用户自定义挂载（需要管理员开启 storage.allowUserMounts）
+	UserMounts []UserMount `json:"userMounts,omitempty"`
+}
+
+// UserMount 用户自定义挂载
+type UserMount struct {
+	HostPath  string `json:"hostPath" binding:"required"`  // 宿主机路径
+	MountPath string `json:"mountPath" binding:"required"` // 容器内挂载路径
+	ReadOnly  bool   `json:"readOnly,omitempty"`           // 是否只读，默认 false
 }
 
 // PodResponse Pod 响应
@@ -48,6 +57,16 @@ type QuotaInfo struct {
 	GpuLimit int `json:"gpuLimit"`
 }
 
+// StorageVolumeInfo 存储卷信息（用于前端展示）
+type StorageVolumeInfo struct {
+	Name        string `json:"name"`                  // 卷名称
+	MountPath   string `json:"mountPath"`             // 挂载路径
+	Description string `json:"description,omitempty"` // 描述信息
+	ReadOnly    bool   `json:"readOnly"`              // 是否只读
+	Type        string `json:"type"`                  // 存储类型: pvc | hostpath
+	Scope       string `json:"scope,omitempty"`       // 作用域: user | pod
+}
+
 // ConfigResponse 配置响应
 type ConfigResponse struct {
 	PodLimitPerUser int           `json:"podLimitPerUser"`
@@ -58,4 +77,7 @@ type ConfigResponse struct {
 	// GPU 调度相关
 	GPUSchedulingMode string `json:"gpuSchedulingMode"` // "sharing" | "exclusive"
 	MaxPodsPerGPU     int    `json:"maxPodsPerGPU"`     // 每卡最大共享数
+	// 存储相关
+	AllowUserMounts bool                `json:"allowUserMounts"` // 是否允许用户自定义挂载
+	StorageVolumes  []StorageVolumeInfo `json:"storageVolumes"`  // 存储卷信息（用于前端展示）
 }

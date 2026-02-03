@@ -68,6 +68,23 @@ export const getConfig = () => {
   return api.get('/config');
 };
 
+// 用户自定义挂载
+export interface UserMount {
+  hostPath: string;   // 宿主机路径
+  mountPath: string;  // 容器内挂载路径
+  readOnly?: boolean; // 是否只读
+}
+
+// 存储卷信息（用于前端展示）
+export interface StorageVolumeInfo {
+  name: string;         // 卷名称
+  mountPath: string;    // 挂载路径
+  description?: string; // 描述信息
+  readOnly: boolean;    // 是否只读
+  type: string;         // 存储类型: pvc | hostpath
+  scope?: string;       // 作用域: user | pod
+}
+
 // Pod 相关
 export interface CreatePodRequest {
   image: string;
@@ -79,6 +96,7 @@ export interface CreatePodRequest {
   nodeName?: string;      // 指定调度节点（可选）
   gpuDevices?: number[];  // 指定 GPU 卡编号（可选）
   name?: string;          // 自定义 Pod 名称后缀（可选）
+  userMounts?: UserMount[]; // 用户自定义挂载（可选）
 }
 
 export const listPods = () => {

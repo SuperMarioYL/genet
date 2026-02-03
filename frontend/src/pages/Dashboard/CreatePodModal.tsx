@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Modal, Form, Select, InputNumber, Input, message, Alert, AutoComplete, Collapse, Typography, Tooltip } from 'antd';
-import { PlusOutlined, SettingOutlined, QuestionCircleOutlined, EnvironmentOutlined } from '@ant-design/icons';
-import { getConfig, createPod, getGPUOverview, GPUOverviewResponse, NodeGPUInfo, CreatePodRequest } from '../../services/api';
+import { Modal, Form, Select, InputNumber, Input, message, Alert, AutoComplete, Collapse, Typography, Tooltip, Button, Space } from 'antd';
+import { PlusOutlined, SettingOutlined, QuestionCircleOutlined, EnvironmentOutlined, FolderOutlined, DeleteOutlined, DatabaseOutlined } from '@ant-design/icons';
+import { getConfig, createPod, getGPUOverview, GPUOverviewResponse, NodeGPUInfo, CreatePodRequest, UserMount, StorageVolumeInfo } from '../../services/api';
 import GPUSelector from '../../components/GPUSelector';
 import './CreatePodModal.css';
 
@@ -34,6 +34,9 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
   const [selectedGPUDevices, setSelectedGPUDevices] = useState<number[]>([]);
   const [hasPrometheus, setHasPrometheus] = useState(false);
 
+  // 用户自定义挂载
+  const [userMounts, setUserMounts] = useState<UserMount[]>([]);
+
   // 获取调度模式
   const isSharing = gpuOverview?.schedulingMode === 'sharing';
   const maxPodsPerGPU = gpuOverview?.maxPodsPerGPU || 0;
@@ -46,6 +49,7 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
       setSelectedGPUCount(1);
       setSelectedNode(undefined);
       setSelectedGPUDevices([]);
+      setUserMounts([]);
     }
     // form 是 antd useForm 返回的稳定引用，loadConfig/loadGPUOverview 在组件内定义
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -127,6 +131,11 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
 
       if (payload.gpuCount === 0) {
         delete payload.gpuType;
+      }
+
+      // 处理用户自定义挂载
+      if (userMounts.length > 0) {
+        payload.userMounts = userMounts.filter(m => m.hostPath && m.mountPath);
       }
 
       await createPod(payload);
@@ -476,6 +485,100 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
                 <Text>已选择 GPU: </Text>
                 <Text strong>{selectedGPUDevices.length}</Text>
                 <Text type="secondary"> 张</Text>
+              </div>
+            )}
+
+            {/* 系统存储卷信息 */}
+            {config?.storageVolumes && config.storageVolumes.length > 0 && (
+              <div className="storage-volumes-section">
+                <div className="storage-volumes-header">
+                  <DatabaseOutlined />
+                  <span>已挂载目录</span>
+                </div>
+                <div className="storage-volumes-list">
+                  {config.storageVolumes.map((vol: StorageVolumeInfo) => (
+                    <div key={vol.name} className="storage-volume-item">
+                      <div className="storage-volume-path">
+                        <Text code>{vol.mountPath}</Text>
+                        {vol.readOnly && <Text type="secondary" style={{ marginLeft: 4 }}>(只读)</Text>}
+                      </div>
+                      {vol.description && (
+                        <div className="storage-volume-desc">
+                          <Text type="secondary">{vol.description}</Text>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 用户自定义挂载 */}
+            {config?.allowUserMounts && (
+              <div className="user-mounts-section">
+                <div className="user-mounts-header">
+                  <FolderOutlined />
+                  <span>自定义挂载</span>
+                  <Button
+                    type="link"
+                    size="small"
+                    icon={<PlusOutlined />}
+                    onClick={() => setUserMounts([...userMounts, { hostPath: '', mountPath: '', readOnly: false }])}
+                  >
+                    添加
+                  </Button>
+                </div>
+                {userMounts.length === 0 ? (
+                  <Text type="secondary" className="user-mounts-empty">可挂载宿主机目录到 Pod 中</Text>
+                ) : (
+                  <Space direction="vertical" style={{ width: '100%' }} size={8}>
+                    {userMounts.map((mount, index) => (
+                      <div key={index} className="user-mount-item">
+                        <Input
+                          placeholder="宿主机路径，如 /data/models"
+                          value={mount.hostPath}
+                          onChange={(e) => {
+                            const newMounts = [...userMounts];
+                            newMounts[index].hostPath = e.target.value;
+                            setUserMounts(newMounts);
+                          }}
+                          style={{ flex: 1 }}
+                        />
+                        <Input
+                          placeholder="挂载路径，如 /models"
+                          value={mount.mountPath}
+                          onChange={(e) => {
+                            const newMounts = [...userMounts];
+                            newMounts[index].mountPath = e.target.value;
+                            setUserMounts(newMounts);
+                          }}
+                          style={{ flex: 1 }}
+                        />
+                        <Tooltip title="只读">
+                          <Select
+                            value={mount.readOnly ? 'ro' : 'rw'}
+                            onChange={(v) => {
+                              const newMounts = [...userMounts];
+                              newMounts[index].readOnly = v === 'ro';
+                              setUserMounts(newMounts);
+                            }}
+                            style={{ width: 70 }}
+                            size="small"
+                          >
+                            <Select.Option value="rw">读写</Select.Option>
+                            <Select.Option value="ro">只读</Select.Option>
+                          </Select>
+                        </Tooltip>
+                        <Button
+                          type="text"
+                          danger
+                          icon={<DeleteOutlined />}
+                          onClick={() => setUserMounts(userMounts.filter((_, i) => i !== index))}
+                        />
+                      </div>
+                    ))}
+                  </Space>
+                )}
               </div>
             )}
 

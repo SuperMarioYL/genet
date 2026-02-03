@@ -69,6 +69,95 @@
 [data-theme="dark"] .quota-preview { background: #1a1a2e; }
 [data-theme="dark"] .time-warning { background: rgba(237, 137, 54, 0.2) !important; }
 
+/* 系统存储卷信息样式 */
+.storage-volumes-section {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+}
+
+.storage-volumes-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+}
+
+.storage-volumes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.storage-volume-item {
+  padding: 8px 12px;
+  background: var(--bg-primary);
+  border-radius: 8px;
+}
+
+.storage-volume-path {
+  display: flex;
+  align-items: center;
+}
+
+.storage-volume-desc {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+[data-theme="dark"] .storage-volumes-section {
+  background: #1a1a2e;
+}
+
+[data-theme="dark"] .storage-volume-item {
+  background: #141425;
+}
+
+/* 用户自定义挂载样式 */
+.user-mounts-section {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+}
+
+.user-mounts-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.user-mounts-header .ant-btn-link {
+  margin-left: auto;
+  padding: 0;
+}
+
+.user-mounts-empty {
+  font-size: 12px;
+}
+
+.user-mount-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.user-mount-item .ant-input {
+  font-size: 12px;
+}
+
+[data-theme="dark"] .user-mounts-section {
+  background: #1a1a2e;
+}
+
 /* 高级设置样式 */
 .advanced-settings-collapse {
   margin-bottom: 16px;

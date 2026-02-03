@@ -27,6 +27,9 @@ func (h *ConfigHandler) GetConfig(c *gin.Context) {
 		schedulingMode = "exclusive"
 	}
 
+	// 转换存储卷配置为前端展示格式
+	storageVolumes := h.getStorageVolumesInfo()
+
 	response := models.ConfigResponse{
 		PodLimitPerUser:   h.config.PodLimitPerUser,
 		GpuLimitPerUser:   h.config.GpuLimitPerUser,
@@ -35,8 +38,34 @@ func (h *ConfigHandler) GetConfig(c *gin.Context) {
 		UI:                h.config.UI,
 		GPUSchedulingMode: schedulingMode,
 		MaxPodsPerGPU:     h.config.GPU.MaxPodsPerGPU,
+		AllowUserMounts:   h.config.Storage.AllowUserMounts,
+		StorageVolumes:    storageVolumes,
 	}
 
 	c.JSON(http.StatusOK, response)
+}
+
+// getStorageVolumesInfo 获取存储卷信息（用于前端展示）
+func (h *ConfigHandler) getStorageVolumesInfo() []models.StorageVolumeInfo {
+	volumes := h.config.Storage.GetEffectiveVolumes()
+	result := make([]models.StorageVolumeInfo, 0, len(volumes))
+
+	for _, vol := range volumes {
+		info := models.StorageVolumeInfo{
+			Name:        vol.Name,
+			MountPath:   vol.MountPath,
+			Description: vol.Description,
+			ReadOnly:    vol.ReadOnly,
+			Type:        vol.Type,
+			Scope:       vol.Scope,
+		}
+		// 默认 scope 为 user
+		if info.Scope == "" {
+			info.Scope = "user"
+		}
+		result = append(result, info)
+	}
+
+	return result
 }
 

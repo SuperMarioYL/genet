@@ -127,6 +127,17 @@ type StorageConfig struct {
 	// 存储卷列表，支持配置多个存储卷
 	Volumes []StorageVolume `yaml:"volumes,omitempty" json:"volumes,omitempty"`
 
+	// 是否允许用户在创建 Pod 时自定义挂载宿主机目录
+	// 默认 false（出于安全考虑）
+	// 启用后，用户可以在创建 Pod 时指定 hostPath 和 mountPath
+	AllowUserMounts bool `yaml:"allowUserMounts,omitempty" json:"allowUserMounts,omitempty"`
+
+	// 用户自定义挂载的路径白名单（正则表达式列表）
+	// 只有匹配白名单的 hostPath 才允许挂载
+	// 例如: ["^/data/.*", "^/mnt/datasets/.*"]
+	// 如果为空且 AllowUserMounts=true，则允许任意路径（不推荐）
+	UserMountAllowedPaths []string `yaml:"userMountAllowedPaths,omitempty" json:"userMountAllowedPaths,omitempty"`
+
 	// ========== 旧配置格式（向后兼容）==========
 	// 存储类型: "pvc" 或 "hostpath"
 	// pvc: 使用 PersistentVolumeClaim（默认）
@@ -152,9 +163,10 @@ type StorageConfig struct {
 //   - {volumeName} : 存储卷名称，即 Name 字段的值
 type StorageVolume struct {
 	// 基础配置
-	Name      string `yaml:"name" json:"name"`           // 卷名称（必填）
-	MountPath string `yaml:"mountPath" json:"mountPath"` // 挂载路径（必填）
-	ReadOnly  bool   `yaml:"readOnly" json:"readOnly"`   // 是否只读，默认 false
+	Name        string `yaml:"name" json:"name"`                                  // 卷名称（必填）
+	MountPath   string `yaml:"mountPath" json:"mountPath"`                        // 挂载路径（必填）
+	ReadOnly    bool   `yaml:"readOnly" json:"readOnly"`                          // 是否只读，默认 false
+	Description string `yaml:"description,omitempty" json:"description,omitempty"` // 描述信息，用于前端展示
 
 	// 存储类型: "pvc" 或 "hostpath"
 	Type string `yaml:"type" json:"type"`
@@ -163,9 +175,17 @@ type StorageVolume struct {
 	StorageClass string `yaml:"storageClass,omitempty" json:"storageClass,omitempty"` // StorageClass 名称
 	Size         string `yaml:"size,omitempty" json:"size,omitempty"`                 // PVC 大小，如 "50Gi"
 	AccessMode   string `yaml:"accessMode,omitempty" json:"accessMode,omitempty"`     // 访问模式: ReadWriteOnce, ReadWriteMany, ReadOnlyMany
-	// PVC 命名模板，支持变量: {username}, {volumeName}
+	// PVC 命名模板，支持变量: {username}, {volumeName}, {podName}
 	// 默认: "genet-{username}-{volumeName}"
+	// 如果 scope="pod"，建议使用 "genet-{username}-{podName}-{volumeName}"
 	PVCNameTemplate string `yaml:"pvcNameTemplate,omitempty" json:"pvcNameTemplate,omitempty"`
+
+	// PVC 作用域，决定 PVC 的生命周期和共享范围
+	// "user": 用户级（默认）- 同一用户的所有 Pod 共享同一个 PVC，数据持久化
+	// "pod": Pod 级 - 每个 Pod 独立 PVC，Pod 删除时 PVC 也删除
+	Scope string `yaml:"scope,omitempty" json:"scope,omitempty"`
+
+	// [已废弃] 请使用 scope 替代
 	// PVC 删除策略，决定 Pod 删除时 PVC 的处理方式
 	// "Retain": 保留 PVC（默认，用户数据持久化）
 	// "Delete": 随 Pod 删除（临时存储场景）

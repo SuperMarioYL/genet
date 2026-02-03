@@ -1,4 +1,4 @@
-import { ArrowLeftOutlined, CodeOutlined, CopyOutlined, DesktopOutlined, DownloadOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, CodeOutlined, CopyOutlined, DatabaseOutlined, DesktopOutlined, DownloadOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
 import { Alert, Button, Descriptions, Input, Layout, message, Modal, Progress, Skeleton, Space, Switch, Table, Tabs, Tag, Tooltip, Typography } from 'antd';
 import dayjs from 'dayjs';
 import React, { useEffect, useRef, useState } from 'react';
@@ -6,7 +6,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import GlassCard from '../../components/GlassCard';
 import StatusBadge from '../../components/StatusBadge';
 import ThemeToggle from '../../components/ThemeToggle';
-import { commitImage, CommitStatus, getCommitLogs, getCommitStatus, getPod, getPodDescribe, getPodEvents, getPodLogs, getSharedGPUPods, SharedGPUPod } from '../../services/api';
+import { commitImage, CommitStatus, getCommitLogs, getCommitStatus, getConfig, getPod, getPodDescribe, getPodEvents, getPodLogs, getSharedGPUPods, SharedGPUPod, StorageVolumeInfo } from '../../services/api';
 import './index.css';
 
 const { Header, Content } = Layout;
@@ -35,12 +35,14 @@ const PodDetail: React.FC = () => {
   const [autoRefreshLogs, setAutoRefreshLogs] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const logRefreshRef = useRef<NodeJS.Timeout | null>(null);
+  const [storageVolumes, setStorageVolumes] = useState<StorageVolumeInfo[]>([]);
 
   useEffect(() => {
     if (id) {
       loadPod();
       loadCommitStatus();
       loadSharedGPUPods();
+      loadStorageVolumes();
     }
     return () => {
       if (commitPollRef.current) {
@@ -49,6 +51,16 @@ const PodDetail: React.FC = () => {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  const loadStorageVolumes = async () => {
+    try {
+      const data: any = await getConfig();
+      setStorageVolumes(data.storageVolumes || []);
+    } catch (error) {
+      // 静默失败
+      console.error('Failed to load storage volumes:', error);
+    }
+  };
 
   // 日志自动刷新
   useEffect(() => {
@@ -297,6 +309,71 @@ const PodDetail: React.FC = () => {
               <Descriptions.Item label="创建时间">{dayjs(pod.createdAt).format('YYYY-MM-DD HH:mm:ss')}</Descriptions.Item>
             </Descriptions>
           </GlassCard>
+
+          {/* 存储卷信息 */}
+          {storageVolumes.length > 0 && (
+            <GlassCard
+              hover={false}
+              className="info-card"
+              title={
+                <Space>
+                  <DatabaseOutlined />
+                  <span>已挂载目录</span>
+                </Space>
+              }
+              style={{ marginTop: 16 }}
+            >
+              <Table
+                dataSource={storageVolumes}
+                rowKey="name"
+                pagination={false}
+                size="small"
+                columns={[
+                  {
+                    title: '挂载路径',
+                    dataIndex: 'mountPath',
+                    key: 'mountPath',
+                    render: (path: string) => <Text code>{path}</Text>,
+                  },
+                  {
+                    title: '说明',
+                    dataIndex: 'description',
+                    key: 'description',
+                    render: (desc: string) => desc || '-',
+                  },
+                  {
+                    title: '存储类型',
+                    dataIndex: 'type',
+                    key: 'type',
+                    width: 100,
+                    render: (type: string) => (
+                      <Tag color={type === 'pvc' ? 'blue' : 'green'}>
+                        {type === 'pvc' ? 'PVC' : 'HostPath'}
+                      </Tag>
+                    ),
+                  },
+                  {
+                    title: '作用域',
+                    dataIndex: 'scope',
+                    key: 'scope',
+                    width: 100,
+                    render: (scope: string) => (
+                      <Tag color={scope === 'user' ? 'purple' : 'orange'}>
+                        {scope === 'user' ? '用户级' : 'Pod 级'}
+                      </Tag>
+                    ),
+                  },
+                  {
+                    title: '权限',
+                    dataIndex: 'readOnly',
+                    key: 'readOnly',
+                    width: 80,
+                    render: (readOnly: boolean) => readOnly ? '只读' : '读写',
+                  },
+                ]}
+              />
+            </GlassCard>
+          )}
 
           {/* 共用 GPU 的 Pod 信息 */}
           {sharedGPUPods.length > 0 && (
