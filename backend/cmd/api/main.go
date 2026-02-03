@@ -90,10 +90,11 @@ func main() {
 
 	// 初始化处理器
 	podHandler := handlers.NewPodHandler(k8sClient, config)
-	configHandler := handlers.NewConfigHandler(config)
+	configHandler := handlers.NewConfigHandler(config, k8sClient)
 	authHandler := handlers.NewAuthHandler(config)
 	kubeconfigHandler := handlers.NewKubeconfigHandler(config, k8sClient)
 	clusterHandler := handlers.NewClusterHandler(k8sClient, promClient, config)
+	imageHandler := handlers.NewImageHandler(k8sClient, config)
 	log.Info("Handlers initialized")
 
 	// 初始化 OIDC Provider（如果启用）
@@ -177,6 +178,15 @@ func main() {
 			pods.POST("/:id/commit", podHandler.CommitImage)
 			pods.GET("/:id/commit/status", podHandler.GetCommitStatus)
 			pods.GET("/:id/commit/logs", podHandler.GetCommitLogs)
+		}
+
+		// 用户镜像管理端点（需要认证）
+		images := api.Group("/images")
+		images.Use(auth.AuthMiddleware(config))
+		{
+			images.GET("", imageHandler.ListUserImages)
+			images.POST("", imageHandler.AddUserImage)
+			images.DELETE("", imageHandler.DeleteUserImage)
 		}
 
 		// Kubeconfig 端点（需要认证）

@@ -263,6 +263,30 @@ export const getGPUOverview = (): Promise<GPUOverviewResponse> => {
   return api.get('/cluster/gpu-overview');
 };
 
+// 用户保存的镜像
+export interface UserSavedImage {
+  image: string;
+  description?: string;
+  sourcePod?: string;
+  savedAt: string;
+}
+
+export interface UserImageListResponse {
+  images: UserSavedImage[];
+}
+
+export const listUserImages = (): Promise<UserImageListResponse> => {
+  return api.get('/images');
+};
+
+export const addUserImage = (data: { image: string; description?: string; sourcePod?: string }) => {
+  return api.post('/images', data);
+};
+
+export const deleteUserImage = (image: string) => {
+  return api.delete(`/images?image=${encodeURIComponent(image)}`);
+};
+
 // 共用 GPU 的 Pod 信息
 export interface SharedGPUPod {
   name: string;

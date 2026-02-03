@@ -1,12 +1,12 @@
-import { ArrowLeftOutlined, CodeOutlined, CopyOutlined, DatabaseOutlined, DesktopOutlined, DownloadOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
-import { Alert, Button, Descriptions, Input, Layout, message, Modal, Progress, Skeleton, Space, Switch, Table, Tabs, Tag, Tooltip, Typography } from 'antd';
+import { ArrowLeftOutlined, CodeOutlined, CopyOutlined, DatabaseOutlined, DeleteOutlined, DesktopOutlined, DownloadOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
+import { Alert, Button, Descriptions, Input, Layout, message, Modal, Popconfirm, Progress, Skeleton, Space, Switch, Table, Tabs, Tag, Tooltip, Typography } from 'antd';
 import dayjs from 'dayjs';
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import GlassCard from '../../components/GlassCard';
 import StatusBadge from '../../components/StatusBadge';
 import ThemeToggle from '../../components/ThemeToggle';
-import { commitImage, CommitStatus, getCommitLogs, getCommitStatus, getConfig, getPod, getPodDescribe, getPodEvents, getPodLogs, getSharedGPUPods, SharedGPUPod, StorageVolumeInfo } from '../../services/api';
+import { commitImage, CommitStatus, deleteUserImage, getCommitLogs, getCommitStatus, getConfig, getPod, getPodDescribe, getPodEvents, getPodLogs, getSharedGPUPods, listUserImages, SharedGPUPod, StorageVolumeInfo, UserSavedImage } from '../../services/api';
 import './index.css';
 
 const { Header, Content } = Layout;
@@ -36,6 +36,8 @@ const PodDetail: React.FC = () => {
   const [activeTab, setActiveTab] = useState('overview');
   const logRefreshRef = useRef<NodeJS.Timeout | null>(null);
   const [storageVolumes, setStorageVolumes] = useState<StorageVolumeInfo[]>([]);
+  const [userImages, setUserImages] = useState<UserSavedImage[]>([]);
+  const [userImagesLoading, setUserImagesLoading] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -59,6 +61,28 @@ const PodDetail: React.FC = () => {
     } catch (error) {
       // 静默失败
       console.error('Failed to load storage volumes:', error);
+    }
+  };
+
+  const loadUserImages = async () => {
+    setUserImagesLoading(true);
+    try {
+      const data = await listUserImages();
+      setUserImages(data.images || []);
+    } catch (error) {
+      console.error('Failed to load user images:', error);
+    } finally {
+      setUserImagesLoading(false);
+    }
+  };
+
+  const handleDeleteUserImage = async (imageName: string) => {
+    try {
+      await deleteUserImage(imageName);
+      message.success('镜像记录已删除');
+      loadUserImages();
+    } catch (error: any) {
+      message.error(`删除失败: ${error.message}`);
     }
   };
 
@@ -353,17 +377,6 @@ const PodDetail: React.FC = () => {
                     ),
                   },
                   {
-                    title: '作用域',
-                    dataIndex: 'scope',
-                    key: 'scope',
-                    width: 100,
-                    render: (scope: string) => (
-                      <Tag color={scope === 'user' ? 'purple' : 'orange'}>
-                        {scope === 'user' ? '用户级' : 'Pod 级'}
-                      </Tag>
-                    ),
-                  },
-                  {
                     title: '权限',
                     dataIndex: 'readOnly',
                     key: 'readOnly',
@@ -543,6 +556,58 @@ const PodDetail: React.FC = () => {
               <div className="logs-container"><pre className="mono">{commitLogs || '暂无日志'}</pre></div>
             </GlassCard>
           )}
+          <GlassCard
+            hover={false}
+            title={`已保存的镜像${userImages.length > 0 ? ` (${userImages.length})` : ''}`}
+            extra={<Button onClick={loadUserImages} icon={<ReloadOutlined />} size="small" loading={userImagesLoading}>刷新</Button>}
+            style={{ marginTop: 24 }}
+          >
+            {userImages.length > 0 ? (
+              <Table
+                dataSource={userImages}
+                rowKey="image"
+                pagination={false}
+                size="small"
+                columns={[
+                  {
+                    title: '镜像名称',
+                    dataIndex: 'image',
+                    key: 'image',
+                    ellipsis: true,
+                    render: (image: string) => (
+                      <Text code copyable className="mono">{image}</Text>
+                    ),
+                  },
+                  {
+                    title: '来源 Pod',
+                    dataIndex: 'sourcePod',
+                    key: 'sourcePod',
+                    width: 180,
+                    render: (pod: string) => pod || '-',
+                  },
+                  {
+                    title: '保存时间',
+                    dataIndex: 'savedAt',
+                    key: 'savedAt',
+                    width: 150,
+                    render: (time: string) => time ? dayjs(time).format('MM-DD HH:mm') : '-',
+                  },
+                  {
+                    title: '操作',
+                    key: 'action',
+                    width: 80,
+                    render: (_: any, record: UserSavedImage) => (
+                      <Popconfirm title="确定删除该镜像记录？" onConfirm={() => handleDeleteUserImage(record.image)} okText="删除" cancelText="取消">
+                        <Button type="text" danger icon={<DeleteOutlined />} size="small" />
+                      </Popconfirm>
+                    ),
+                  },
+                ]}
+              />
+            ) : (
+              <Text type="secondary">{userImagesLoading ? '加载中...' : '暂无保存的镜像'}</Text>
+            )}
+          </GlassCard>
         </div>
       ),
     },
@@ -633,7 +698,10 @@ const PodDetail: React.FC = () => {
 
       <Content className="pod-detail-content">
         <GlassCard hover={false} className="detail-card animate-slide-up">
-          <Tabs defaultActiveKey="overview" items={tabItems} onChange={setActiveTab} />
+          <Tabs defaultActiveKey="overview" items={tabItems} onChange={(key) => {
+            setActiveTab(key);
+            if (key === 'commit') loadUserImages();
+          }} />
         </GlassCard>
 
         <Modal title="保存为镜像" open={commitModalVisible} onCancel={() => setCommitModalVisible(false)} onOk={handleCommit} confirmLoading={commitSubmitting} okText="开始保存" cancelText="取消">

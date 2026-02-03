@@ -873,13 +873,40 @@ func (h *PodHandler) GetCommitStatus(c *gin.Context) {
 		return
 	}
 
+	// commit 成功且尚未保存镜像记录时，自动保存
+	if status.Status == "Succeeded" && !status.ImageSaved && status.TargetImage != "" {
+		image := &models.UserSavedImage{
+			Image:     status.TargetImage,
+			SourcePod: status.SourcePod,
+			SavedAt:   time.Now(),
+		}
+		if err := h.k8sClient.SaveUserImage(ctx, namespace, image); err != nil {
+			h.log.Warn("Failed to auto-save user image",
+				zap.String("user", username),
+				zap.String("image", status.TargetImage),
+				zap.Error(err))
+		} else {
+			// 标记 Job 已保存，避免重复保存
+			if err := h.k8sClient.MarkCommitJobImageSaved(ctx, namespace, status.JobName); err != nil {
+				h.log.Warn("Failed to mark job image-saved",
+					zap.String("jobName", status.JobName),
+					zap.Error(err))
+			}
+			status.ImageSaved = true
+			h.log.Info("Auto-saved user image on commit success",
+				zap.String("user", username),
+				zap.String("image", status.TargetImage))
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"hasJob":    true,
-		"jobName":   status.JobName,
-		"status":    status.Status,
-		"message":   status.Message,
-		"startTime": status.StartTime,
-		"endTime":   status.EndTime,
+		"hasJob":      true,
+		"jobName":     status.JobName,
+		"status":      status.Status,
+		"message":     status.Message,
+		"startTime":   status.StartTime,
+		"endTime":     status.EndTime,
+		"targetImage": status.TargetImage,
 	})
 }
 

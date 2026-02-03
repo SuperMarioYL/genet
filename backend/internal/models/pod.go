@@ -80,4 +80,6 @@ type ConfigResponse struct {
 	// 存储相关
 	AllowUserMounts bool                `json:"allowUserMounts"` // 是否允许用户自定义挂载
 	StorageVolumes  []StorageVolumeInfo `json:"storageVolumes"`  // 存储卷信息（用于前端展示）
+	// 用户镜像
+	UserImages []UserSavedImage `json:"userImages,omitempty"` // 用户保存的镜像列表
 }

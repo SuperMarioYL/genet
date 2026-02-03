@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Modal, Form, Select, InputNumber, Input, message, Alert, AutoComplete, Collapse, Typography, Tooltip, Button, Space } from 'antd';
 import { PlusOutlined, SettingOutlined, QuestionCircleOutlined, EnvironmentOutlined, FolderOutlined, DeleteOutlined, DatabaseOutlined } from '@ant-design/icons';
-import { getConfig, createPod, getGPUOverview, GPUOverviewResponse, NodeGPUInfo, CreatePodRequest, UserMount, StorageVolumeInfo } from '../../services/api';
+import dayjs from 'dayjs';
+import { getConfig, createPod, getGPUOverview, GPUOverviewResponse, NodeGPUInfo, CreatePodRequest, UserMount, StorageVolumeInfo, UserSavedImage } from '../../services/api';
 import GPUSelector from '../../components/GPUSelector';
 import './CreatePodModal.css';
 
@@ -308,7 +309,9 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
   };
 
   // 判断是否需要显示右栏
-  const showRightPanel = effectiveGPUCount > 0 && gpuOverview && gpuOverview.acceleratorGroups.length > 0;
+  const hasGPUPanel = effectiveGPUCount > 0 && gpuOverview && gpuOverview.acceleratorGroups.length > 0;
+  const hasStorageVolumes = config?.storageVolumes && config.storageVolumes.length > 0;
+  const showRightPanel = hasGPUPanel || hasStorageVolumes;
 
   return (
     <Modal
@@ -349,21 +352,46 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
               {config?.ui?.enableCustomImage ? (
                 <AutoComplete
                   placeholder="选择或输入镜像名称"
-                  filterOption={(inputValue, option) =>
-                    option?.value ? String(option.value).toUpperCase().indexOf(inputValue.toUpperCase()) !== -1 : false
-                  }
-                  options={config?.presetImages?.map((img: any) => ({
-                    value: img.image,
-                    label: `${img.name} - ${img.description}`,
-                  }))}
+                  filterOption={(inputValue, option) => {
+                    if (!option) return false;
+                    const val = (option as any).value;
+                    return val ? String(val).toUpperCase().indexOf(inputValue.toUpperCase()) !== -1 : false;
+                  }}
+                  options={[
+                    ...(config?.userImages?.length ? [{
+                      label: '我保存的镜像',
+                      options: config.userImages.map((img: UserSavedImage) => ({
+                        value: img.image,
+                        label: `${img.image.split('/').pop()} (${dayjs(img.savedAt).format('MM-DD HH:mm')})`,
+                      })),
+                    }] : []),
+                    ...(config?.presetImages?.length ? [{
+                      label: '预设镜像',
+                      options: config.presetImages.map((img: any) => ({
+                        value: img.image,
+                        label: `${img.name} - ${img.description}`,
+                      })),
+                    }] : []),
+                  ]}
                 />
               ) : (
-                <Select placeholder="选择镜像" showSearch optionFilterProp="children">
-                  {config?.presetImages?.map((img: any) => (
-                    <Select.Option key={img.image} value={img.image}>
-                      {img.name} - {img.description}
-                    </Select.Option>
-                  ))}
+                <Select placeholder="选择镜像" showSearch optionFilterProp="label">
+                  {config?.userImages?.length > 0 && (
+                    <Select.OptGroup label="我保存的镜像">
+                      {config.userImages.map((img: UserSavedImage) => (
+                        <Select.Option key={img.image} value={img.image} label={img.image}>
+                          {img.image.split('/').pop()} <Text type="secondary">({dayjs(img.savedAt).format('MM-DD HH:mm')})</Text>
+                        </Select.Option>
+                      ))}
+                    </Select.OptGroup>
+                  )}
+                  <Select.OptGroup label="预设镜像">
+                    {config?.presetImages?.map((img: any) => (
+                      <Select.Option key={img.image} value={img.image} label={`${img.name} ${img.description}`}>
+                        {img.name} - {img.description}
+                      </Select.Option>
+                    ))}
+                  </Select.OptGroup>
                 </Select>
               )}
             </Form.Item>
@@ -488,31 +516,6 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
               </div>
             )}
 
-            {/* 系统存储卷信息 */}
-            {config?.storageVolumes && config.storageVolumes.length > 0 && (
-              <div className="storage-volumes-section">
-                <div className="storage-volumes-header">
-                  <DatabaseOutlined />
-                  <span>已挂载目录</span>
-                </div>
-                <div className="storage-volumes-list">
-                  {config.storageVolumes.map((vol: StorageVolumeInfo) => (
-                    <div key={vol.name} className="storage-volume-item">
-                      <div className="storage-volume-path">
-                        <Text code>{vol.mountPath}</Text>
-                        {vol.readOnly && <Text type="secondary" style={{ marginLeft: 4 }}>(只读)</Text>}
-                      </div>
-                      {vol.description && (
-                        <div className="storage-volume-desc">
-                          <Text type="secondary">{vol.description}</Text>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {/* 用户自定义挂载 */}
             {config?.allowUserMounts && (
               <div className="user-mounts-section">
@@ -604,56 +607,84 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
             />
           </div>
 
-          {/* 右栏：节点和 GPU 选择 */}
+          {/* 右栏：存储卷信息 + 节点和 GPU 选择 */}
           {showRightPanel && (
             <div className="create-pod-right">
-              {isSharing ? (
-                // 共享模式：直接显示，不折叠
-                <div className="gpu-selection-panel">
-                  <div className="gpu-selection-panel-title">
-                    <EnvironmentOutlined />
-                    <span>选择节点和 GPU 卡（必填）</span>
+              {/* 存储卷信息 */}
+              {hasStorageVolumes && (
+                <div className="storage-volumes-section">
+                  <div className="storage-volumes-header">
+                    <DatabaseOutlined />
+                    <span>已挂载目录</span>
                   </div>
-                  {renderNodeSelector()}
-                  {selectedNode && (hasPrometheus || isSharing) && renderGPUSelector()}
-                </div>
-              ) : (
-                // 独占模式：保持 Collapse 折叠
-                <Collapse
-                  ghost
-                  className="advanced-settings-collapse"
-                  defaultActiveKey={[]}
-                  items={[
-                    {
-                      key: 'advanced',
-                      label: (
-                        <span className="advanced-settings-label">
-                          <SettingOutlined />
-                          <span>高级设置</span>
-                          {selectedNode && <Text type="secondary" style={{ marginLeft: 8 }}>已选节点: {selectedNode}</Text>}
-                        </span>
-                      ),
-                      children: (
-                        <div className="advanced-settings-content">
-                          {renderNodeSelector()}
-                          {selectedNode && hasPrometheus && (
-                            <div className="gpu-selector-wrapper">
-                              {renderGPUSelector()}
-                            </div>
-                          )}
-                          {selectedNode && !hasPrometheus && (
-                            <Alert
-                              message="未配置 Prometheus，无法选择具体 GPU 卡"
-                              type="info"
-                              showIcon
-                              style={{ marginTop: 12 }}
-                            />
-                          )}
+                  <div className="storage-volumes-list">
+                    {config.storageVolumes.map((vol: StorageVolumeInfo) => (
+                      <div key={vol.name} className="storage-volume-item">
+                        <div className="storage-volume-path">
+                          <Text code>{vol.mountPath}</Text>
+                          {vol.readOnly && <Text type="secondary" style={{ marginLeft: 4 }}>(只读)</Text>}
                         </div>
-                      ),
-                    },
-                  ]}
-                />
+                        {vol.description && (
+                          <div className="storage-volume-desc">
+                            <Text type="secondary">{vol.description}</Text>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* GPU 节点选择 */}
+              {hasGPUPanel && (
+                isSharing ? (
+                  // 共享模式：直接显示，不折叠
+                  <div className="gpu-selection-panel">
+                    <div className="gpu-selection-panel-title">
+                      <EnvironmentOutlined />
+                      <span>选择节点和 GPU 卡（必填）</span>
+                    </div>
+                    {renderNodeSelector()}
+                    {selectedNode && (hasPrometheus || isSharing) && renderGPUSelector()}
+                  </div>
+                ) : (
+                  // 独占模式：保持 Collapse 折叠
+                  <Collapse
+                    ghost
+                    className="advanced-settings-collapse"
+                    defaultActiveKey={[]}
+                    items={[
+                      {
+                        key: 'advanced',
+                        label: (
+                          <span className="advanced-settings-label">
+                            <SettingOutlined />
+                            <span>高级设置</span>
+                            {selectedNode && <Text type="secondary" style={{ marginLeft: 8 }}>已选节点: {selectedNode}</Text>}
+                          </span>
+                        ),
+                        children: (
+                          <div className="advanced-settings-content">
+                            {renderNodeSelector()}
+                            {selectedNode && hasPrometheus && (
+                              <div className="gpu-selector-wrapper">
+                                {renderGPUSelector()}
+                              </div>
+                            )}
+                            {selectedNode && !hasPrometheus && (
+                              <Alert
+                                message="未配置 Prometheus，无法选择具体 GPU 卡"
+                                type="info"
+                                showIcon
+                                style={{ marginTop: 12 }}
+                              />
+                            )}
+                          </div>
+                        ),
+                      },
+                    ]}
+                  />
+                )
               )}
             </div>
           )}

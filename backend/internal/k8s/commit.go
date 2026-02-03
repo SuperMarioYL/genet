@@ -31,6 +31,8 @@ type CommitJobStatus struct {
 	StartTime   string `json:"startTime"`   // 开始时间
 	EndTime     string `json:"endTime"`     // 结束时间
 	TargetImage string `json:"targetImage"` // 目标镜像名称
+	SourcePod   string `json:"sourcePod"`   // 来源 Pod 名称
+	ImageSaved  bool   `json:"imageSaved"`  // 镜像记录是否已保存
 }
 
 // CreateCommitJob 创建镜像 commit Job
@@ -168,6 +170,8 @@ func (c *Client) GetCommitJobStatus(ctx context.Context, namespace, podName stri
 	status := &CommitJobStatus{
 		JobName:     latestJob.Name,
 		TargetImage: latestJob.Annotations["genet.io/target-image"],
+		SourcePod:   latestJob.Annotations["genet.io/source-pod"],
+		ImageSaved:  latestJob.Annotations["genet.io/image-saved"] == "true",
 	}
 
 	// 解析状态
@@ -193,6 +197,20 @@ func (c *Client) GetCommitJobStatus(ctx context.Context, namespace, podName stri
 	}
 
 	return status, nil
+}
+
+// MarkCommitJobImageSaved 标记 commit job 的镜像记录已保存
+func (c *Client) MarkCommitJobImageSaved(ctx context.Context, namespace, jobName string) error {
+	job, err := c.clientset.BatchV1().Jobs(namespace).Get(ctx, jobName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("获取 job 失败: %w", err)
+	}
+	if job.Annotations == nil {
+		job.Annotations = make(map[string]string)
+	}
+	job.Annotations["genet.io/image-saved"] = "true"
+	_, err = c.clientset.BatchV1().Jobs(namespace).Update(ctx, job, metav1.UpdateOptions{})
+	return err
 }
 
 // GetCommitJobLogs 获取 commit job 日志
