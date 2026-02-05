@@ -26,16 +26,24 @@ const Dashboard: React.FC = () => {
   const [cleanupSchedule, setCleanupSchedule] = useState<string>('');
   const [cleanupTimezone, setCleanupTimezone] = useState<string>('');
 
+  const initialLoadDone = React.useRef(false);
+
   const loadPods = async () => {
-    setLoading(true);
+    // 仅首次加载显示 loading 骨架屏，轮询时静默刷新避免闪烁
+    if (!initialLoadDone.current) {
+      setLoading(true);
+    }
     try {
       const data: any = await listPods();
       setPods(data.pods || []);
       setQuota(data.quota || quota);
     } catch (error: any) {
-      message.error(`加载 Pod 列表失败: ${error.message}`);
+      if (!initialLoadDone.current) {
+        message.error(`加载 Pod 列表失败: ${error.message}`);
+      }
     } finally {
       setLoading(false);
+      initialLoadDone.current = true;
     }
   };
 
