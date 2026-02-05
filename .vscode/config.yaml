@@ -10,8 +10,6 @@ gpu:
   # - resourceName: K8s 资源名称
   # - type: 类型标识，用于热力图分组（如 nvidia、ascend）
   # - metricName: Prometheus 利用率指标名（用于热力图）
-  # - memoryUsedMetric: 显存已用指标名（可选）
-  # - memoryTotalMetric: 显存总量指标名（可选）
   # - metricLabels: 自定义指标标签映射（可选）
   #   - deviceId: 设备ID标签名（默认自动识别 gpu/id/device/GPU_I/minor_number）
   #   - node: 节点名标签名（默认自动识别 node/instance/Hostname/hostname）
@@ -19,12 +17,15 @@ gpu:
   #   - namespace: Namespace标签名（默认自动识别 namespace/exported_namespace）
   # - nodeSelector: 节点选择器（可选）
   availableTypes:
+    - name: "CPU Only"
+      platform: "amd64"
+      resourceName: ""
+      nodeSelector:
+        kubernetes.io/arch: "amd64"
     - name: "NVIDIA A100"
+      platform: "amd64"
       resourceName: "nvidia.com/gpu"
       type: "nvidia"
-      metricName: "DCGM_FI_DEV_GPU_UTIL"
-      memoryUsedMetric: "DCGM_FI_DEV_FB_USED"
-      memoryTotalMetric: "DCGM_FI_DEV_FB_FREE"
       # 如果你的 Prometheus 指标标签与默认不同，可以自定义映射：
       # metricLabels:
       #   deviceId: "gpu"        # 或 GPU_I, minor_number 等
@@ -32,20 +33,22 @@ gpu:
       #   pod: "exported_pod"
       #   namespace: "exported_namespace"
       nodeSelector:
+        kubernetes.io/arch: "amd64"
         gpu-type: "a100"
     - name: "NVIDIA V100"
+      platform: "amd64"
       resourceName: "nvidia.com/gpu"
       type: "nvidia"
       metricName: "DCGM_FI_DEV_GPU_UTIL"
       nodeSelector:
+        kubernetes.io/arch: "amd64"
         gpu-type: "v100"
-  presetImages:
-    - name: "test"
-      image: "rastasheep/ubuntu-sshd:14.04"
-      description: "ssh基础镜像"
-    - name: "PyTorch 2.0"
-      image: "pytorch/pytorch:2.0.1-cuda11.7-cudnn8-runtime"
-      description: "PyTorch 2.0 with CUDA 11.7"
+
+presetImages:
+  - image: "rastasheep/ubuntu-sshd:14.04"
+    platform: ""
+  - image: "pytorch/pytorch:2.0.1-cuda11.7-cudnn8-runtime"
+    platform: "amd64"
 
 ui:
   enableJupyter: false
@@ -391,6 +394,8 @@ registry:
   # 是否使用 HTTP（不安全）协议推送镜像
   # 内网 HTTP 仓库需要设为 true
   insecure: false
+  # 仓库类型: harbor | docker
+  type: "docker"
   # 示例配置：
   # url: "registry.cn-hangzhou.aliyuncs.com"
   # username: "your-username"

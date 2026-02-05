@@ -12,6 +12,7 @@ type Config struct {
 	PodLimitPerUser  int                 `yaml:"podLimitPerUser" json:"podLimitPerUser"`
 	GpuLimitPerUser  int                 `yaml:"gpuLimitPerUser" json:"gpuLimitPerUser"`
 	GPU              GPUConfig           `yaml:"gpu" json:"gpu"`
+	PresetImages     []PresetImage       `yaml:"presetImages" json:"presetImages"`
 	UI               UIConfig            `yaml:"ui" json:"ui"`
 	Lifecycle        LifecycleConfig     `yaml:"lifecycle" json:"lifecycle"`
 	Storage          StorageConfig       `yaml:"storage" json:"storage"`
@@ -45,6 +46,7 @@ type RegistryConfig struct {
 	Username string `yaml:"username" json:"username"` // 仓库用户名
 	Password string `yaml:"password" json:"password"` // 仓库密码
 	Insecure bool   `yaml:"insecure" json:"insecure"` // 是否使用 HTTP（不安全）协议，默认 false
+	Type     string `yaml:"type" json:"type"`         // 仓库类型：harbor | docker，默认 docker
 }
 
 // ProxyConfig 代理配置
@@ -237,22 +239,20 @@ type GPUConfig struct {
 	// 默认值 0 表示不限制
 	MaxPodsPerGPU int `yaml:"maxPodsPerGPU,omitempty" json:"maxPodsPerGPU,omitempty"`
 
-	AvailableTypes []GPUType     `yaml:"availableTypes"`
-	PresetImages   []PresetImage `yaml:"presetImages"`
+	AvailableTypes []GPUType `yaml:"availableTypes"`
 }
 
-// GPUType GPU 类型
+// GPUType GPU 类型（也支持 CPU Only 模式）
 type GPUType struct {
 	Name         string            `yaml:"name" json:"name"`
-	ResourceName string            `yaml:"resourceName" json:"resourceName"`
+	Platform     string            `yaml:"platform" json:"platform"`         // CPU 架构：amd64 | arm64，空表示通用
+	ResourceName string            `yaml:"resourceName" json:"resourceName"` // K8s 资源名，空字符串表示 CPU Only
 	NodeSelector map[string]string `yaml:"nodeSelector" json:"nodeSelector"`
 	// 以下字段用于热力图展示（可选，如果不填则使用默认值）
 	Type       string `yaml:"type,omitempty" json:"type,omitempty"`             // 类型标识，如 "nvidia"、"ascend"，用于分组
 	MetricName string `yaml:"metricName,omitempty" json:"metricName,omitempty"` // Prometheus 利用率指标名
 	// 扩展指标配置
-	MemoryUsedMetric  string            `yaml:"memoryUsedMetric,omitempty" json:"memoryUsedMetric,omitempty"`   // 显存已用指标名
-	MemoryTotalMetric string            `yaml:"memoryTotalMetric,omitempty" json:"memoryTotalMetric,omitempty"` // 显存总量指标名
-	MetricLabels      MetricLabelConfig `yaml:"metricLabels,omitempty" json:"metricLabels,omitempty"`           // 指标标签映射
+	MetricLabels MetricLabelConfig `yaml:"metricLabels,omitempty" json:"metricLabels,omitempty"` // 指标标签映射
 }
 
 // MetricLabelConfig 指标标签映射配置
@@ -265,13 +265,11 @@ type MetricLabelConfig struct {
 
 // AcceleratorType 加速卡类型配置（用于热力图）
 type AcceleratorType struct {
-	Type              string            `yaml:"type" json:"type"`                           // "nvidia" | "ascend"
-	Label             string            `yaml:"label" json:"label"`                         // "NVIDIA GPU" | "华为昇腾 NPU"
-	ResourceName      string            `yaml:"resourceName" json:"resourceName"`           // "nvidia.com/gpu" | "huawei.com/Ascend910"
-	MetricName        string            `yaml:"metricName" json:"metricName"`               // 利用率指标名
-	MemoryUsedMetric  string            `yaml:"memoryUsedMetric" json:"memoryUsedMetric"`   // 显存已用指标名
-	MemoryTotalMetric string            `yaml:"memoryTotalMetric" json:"memoryTotalMetric"` // 显存总量指标名
-	MetricLabels      MetricLabelConfig `yaml:"metricLabels" json:"metricLabels"`           // 指标标签映射
+	Type         string            `yaml:"type" json:"type"`                 // "nvidia" | "ascend"
+	Label        string            `yaml:"label" json:"label"`               // "NVIDIA GPU" | "华为昇腾 NPU"
+	ResourceName string            `yaml:"resourceName" json:"resourceName"` // "nvidia.com/gpu" | "huawei.com/Ascend910"
+	MetricName   string            `yaml:"metricName" json:"metricName"`     // 利用率指标名
+	MetricLabels MetricLabelConfig `yaml:"metricLabels" json:"metricLabels"` // 指标标签映射
 }
 
 // GetAcceleratorTypes 从 GPU.AvailableTypes 推导出热力图需要的加速卡类型
@@ -289,12 +287,10 @@ func (c *Config) GetAcceleratorTypes() []AcceleratorType {
 
 		// 推导类型标识和标签
 		accType := AcceleratorType{
-			ResourceName:      gpuType.ResourceName,
-			Type:              gpuType.Type,
-			MetricName:        gpuType.MetricName,
-			MemoryUsedMetric:  gpuType.MemoryUsedMetric,
-			MemoryTotalMetric: gpuType.MemoryTotalMetric,
-			MetricLabels:      gpuType.MetricLabels,
+			ResourceName: gpuType.ResourceName,
+			Type:         gpuType.Type,
+			MetricName:   gpuType.MetricName,
+			MetricLabels: gpuType.MetricLabels,
 		}
 
 		// 如果没有配置 type，根据 resourceName 推导
@@ -330,20 +326,6 @@ func (c *Config) GetAcceleratorTypes() []AcceleratorType {
 			}
 		}
 
-		// 设置默认显存指标
-		if accType.MemoryUsedMetric == "" {
-			switch accType.Type {
-			case "nvidia":
-				accType.MemoryUsedMetric = "DCGM_FI_DEV_FB_USED"
-			}
-		}
-		if accType.MemoryTotalMetric == "" {
-			switch accType.Type {
-			case "nvidia":
-				accType.MemoryTotalMetric = "DCGM_FI_DEV_FB_FREE" // 用 free + used = total
-			}
-		}
-
 		result = append(result, accType)
 	}
 
@@ -352,9 +334,8 @@ func (c *Config) GetAcceleratorTypes() []AcceleratorType {
 
 // PresetImage 预设镜像
 type PresetImage struct {
-	Name        string `yaml:"name" json:"name"`
-	Image       string `yaml:"image" json:"image"`
-	Description string `yaml:"description" json:"description"`
+	Image    string `yaml:"image" json:"image"`
+	Platform string `yaml:"platform,omitempty" json:"platform,omitempty"` // CPU 架构：amd64 | arm64，空表示通用
 }
 
 // UIConfig UI 相关配置
@@ -401,12 +382,10 @@ func DefaultConfig() *Config {
 					NodeSelector: map[string]string{"gpu-type": "a100"},
 				},
 			},
-			PresetImages: []PresetImage{
-				{
-					Name:        "CUDA 12.0",
-					Image:       "nvidia/cuda:12.0.0-base-ubuntu22.04",
-					Description: "NVIDIA CUDA 12.0 基础镜像",
-				},
+		},
+		PresetImages: []PresetImage{
+			{
+				Image: "nvidia/cuda:12.0.0-base-ubuntu22.04",
 			},
 		},
 		UI: UIConfig{

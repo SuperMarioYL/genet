@@ -95,12 +95,25 @@ func (c *Client) QueryAcceleratorMetrics(ctx context.Context, acceleratorTypes [
 			continue
 		}
 
-		// 查询显存指标（如果配置了）
-		if accType.MemoryUsedMetric != "" {
-			memoryUsedMap := c.queryMemoryMetricNormalized(ctx, accType.MemoryUsedMetric, accType.MetricLabels)
-			memoryFreeMap := map[string]float64{}
-			if accType.MemoryTotalMetric != "" {
-				memoryFreeMap = c.queryMemoryMetricNormalized(ctx, accType.MemoryTotalMetric, accType.MetricLabels)
+		// 根据加速卡类型查询显存指标（指标名和计算方式按类型内置）
+		var memoryUsedMetric, memorySecondMetric string
+		var memoryUseTotal bool // true: 第二个指标直接作为 Total；false: Total = Used + Free
+		switch accType.Type {
+		case "nvidia":
+			memoryUsedMetric = "DCGM_FI_DEV_FB_USED"
+			memorySecondMetric = "DCGM_FI_DEV_FB_FREE"
+			memoryUseTotal = false // Total = Used + Free
+		case "ascend":
+			memoryUsedMetric = "npu_chip_info_hbm_used_memory"
+			memorySecondMetric = "npu_chip_info_hbm_total_memory"
+			memoryUseTotal = true // 直接作为 Total
+		}
+
+		if memoryUsedMetric != "" {
+			memoryUsedMap := c.queryMemoryMetricNormalized(ctx, memoryUsedMetric, accType.MetricLabels)
+			memorySecondMap := map[string]float64{}
+			if memorySecondMetric != "" {
+				memorySecondMap = c.queryMemoryMetricNormalized(ctx, memorySecondMetric, accType.MetricLabels)
 			}
 
 			// 合并显存数据到利用率指标
@@ -111,9 +124,12 @@ func (c *Client) QueryAcceleratorMetrics(ctx context.Context, acceleratorTypes [
 				if used, ok := memoryUsedMap[key]; ok {
 					metrics[i].MemoryUsed = used
 				}
-				if free, ok := memoryFreeMap[key]; ok {
-					// MemoryTotal = Used + Free
-					metrics[i].MemoryTotal = metrics[i].MemoryUsed + free
+				if val, ok := memorySecondMap[key]; ok {
+					if memoryUseTotal {
+						metrics[i].MemoryTotal = val
+					} else {
+						metrics[i].MemoryTotal = metrics[i].MemoryUsed + val
+					}
 				}
 			}
 		}
@@ -174,13 +190,11 @@ func (c *Client) queryMemoryMetricNormalized(ctx context.Context, metricName str
 
 // AcceleratorTypeConfig 加速卡类型配置
 type AcceleratorTypeConfig struct {
-	Type              string            `json:"type"`              // "nvidia" | "ascend"
-	Label             string            `json:"label"`             // "NVIDIA GPU" | "华为昇腾 NPU"
-	ResourceName      string            `json:"resourceName"`      // "nvidia.com/gpu" | "huawei.com/Ascend910"
-	MetricName        string            `json:"metricName"`        // 利用率指标名
-	MemoryUsedMetric  string            `json:"memoryUsedMetric"`  // 显存已用指标名
-	MemoryTotalMetric string            `json:"memoryTotalMetric"` // 显存总量指标名
-	MetricLabels      MetricLabelConfig `json:"metricLabels"`      // 标签映射配置
+	Type         string            `json:"type"`         // "nvidia" | "ascend"
+	Label        string            `json:"label"`        // "NVIDIA GPU" | "华为昇腾 NPU"
+	ResourceName string            `json:"resourceName"` // "nvidia.com/gpu" | "huawei.com/Ascend910"
+	MetricName   string            `json:"metricName"`   // 利用率指标名
+	MetricLabels MetricLabelConfig `json:"metricLabels"` // 标签映射配置
 }
 
 // MetricLabelConfig 指标标签映射配置

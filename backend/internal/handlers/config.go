@@ -39,12 +39,13 @@ func (h *ConfigHandler) GetConfig(c *gin.Context) {
 		PodLimitPerUser:   h.config.PodLimitPerUser,
 		GpuLimitPerUser:   h.config.GpuLimitPerUser,
 		GPUTypes:          h.config.GPU.AvailableTypes,
-		PresetImages:      h.config.GPU.PresetImages,
+		PresetImages:      h.config.PresetImages,
 		UI:                h.config.UI,
 		GPUSchedulingMode: schedulingMode,
 		MaxPodsPerGPU:     h.config.GPU.MaxPodsPerGPU,
 		AllowUserMounts:   h.config.Storage.AllowUserMounts,
 		StorageVolumes:    storageVolumes,
+		RegistryURL:       h.config.Registry.URL,
 	}
 
 	// 如果用户已认证，返回其保存的镜像列表

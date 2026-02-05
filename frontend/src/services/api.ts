@@ -305,5 +305,32 @@ export const getSharedGPUPods = (id: string): Promise<SharedGPUPodsResponse> => 
   return api.get(`/pods/${id}/shared-gpus`);
 };
 
+// Registry 镜像搜索
+export interface RegistryImageInfo {
+  name: string;
+  tags?: string[];
+  description?: string;
+}
+
+export interface SearchImagesResponse {
+  images: RegistryImageInfo[];
+}
+
+export interface GetImageTagsResponse {
+  tags: string[];
+}
+
+export const searchRegistryImages = (keyword: string, limit: number = 20): Promise<SearchImagesResponse> => {
+  return api.get(`/registry/images?keyword=${encodeURIComponent(keyword)}&limit=${limit}`);
+};
+
+export const getRegistryImageTags = (imageName: string, platform?: string): Promise<GetImageTagsResponse> => {
+  let url = `/registry/tags?image=${encodeURIComponent(imageName)}`;
+  if (platform) {
+    url += `&platform=${encodeURIComponent(platform)}`;
+  }
+  return api.get(url);
+};
+
 export default api;
 

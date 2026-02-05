@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Modal, Form, Select, InputNumber, Input, message, Alert, AutoComplete, Collapse, Typography, Tooltip, Button, Space } from 'antd';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Modal, Form, Select, InputNumber, Input, message, Alert, AutoComplete, Collapse, Typography, Tooltip, Button, Space, Spin } from 'antd';
 import { PlusOutlined, SettingOutlined, QuestionCircleOutlined, EnvironmentOutlined, FolderOutlined, DeleteOutlined, DatabaseOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import { getConfig, createPod, getGPUOverview, GPUOverviewResponse, NodeGPUInfo, CreatePodRequest, UserMount, StorageVolumeInfo, UserSavedImage } from '../../services/api';
+import { getConfig, createPod, getGPUOverview, GPUOverviewResponse, NodeGPUInfo, CreatePodRequest, UserMount, StorageVolumeInfo, UserSavedImage, searchRegistryImages, RegistryImageInfo } from '../../services/api';
 import GPUSelector from '../../components/GPUSelector';
 import './CreatePodModal.css';
 
@@ -26,8 +26,30 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
   const [config, setConfig] = useState<any>(null);
   const [selectedGPUCount, setSelectedGPUCount] = useState(1);
 
-  // 监听 GPU 类型变化，用于节点过滤
-  const watchedGPUType = Form.useWatch('gpuType', form);
+  // 监听 Platform+GPU 类型变化，用于节点过滤和镜像过滤
+  const watchedPlatformGPU = Form.useWatch('platformGpuType', form);
+
+  // Registry 镜像搜索相关状态
+  const [registryImages, setRegistryImages] = useState<RegistryImageInfo[]>([]);
+  const [registrySearchLoading, setRegistrySearchLoading] = useState(false);
+  const searchTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // 解析 Platform+GPU 类型选择值
+  const parseSelectedPlatformGPU = useCallback(() => {
+    if (!watchedPlatformGPU || !config?.gpuTypes) return { platform: '', gpuType: '', gpuConfig: null };
+    const gpuConfig = config.gpuTypes.find((g: any) => `${g.platform}|${g.name}` === watchedPlatformGPU);
+    if (!gpuConfig) return { platform: '', gpuType: '', gpuConfig: null };
+    return {
+      platform: gpuConfig.platform || '',
+      gpuType: gpuConfig.name,
+      gpuConfig,
+    };
+  }, [watchedPlatformGPU, config]);
+
+  const { platform: selectedPlatform, gpuType: watchedGPUType, gpuConfig: selectedGPUConfig } = parseSelectedPlatformGPU();
+
+  // 判断是否为 CPU Only 模式（resourceName 为空）
+  const isCPUOnly = selectedGPUConfig && !selectedGPUConfig.resourceName;
 
   // 高级配置状态
   const [gpuOverview, setGpuOverview] = useState<GPUOverviewResponse | null>(null);
@@ -51,7 +73,14 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
       setSelectedNode(undefined);
       setSelectedGPUDevices([]);
       setUserMounts([]);
+      setRegistryImages([]);
     }
+    return () => {
+      // 清理搜索定时器
+      if (searchTimerRef.current) {
+        clearTimeout(searchTimerRef.current);
+      }
+    };
     // form 是 antd useForm 返回的稳定引用，loadConfig/loadGPUOverview 在组件内定义
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
@@ -73,12 +102,13 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
     try {
       const data: any = await getConfig();
       setConfig(data);
-      if (data.presetImages && data.presetImages.length > 0) {
-        form.setFieldsValue({ image: data.presetImages[0].image });
-      }
+
+      // 设置默认 Platform+GPU 类型
       if (data.gpuTypes && data.gpuTypes.length > 0) {
-        form.setFieldsValue({ gpuType: data.gpuTypes[0].name });
+        const firstGPU = data.gpuTypes[0];
+        form.setFieldsValue({ platformGpuType: `${firstGPU.platform}|${firstGPU.name}` });
       }
+
       form.setFieldsValue({
         gpuCount: 1,
         cpu: data.ui?.defaultCPU || '4',
@@ -89,12 +119,49 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
     }
   };
 
+  // Registry 镜像搜索（防抖）
+  const handleRegistrySearch = useCallback((keyword: string) => {
+    if (searchTimerRef.current) {
+      clearTimeout(searchTimerRef.current);
+    }
+
+    if (!keyword || keyword.length < 1) {
+      setRegistryImages([]);
+      return;
+    }
+
+    setRegistrySearchLoading(true);
+    searchTimerRef.current = setTimeout(async () => {
+      try {
+        const result = await searchRegistryImages(keyword, 20);
+        setRegistryImages(result.images || []);
+      } catch (error) {
+        console.error('Failed to search registry images:', error);
+        setRegistryImages([]);
+      } finally {
+        setRegistrySearchLoading(false);
+      }
+    }, 300);
+  }, []);
+
+  // 获取过滤后的预设镜像（根据 platform 过滤）
+  const getFilteredPresetImages = useCallback(() => {
+    if (!config?.presetImages) return [];
+    if (!selectedPlatform) return config.presetImages;
+    return config.presetImages.filter((img: any) =>
+      !img.platform || img.platform === selectedPlatform
+    );
+  }, [config?.presetImages, selectedPlatform]);
+
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
 
-      // 共享模式下必须选择节点和 GPU 卡
-      if (isSharing && values.gpuCount > 0) {
+      // CPU Only 模式下不需要 GPU 相关验证
+      const effectiveGPUCount = isCPUOnly ? 0 : (values.gpuCount || 0);
+
+      // 共享模式下必须选择节点和 GPU 卡（非 CPU Only 模式）
+      if (isSharing && effectiveGPUCount > 0) {
         if (!selectedNode) {
           message.error('共享模式下必须选择节点');
           return;
@@ -109,8 +176,8 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
 
       const payload: CreatePodRequest = {
         image: values.image,
-        gpuCount: values.gpuCount,
-        gpuType: values.gpuType,
+        gpuCount: effectiveGPUCount,
+        gpuType: watchedGPUType, // 使用解析后的 GPU 类型名称
         cpu: values.cpu,
         memory: values.memory,
       };
@@ -130,7 +197,10 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
         payload.gpuCount = selectedGPUDevices.length;
       }
 
-      if (payload.gpuCount === 0) {
+      // CPU Only 模式：GPU 数量为 0，但保留 gpuType 用于 NodeSelector
+      if (isCPUOnly) {
+        payload.gpuCount = 0;
+      } else if (payload.gpuCount === 0) {
         delete payload.gpuType;
       }
 
@@ -187,12 +257,12 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
     return undefined;
   };
 
-  // 获取可选择的节点列表（根据选中的 GPU 类型过滤）
+  // 获取可选择的节点列表（根据选中的 Platform+GPU 类型过滤）
   const getAvailableNodes = (): NodeGPUInfo[] => {
     if (!gpuOverview) return [];
 
-    // 如果没有选中 GPU 类型，返回所有节点
-    if (!watchedGPUType || !config?.gpuTypes) {
+    // 如果没有选中类型或为 CPU Only 模式，返回所有节点
+    if (!selectedGPUConfig) {
       const nodes: NodeGPUInfo[] = [];
       for (const group of gpuOverview.acceleratorGroups) {
         nodes.push(...group.nodes);
@@ -200,10 +270,8 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
       return nodes;
     }
 
-    // 找到选中 GPU 类型对应的 resourceName
-    const gpuTypeConfig = config.gpuTypes.find((g: any) => g.name === watchedGPUType);
-    if (!gpuTypeConfig) {
-      // 找不到配置时返回所有节点
+    // CPU Only 模式：返回所有节点（K8s 会根据 NodeSelector 过滤）
+    if (isCPUOnly) {
       const nodes: NodeGPUInfo[] = [];
       for (const group of gpuOverview.acceleratorGroups) {
         nodes.push(...group.nodes);
@@ -211,8 +279,8 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
       return nodes;
     }
 
-    // 只返回匹配 resourceName 的 AcceleratorGroup 中的节点
-    const resourceName = gpuTypeConfig.resourceName;
+    // GPU 模式：只返回匹配 resourceName 的 AcceleratorGroup 中的节点
+    const resourceName = selectedGPUConfig.resourceName;
     for (const group of gpuOverview.acceleratorGroups) {
       if (group.resourceName === resourceName) {
         return group.nodes;
@@ -241,10 +309,12 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
     }
   };
 
-  // 计算实际 GPU 数量（共享模式由选中卡数决定）
-  const effectiveGPUCount = isSharing && selectedGPUDevices.length > 0
-    ? selectedGPUDevices.length
-    : selectedGPUCount;
+  // 计算实际 GPU 数量（CPU Only 模式为 0，共享模式由选中卡数决定）
+  const effectiveGPUCount = isCPUOnly ? 0 : (
+    isSharing && selectedGPUDevices.length > 0
+      ? selectedGPUDevices.length
+      : selectedGPUCount
+  );
 
   const quotaCheck = willExceedQuota();
   const canCreate = !quotaCheck.podExceeded && !quotaCheck.gpuExceeded;
@@ -308,8 +378,8 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
     );
   };
 
-  // 判断是否需要显示右栏
-  const hasGPUPanel = effectiveGPUCount > 0 && gpuOverview && gpuOverview.acceleratorGroups.length > 0;
+  // 判断是否需要显示右栏（CPU Only 模式下不需要 GPU 面板）
+  const hasGPUPanel = !isCPUOnly && effectiveGPUCount > 0 && gpuOverview && gpuOverview.acceleratorGroups.length > 0;
   const hasStorageVolumes = config?.storageVolumes && config.storageVolumes.length > 0;
   const showRightPanel = hasGPUPanel || hasStorageVolumes;
 
@@ -340,6 +410,29 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
         <div className={showRightPanel ? 'create-pod-layout' : ''}>
           {/* 左栏：基础配置 */}
           <div className={showRightPanel ? 'create-pod-left' : ''}>
+            {/* Platform + GPU 类型选择器 */}
+            <Form.Item
+              label="平台 / 计算类型"
+              name="platformGpuType"
+              rules={[{ required: true, message: '请选择平台和计算类型' }]}
+            >
+              <Select
+                placeholder="选择平台和计算类型"
+                onChange={() => {
+                  // 类型变化时清空节点和 GPU 卡选择
+                  setSelectedNode(undefined);
+                  setSelectedGPUDevices([]);
+                }}
+              >
+                {config?.gpuTypes?.map((gpu: any) => (
+                  <Select.Option key={`${gpu.platform}|${gpu.name}`} value={`${gpu.platform}|${gpu.name}`}>
+                    {gpu.platform} - {gpu.name}
+                    {!gpu.resourceName && <Text type="secondary"> (CPU Only)</Text>}
+                  </Select.Option>
+                ))}
+              </Select>
+            </Form.Item>
+
             <Form.Item
               label="基础镜像"
               name="image"
@@ -347,17 +440,30 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
                 { required: true, message: '请输入镜像' },
                 { pattern: /^[a-zA-Z0-9\-_./:]+$/, message: '请输入有效的镜像名称' },
               ]}
-              help={config?.ui?.enableCustomImage ? '可以从列表选择或输入自定义镜像' : '请从预设列表中选择镜像'}
+              help={config?.ui?.enableCustomImage
+                ? (config?.registryUrl ? `支持模糊搜索 ${config.registryUrl} 中的镜像` : '可以从列表选择或输入自定义镜像')
+                : '请从预设列表中选择镜像'}
             >
               {config?.ui?.enableCustomImage ? (
                 <AutoComplete
-                  placeholder="选择或输入镜像名称"
-                  filterOption={(inputValue, option) => {
+                  placeholder={config?.registryUrl ? `输入关键字搜索 ${config.registryUrl} 镜像...` : "输入或选择镜像名称"}
+                  onSearch={config?.registryUrl ? handleRegistrySearch : undefined}
+                  notFoundContent={registrySearchLoading ? <Spin size="small" /> : null}
+                  filterOption={!config?.registryUrl ? (inputValue, option) => {
                     if (!option) return false;
                     const val = (option as any).value;
                     return val ? String(val).toUpperCase().indexOf(inputValue.toUpperCase()) !== -1 : false;
-                  }}
+                  } : false}
                   options={[
+                    // Registry 搜索结果
+                    ...(registryImages.length > 0 ? [{
+                      label: 'Registry 镜像',
+                      options: registryImages.map((img: RegistryImageInfo) => ({
+                        value: `${config?.registryUrl}/${img.name}`,
+                        label: img.name + (img.description ? ` - ${img.description}` : ''),
+                      })),
+                    }] : []),
+                    // 用户保存的镜像
                     ...(config?.userImages?.length ? [{
                       label: '我保存的镜像',
                       options: config.userImages.map((img: UserSavedImage) => ({
@@ -365,11 +471,12 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
                         label: `${img.image.split('/').pop()} (${dayjs(img.savedAt).format('MM-DD HH:mm')})`,
                       })),
                     }] : []),
-                    ...(config?.presetImages?.length ? [{
+                    // 按 platform 过滤后的预设镜像
+                    ...(getFilteredPresetImages().length ? [{
                       label: '预设镜像',
-                      options: config.presetImages.map((img: any) => ({
+                      options: getFilteredPresetImages().map((img: any) => ({
                         value: img.image,
-                        label: `${img.name} - ${img.description}`,
+                        label: img.image,
                       })),
                     }] : []),
                   ]}
@@ -386,9 +493,9 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
                     </Select.OptGroup>
                   )}
                   <Select.OptGroup label="预设镜像">
-                    {config?.presetImages?.map((img: any) => (
-                      <Select.Option key={img.image} value={img.image} label={`${img.name} ${img.description}`}>
-                        {img.name} - {img.description}
+                    {getFilteredPresetImages().map((img: any) => (
+                      <Select.Option key={img.image} value={img.image} label={img.image}>
+                        {img.image}
                       </Select.Option>
                     ))}
                   </Select.OptGroup>
@@ -458,62 +565,48 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
               </Form.Item>
             </div>
 
-            <div className="form-row">
-              {/* 共享模式下隐藏 GPU 数量输入，由选择的卡决定 */}
-              {!isSharing && (
-                <Form.Item
-                  label="GPU 数量"
-                  name="gpuCount"
-                  rules={[{ required: true, message: '请选择 GPU 数量' }]}
-                  help={selectedGPUDevices.length > 0 ? `已选择 ${selectedGPUDevices.length} 张卡` : "设置为 0 可创建纯 CPU Pod"}
-                  className="form-col"
-                >
-                  <InputNumber
-                    min={0}
-                    max={8}
-                    style={{ width: '100%' }}
-                    onChange={(value) => {
-                      setSelectedGPUCount(value || 0);
-                      if (selectedGPUDevices.length > 0 && value !== selectedGPUDevices.length) {
-                        setSelectedGPUDevices([]);
-                      }
-                    }}
-                    value={selectedGPUDevices.length > 0 ? selectedGPUDevices.length : selectedGPUCount}
-                    disabled={selectedGPUDevices.length > 0}
-                  />
-                </Form.Item>
-              )}
-
+            {/* GPU 数量选择（CPU Only 模式和共享模式下隐藏） */}
+            {!isCPUOnly && !isSharing && (
               <Form.Item
-                label="GPU 类型"
-                name="gpuType"
-                rules={[{ required: effectiveGPUCount > 0, message: '请选择 GPU 类型' }]}
-                hidden={effectiveGPUCount === 0}
-                className="form-col"
+                label="GPU 数量"
+                name="gpuCount"
+                rules={[{ required: !isCPUOnly, message: '请选择 GPU 数量' }]}
+                help={selectedGPUDevices.length > 0 ? `已选择 ${selectedGPUDevices.length} 张卡` : undefined}
               >
-                <Select
-                  placeholder="选择 GPU 类型"
-                  allowClear
-                  onChange={() => {
-                    // GPU 类型变化时清空节点和 GPU 卡选择
-                    setSelectedNode(undefined);
-                    setSelectedGPUDevices([]);
+                <InputNumber
+                  min={1}
+                  max={8}
+                  style={{ width: '100%' }}
+                  onChange={(value) => {
+                    setSelectedGPUCount(value || 1);
+                    if (selectedGPUDevices.length > 0 && value !== selectedGPUDevices.length) {
+                      setSelectedGPUDevices([]);
+                    }
                   }}
-                >
-                  {config?.gpuTypes?.map((gpu: any) => (
-                    <Select.Option key={gpu.name} value={gpu.name}>{gpu.name}</Select.Option>
-                  ))}
-                </Select>
+                  value={selectedGPUDevices.length > 0 ? selectedGPUDevices.length : selectedGPUCount}
+                  disabled={selectedGPUDevices.length > 0}
+                />
               </Form.Item>
-            </div>
+            )}
 
-            {/* 共享模式显示已选 GPU 数量 */}
-            {isSharing && (
+            {/* 共享模式显示已选 GPU 数量（非 CPU Only） */}
+            {isSharing && !isCPUOnly && (
               <div className="sharing-gpu-count">
                 <Text>已选择 GPU: </Text>
                 <Text strong>{selectedGPUDevices.length}</Text>
                 <Text type="secondary"> 张</Text>
               </div>
+            )}
+
+            {/* CPU Only 模式提示 */}
+            {isCPUOnly && (
+              <Alert
+                message="CPU Only 模式"
+                description="当前选择的是纯 CPU 类型，Pod 将不使用 GPU 资源"
+                type="info"
+                showIcon
+                style={{ marginBottom: 16 }}
+              />
             )}
 
             {/* 用户自定义挂载 */}

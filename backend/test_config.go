@@ -13,7 +13,7 @@ func main() {
 		PodLimitPerUser: config.PodLimitPerUser,
 		GpuLimitPerUser: config.GpuLimitPerUser,
 		GPUTypes:        config.GPU.AvailableTypes,
-		PresetImages:    config.GPU.PresetImages,
+		PresetImages:    config.PresetImages,
 		UI:              config.UI,
 	}
 	

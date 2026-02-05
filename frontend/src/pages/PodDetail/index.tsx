@@ -38,6 +38,7 @@ const PodDetail: React.FC = () => {
   const [storageVolumes, setStorageVolumes] = useState<StorageVolumeInfo[]>([]);
   const [userImages, setUserImages] = useState<UserSavedImage[]>([]);
   const [userImagesLoading, setUserImagesLoading] = useState(false);
+  const [registryUrl, setRegistryUrl] = useState<string>('');
 
   useEffect(() => {
     if (id) {
@@ -58,6 +59,7 @@ const PodDetail: React.FC = () => {
     try {
       const data: any = await getConfig();
       setStorageVolumes(data.storageVolumes || []);
+      setRegistryUrl(data.registryUrl || '');
     } catch (error) {
       // 静默失败
       console.error('Failed to load storage volumes:', error);
@@ -257,7 +259,11 @@ const PodDetail: React.FC = () => {
     }
     setCommitSubmitting(true);
     try {
-      await commitImage(id!, commitImageName.trim());
+      // 如果配置了 registry URL，拼接完整地址
+      const fullImageName = registryUrl
+        ? `${registryUrl}/${commitImageName.trim()}`
+        : commitImageName.trim();
+      await commitImage(id!, fullImageName);
       message.success('镜像保存任务已创建');
       setCommitModalVisible(false);
       setCommitImageName('');
@@ -709,8 +715,27 @@ const PodDetail: React.FC = () => {
             <div><Text strong>当前镜像：</Text><Text code className="mono">{pod.image}</Text></div>
             <div>
               <Text strong>目标镜像名称：</Text>
-              <Input placeholder="registry.example.com/namespace/image:tag" value={commitImageName} onChange={(e) => setCommitImageName(e.target.value)} style={{ marginTop: 8 }} />
-              <Text type="secondary" style={{ display: 'block', marginTop: 4 }}>请输入完整的镜像名称，包括仓库地址和标签</Text>
+              {registryUrl ? (
+                <Input
+                  addonBefore={`${registryUrl}/`}
+                  placeholder="myimage:v1.0"
+                  value={commitImageName}
+                  onChange={(e) => setCommitImageName(e.target.value)}
+                  style={{ marginTop: 8 }}
+                />
+              ) : (
+                <Input
+                  placeholder="registry.example.com/namespace/image:tag"
+                  value={commitImageName}
+                  onChange={(e) => setCommitImageName(e.target.value)}
+                  style={{ marginTop: 8 }}
+                />
+              )}
+              <Text type="secondary" style={{ display: 'block', marginTop: 4 }}>
+                {registryUrl
+                  ? '输入镜像名称和标签，地址前缀已自动填充'
+                  : '请输入完整的镜像名称，包括仓库地址和标签'}
+              </Text>
             </div>
             <Alert message="注意" description={<ul style={{ margin: 0, paddingLeft: 20 }}><li>保存过程可能需要几分钟</li><li>确保镜像仓库配置正确且有推送权限</li></ul>} type="warning" showIcon />
           </Space>

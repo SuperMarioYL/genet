@@ -95,6 +95,10 @@ func main() {
 	kubeconfigHandler := handlers.NewKubeconfigHandler(config, k8sClient)
 	clusterHandler := handlers.NewClusterHandler(k8sClient, promClient, config)
 	imageHandler := handlers.NewImageHandler(k8sClient, config)
+	registryHandler, err := handlers.NewRegistryHandler(config, log)
+	if err != nil {
+		log.Warn("Failed to initialize registry handler", zap.Error(err))
+	}
 	log.Info("Handlers initialized")
 
 	// 初始化 OIDC Provider（如果启用）
@@ -187,6 +191,16 @@ func main() {
 			images.GET("", imageHandler.ListUserImages)
 			images.POST("", imageHandler.AddUserImage)
 			images.DELETE("", imageHandler.DeleteUserImage)
+		}
+
+		// Registry 镜像搜索端点（需要认证）
+		if registryHandler != nil {
+			registry := api.Group("/registry")
+			registry.Use(auth.AuthMiddleware(config))
+			{
+				registry.GET("/images", registryHandler.SearchImages)
+				registry.GET("/tags", registryHandler.GetImageTags)
+			}
 		}
 
 		// Kubeconfig 端点（需要认证）

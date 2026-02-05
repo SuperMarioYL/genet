@@ -138,17 +138,13 @@ func (h *ClusterHandler) GetGPUOverview(c *gin.Context) {
 		for i, t := range acceleratorTypes {
 			h.log.Debug("Accelerator type config",
 				zap.String("type", t.Type),
-				zap.String("metricName", t.MetricName),
-				zap.String("memoryUsedMetric", t.MemoryUsedMetric),
-				zap.String("memoryTotalMetric", t.MemoryTotalMetric))
+				zap.String("metricName", t.MetricName))
 
 			promTypes[i] = prometheus.AcceleratorTypeConfig{
-				Type:              t.Type,
-				Label:             t.Label,
-				ResourceName:      t.ResourceName,
-				MetricName:        t.MetricName,
-				MemoryUsedMetric:  t.MemoryUsedMetric,
-				MemoryTotalMetric: t.MemoryTotalMetric,
+				Type:         t.Type,
+				Label:        t.Label,
+				ResourceName: t.ResourceName,
+				MetricName:   t.MetricName,
 				MetricLabels: prometheus.MetricLabelConfig{
 					DeviceID:  t.MetricLabels.DeviceID,
 					Node:      t.MetricLabels.Node,

@@ -254,9 +254,11 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 				zap.String("acceleratorType", acceleratorType),
 				zap.String("devices", deviceStr))
 		} else {
-			// 独占模式：请求 K8s GPU 资源
-			container.Resources.Requests[corev1.ResourceName(resourceName)] = resource.MustParse(fmt.Sprintf("%d", spec.GPUCount))
-			container.Resources.Limits[corev1.ResourceName(resourceName)] = resource.MustParse(fmt.Sprintf("%d", spec.GPUCount))
+			// 独占模式：只有 resourceName 非空时才请求 K8s GPU 资源
+			if resourceName != "" {
+				container.Resources.Requests[corev1.ResourceName(resourceName)] = resource.MustParse(fmt.Sprintf("%d", spec.GPUCount))
+				container.Resources.Limits[corev1.ResourceName(resourceName)] = resource.MustParse(fmt.Sprintf("%d", spec.GPUCount))
+			}
 
 			// 根据加速卡类型设置环境变量
 			switch acceleratorType {
@@ -466,21 +468,24 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 		pod.Spec.Volumes = append(pod.Spec.Volumes, c.config.Pod.ExtraVolumes...)
 	}
 
-	// 如果需要 GPU，合并 GPU 特定的 NodeSelector（GPU 配置优先）
-	if spec.GPUCount > 0 && spec.GPUType != "" {
-		// 查找 GPU 配置
+	// 合并 GPU/Platform 特定的 NodeSelector（配置优先）
+	// 支持 CPU Only 模式：即使 GPUCount 为 0，也需要应用 NodeSelector（如 platform 选择）
+	if spec.GPUType != "" {
+		// 查找配置（可能是 GPU 类型或 CPU Only）
 		for _, gpuType := range c.config.GPU.AvailableTypes {
 			if gpuType.Name == spec.GPUType {
-				if pod.Spec.NodeSelector == nil {
-					pod.Spec.NodeSelector = make(map[string]string)
+				if len(gpuType.NodeSelector) > 0 {
+					if pod.Spec.NodeSelector == nil {
+						pod.Spec.NodeSelector = make(map[string]string)
+					}
+					// 合并 NodeSelector，配置优先
+					for k, v := range gpuType.NodeSelector {
+						pod.Spec.NodeSelector[k] = v
+					}
+					c.log.Debug("Applied node selector from GPU/Platform config",
+						zap.String("gpuType", spec.GPUType),
+						zap.Any("nodeSelector", gpuType.NodeSelector))
 				}
-				// 合并 GPU NodeSelector，GPU 配置优先
-				for k, v := range gpuType.NodeSelector {
-					pod.Spec.NodeSelector[k] = v
-				}
-				c.log.Debug("Applied GPU node selector",
-					zap.String("gpuType", spec.GPUType),
-					zap.Any("nodeSelector", gpuType.NodeSelector))
 				break
 			}
 		}

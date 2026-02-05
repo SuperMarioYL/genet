@@ -82,4 +82,6 @@ type ConfigResponse struct {
 	StorageVolumes  []StorageVolumeInfo `json:"storageVolumes"`  // 存储卷信息（用于前端展示）
 	// 用户镜像
 	UserImages []UserSavedImage `json:"userImages,omitempty"` // 用户保存的镜像列表
+	// 镜像仓库
+	RegistryURL string `json:"registryUrl,omitempty"` // 镜像仓库地址（用于前端展示）
 }
