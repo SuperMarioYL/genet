@@ -10,8 +10,8 @@ RUN npm ci
 # Copy source code
 COPY . .
 
-# Build
-RUN npm run build
+# Build - 关闭 sourcemap 加速构建，增大内存防止 OOM
+RUN GENERATE_SOURCEMAP=false NODE_OPTIONS="--max-old-space-size=4096" npm run build
 
 # Production stage
 FROM nginx:alpine

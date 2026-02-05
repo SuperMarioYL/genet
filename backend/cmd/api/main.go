@@ -208,6 +208,30 @@ func main() {
 		api.GET("/kubeconfig/download", auth.AuthMiddleware(config), kubeconfigHandler.DownloadKubeconfig)
 	}
 
+	// Open API 路由（如果启用）
+	if config.OpenAPI.Enabled {
+		openAPIHandler := handlers.NewOpenAPIHandler(k8sClient, config)
+		openAPI := api.Group("/open")
+		openAPI.Use(auth.APIKeyAuthMiddleware(config))
+		{
+			// Pod CRUD
+			openAPI.POST("/pods", openAPIHandler.CreatePod)
+			openAPI.GET("/pods", openAPIHandler.ListPods)
+			openAPI.GET("/pods/:name", openAPIHandler.GetPod)
+			openAPI.PUT("/pods/:name", openAPIHandler.UpdatePod)
+			openAPI.DELETE("/pods/:name", openAPIHandler.DeletePod)
+
+			// Job CRUD
+			openAPI.POST("/jobs", openAPIHandler.CreateJob)
+			openAPI.GET("/jobs", openAPIHandler.ListJobs)
+			openAPI.GET("/jobs/:name", openAPIHandler.GetJob)
+			openAPI.PUT("/jobs/:name", openAPIHandler.UpdateJob)
+			openAPI.DELETE("/jobs/:name", openAPIHandler.DeleteJob)
+		}
+		log.Info("Open API routes registered",
+			zap.String("namespace", config.OpenAPI.Namespace))
+	}
+
 	// 启动服务器
 	port := os.Getenv("PORT")
 	if port == "" {

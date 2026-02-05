@@ -27,6 +27,14 @@ type Config struct {
 	Kubernetes       KubernetesConfig    `yaml:"kubernetes" json:"kubernetes"`
 	Kubeconfig    KubeconfigConfig `yaml:"kubeconfig" json:"kubeconfig"`
 	PrometheusURL string           `yaml:"prometheusURL" json:"prometheusURL"` // Prometheus 地址，如 http://prometheus.monitoring:9090
+	OpenAPI       OpenAPIConfig    `yaml:"openAPI" json:"openAPI"`
+}
+
+// OpenAPIConfig Open API 配置
+type OpenAPIConfig struct {
+	Enabled   bool     `yaml:"enabled" json:"enabled"`     // 是否启用 Open API
+	Namespace string   `yaml:"namespace" json:"namespace"` // 固定命名空间，所有 Open API 资源在此命名空间下
+	APIKeys   []string `yaml:"apiKeys" json:"-"`           // API Key 列表，json:"-" 防止暴露
 }
 
 // ImagesConfig 系统依赖镜像配置
@@ -507,5 +515,9 @@ tail -f /dev/null
 			CertValidityHours: 8760,   // 默认 1 年
 		},
 		PrometheusURL: "", // 默认不启用，需要配置 Prometheus 地址
+		OpenAPI: OpenAPIConfig{
+			Enabled:   false,
+			Namespace: "genet-open-api",
+		},
 	}
 }

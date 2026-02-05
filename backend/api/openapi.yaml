@@ -1,0 +1,454 @@
+openapi: "3.0.3"
+info:
+  title: Genet Open API
+  description: |
+    Kubernetes Pod/Job CRUD API with fixed namespace enforcement.
+    - Request body uses YAML format (Content-Type: application/yaml)
+    - Response uses JSON format
+    - Namespace field in request body will be ignored and overridden by server
+  version: "1.0.0"
+
+servers:
+  - url: http://localhost:8080
+    description: Local dev
+
+security:
+  - BearerAuth: []
+
+paths:
+  /api/open/pods:
+    post:
+      summary: Create Pod
+      description: |
+        Create a Pod in the configured namespace.
+        Request body is YAML format (K8s native Pod spec).
+        Any namespace in request body will be overridden by server.
+      operationId: createPod
+      tags: [Pods]
+      requestBody:
+        required: true
+        content:
+          application/yaml:
+            schema:
+              $ref: "#/components/schemas/Pod"
+            example: |
+              metadata:
+                name: my-pod
+                labels:
+                  app: my-app
+              spec:
+                containers:
+                  - name: main
+                    image: nginx:latest
+                    resources:
+                      requests:
+                        cpu: "1"
+                        memory: 2Gi
+                      limits:
+                        cpu: "2"
+                        memory: 4Gi
+                restartPolicy: Always
+      responses:
+        "201":
+          description: Pod created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pod"
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Pod already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    get:
+      summary: List Pods
+      description: List all Pods created via Open API in the configured namespace.
+      operationId: listPods
+      tags: [Pods]
+      parameters:
+        - name: labelSelector
+          in: query
+          description: "Additional K8s label selector (genet.io/open-api=true is always appended)"
+          schema:
+            type: string
+          example: app=my-app
+      responses:
+        "200":
+          description: Pod list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PodList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/open/pods/{name}:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Pod name
+
+    get:
+      summary: Get Pod
+      operationId: getPod
+      tags: [Pods]
+      responses:
+        "200":
+          description: Pod details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pod"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    put:
+      summary: Update Pod
+      description: "Update an existing Pod. Request body is YAML. Namespace will be overridden."
+      operationId: updatePod
+      tags: [Pods]
+      requestBody:
+        required: true
+        content:
+          application/yaml:
+            schema:
+              $ref: "#/components/schemas/Pod"
+      responses:
+        "200":
+          description: Pod updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pod"
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    delete:
+      summary: Delete Pod
+      operationId: deletePod
+      tags: [Pods]
+      responses:
+        "200":
+          description: Pod deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/open/jobs:
+    post:
+      summary: Create Job
+      description: |
+        Create a Job in the configured namespace.
+        Request body is YAML format (K8s native Job spec).
+        Any namespace in request body will be overridden by server.
+      operationId: createJob
+      tags: [Jobs]
+      requestBody:
+        required: true
+        content:
+          application/yaml:
+            schema:
+              $ref: "#/components/schemas/Job"
+            example: |
+              metadata:
+                name: my-job
+              spec:
+                backoffLimit: 3
+                template:
+                  spec:
+                    containers:
+                      - name: worker
+                        image: busybox:latest
+                        command: ["echo", "hello"]
+                    restartPolicy: Never
+      responses:
+        "201":
+          description: Job created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Job already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    get:
+      summary: List Jobs
+      description: List all Jobs created via Open API in the configured namespace.
+      operationId: listJobs
+      tags: [Jobs]
+      parameters:
+        - name: labelSelector
+          in: query
+          description: "Additional K8s label selector (genet.io/open-api=true is always appended)"
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Job list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/open/jobs/{name}:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Job name
+
+    get:
+      summary: Get Job
+      operationId: getJob
+      tags: [Jobs]
+      responses:
+        "200":
+          description: Job details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    put:
+      summary: Update Job
+      description: "Update an existing Job. Request body is YAML. Namespace will be overridden."
+      operationId: updateJob
+      tags: [Jobs]
+      requestBody:
+        required: true
+        content:
+          application/yaml:
+            schema:
+              $ref: "#/components/schemas/Job"
+      responses:
+        "200":
+          description: Job updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    delete:
+      summary: Delete Job
+      operationId: deleteJob
+      tags: [Jobs]
+      responses:
+        "200":
+          description: Job deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: "API Key configured in config.yaml openAPI.apiKeys"
+
+  schemas:
+    Pod:
+      type: object
+      description: "Kubernetes Pod (corev1.Pod). Namespace field will be ignored and overridden by server."
+      properties:
+        apiVersion:
+          type: string
+          example: v1
+        kind:
+          type: string
+          example: Pod
+        metadata:
+          $ref: "#/components/schemas/ObjectMeta"
+        spec:
+          type: object
+          description: "K8s PodSpec - see https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#podspec-v1-core"
+        status:
+          type: object
+          description: "K8s PodStatus (read-only, returned by server)"
+
+    PodList:
+      type: object
+      properties:
+        apiVersion:
+          type: string
+        kind:
+          type: string
+          example: PodList
+        metadata:
+          type: object
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Pod"
+
+    Job:
+      type: object
+      description: "Kubernetes Job (batchv1.Job). Namespace field will be ignored and overridden by server."
+      properties:
+        apiVersion:
+          type: string
+          example: batch/v1
+        kind:
+          type: string
+          example: Job
+        metadata:
+          $ref: "#/components/schemas/ObjectMeta"
+        spec:
+          type: object
+          description: "K8s JobSpec - see https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#jobspec-v1-batch"
+        status:
+          type: object
+          description: "K8s JobStatus (read-only, returned by server)"
+
+    JobList:
+      type: object
+      properties:
+        apiVersion:
+          type: string
+        kind:
+          type: string
+          example: JobList
+        metadata:
+          type: object
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Job"
+
+    ObjectMeta:
+      type: object
+      properties:
+        name:
+          type: string
+          description: "Resource name (required for create)"
+        namespace:
+          type: string
+          description: "Will be IGNORED - server always uses configured namespace"
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+          description: "Labels (genet.io/open-api=true and genet.io/managed=true will be auto-added)"
+        annotations:
+          type: object
+          additionalProperties:
+            type: string
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+
+    Message:
+      type: object
+      properties:
+        message:
+          type: string
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid API key
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: "Missing or invalid Authorization header"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: "resource not found"
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
