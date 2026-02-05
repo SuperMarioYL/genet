@@ -67,9 +67,8 @@ ui:
   defaultCPU: "4"
   defaultMemory: "8Gi"
 
-lifecycle:
-  # 每日自动删除所有 Pod 的时间
-  autoDeleteTime: "23:00"
+cleanup:
+  schedule: "0 23 * * *"
   timezone: "Asia/Shanghai"
 
 storage:

@@ -4,7 +4,8 @@ import React, { useEffect, useState } from 'react';
 import AcceleratorHeatmap from '../../components/AcceleratorHeatmap';
 import GlassCard from '../../components/GlassCard';
 import ThemeToggle from '../../components/ThemeToggle';
-import { downloadKubeconfig, getClusterInfo, getKubeconfig, listPods } from '../../services/api';
+import { downloadKubeconfig, getClusterInfo, getConfig, getKubeconfig, listPods } from '../../services/api';
+import { getCleanupLabel } from '../../utils/cleanup';
 import CreatePodModal from './CreatePodModal';
 import './index.css';
 import PodCard from './PodCard';
@@ -21,6 +22,9 @@ const Dashboard: React.FC = () => {
   const [kubeconfigData, setKubeconfigData] = useState<any>(null);
   const [clusterInfo, setClusterInfo] = useState<any>(null);
   const [heatmapModalVisible, setHeatmapModalVisible] = useState(false);
+  const [cleanupLabel, setCleanupLabel] = useState<string>('');
+  const [cleanupSchedule, setCleanupSchedule] = useState<string>('');
+  const [cleanupTimezone, setCleanupTimezone] = useState<string>('');
 
   const loadPods = async () => {
     setLoading(true);
@@ -39,6 +43,14 @@ const Dashboard: React.FC = () => {
     loadPods();
     getClusterInfo().then((info) => {
       setClusterInfo(info);
+    }).catch(() => {});
+    getConfig().then((config: any) => {
+      if (config?.cleanupSchedule) {
+        setCleanupSchedule(config.cleanupSchedule);
+        setCleanupTimezone(config.cleanupTimezone || '');
+        const label = getCleanupLabel(config.cleanupSchedule, config.cleanupTimezone);
+        if (label) setCleanupLabel(label);
+      }
     }).catch(() => {});
     // 每 10 秒轮询一次，提高响应速度
     const timer = setInterval(loadPods, 10000);
@@ -188,7 +200,7 @@ const Dashboard: React.FC = () => {
               <Col xs={24} sm={12} md={6}>
                 <div className="quota-info">
                   <Text type="secondary" className="quota-notice">
-                    ⏰ 所有 Pod 将在 23:00 自动清理
+                    {cleanupLabel ? `所有 Pod 将在 ${cleanupLabel} 自动清理` : '所有 Pod 将定时自动清理'}
                   </Text>
                 </div>
               </Col>
@@ -246,7 +258,7 @@ const Dashboard: React.FC = () => {
                 {pods.map((pod, index) => (
                   <Col key={pod.id} xs={24} sm={24} md={12} lg={8} xl={8}>
                     <div className={`animate-slide-up stagger-${Math.min(index + 2, 6)}`}>
-                      <PodCard pod={pod} onUpdate={loadPods} />
+                      <PodCard pod={pod} onUpdate={loadPods} cleanupSchedule={cleanupSchedule} cleanupTimezone={cleanupTimezone} />
                     </div>
                   </Col>
                 ))}

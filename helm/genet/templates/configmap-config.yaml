@@ -9,10 +9,13 @@ data:
     gpuLimitPerUser: {{ .Values.backend.config.gpuLimitPerUser }}
     gpu:
 {{ toYaml .Values.backend.config.gpu | indent 6 }}
+    presetImages:
+{{ toYaml .Values.backend.config.presetImages | indent 6 }}
     ui:
 {{ toYaml .Values.backend.config.ui | indent 6 }}
-    lifecycle:
-{{ toYaml .Values.backend.config.lifecycle | indent 6 }}
+    cleanup:
+      schedule: {{ .Values.cleanup.schedule | quote }}
+      timezone: {{ .Values.cleanup.timezone | quote }}
     storage:
 {{ toYaml .Values.backend.config.storage | indent 6 }}
     pod:

@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import GlassCard from '../../components/GlassCard';
 import StatusBadge from '../../components/StatusBadge';
 import { deletePod, extendPod } from '../../services/api';
+import { getNextCleanupTime } from '../../utils/cleanup';
 import './PodCard.css';
 
 const { Text } = Typography;
@@ -13,9 +14,11 @@ const { Text } = Typography;
 interface PodCardProps {
   pod: any;
   onUpdate: () => void;
+  cleanupSchedule?: string;
+  cleanupTimezone?: string;
 }
 
-const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
+const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate, cleanupSchedule, cleanupTimezone }) => {
   const navigate = useNavigate();
   const [deleting, setDeleting] = useState(false);
   const [extending, setExtending] = useState(false);
@@ -260,32 +263,31 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate }) => {
   const getProtectionInfo = () => {
     const protectedUntil = pod.protectedUntil ? dayjs(pod.protectedUntil) : null;
     const now = dayjs();
-    const today2300 = now.hour(23).minute(0).second(0);
-    const today2259 = now.hour(22).minute(59).second(0);
+    const cleanupInfo = getNextCleanupTime(cleanupSchedule || '0 23 * * *', cleanupTimezone);
+    const cleanupTime = cleanupInfo?.nextTime || now.hour(23).minute(0).second(0);
+    const cleanupLabel = cleanupInfo?.label || '今天 23:00';
 
     if (!protectedUntil || protectedUntil.isBefore(now)) {
       // 未保护或保护已过期
       return {
         type: 'warning' as const,
         icon: '⏰',
-        text: '今晚 23:00 自动清理',
+        text: `${cleanupLabel} 自动清理`,
         canExtend: true,
       };
     }
 
-    // 判断保护时间是否在今晚 23:00 之前（即今天会被清理）
-    const willBeCleanedTonight = protectedUntil.isBefore(today2300) || protectedUntil.isSame(today2259, 'minute');
-
-    if (willBeCleanedTonight) {
+    // 判断保护时间是否在下次清理之前（即会被清理）
+    if (protectedUntil.isBefore(cleanupTime)) {
       return {
         type: 'warning' as const,
         icon: '⚠️',
-        text: '今日 23:00 将清理（可再次延长）',
+        text: `${cleanupLabel} 将清理（可再次延长）`,
         canExtend: true,
       };
     }
 
-    // 保护到明天或之后，显示保护状态
+    // 保护到清理时间之后，显示保护状态
     return {
       type: 'success' as const,
       icon: '✅',

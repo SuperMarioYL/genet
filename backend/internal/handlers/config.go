@@ -46,6 +46,8 @@ func (h *ConfigHandler) GetConfig(c *gin.Context) {
 		AllowUserMounts:   h.config.Storage.AllowUserMounts,
 		StorageVolumes:    storageVolumes,
 		RegistryURL:       h.config.Registry.URL,
+		CleanupSchedule:   h.config.Cleanup.Schedule,
+		CleanupTimezone:   h.config.Cleanup.Timezone,
 	}
 
 	// 如果用户已认证，返回其保存的镜像列表

@@ -4,6 +4,7 @@ import { PlusOutlined, SettingOutlined, QuestionCircleOutlined, EnvironmentOutli
 import dayjs from 'dayjs';
 import { getConfig, createPod, getGPUOverview, GPUOverviewResponse, NodeGPUInfo, CreatePodRequest, UserMount, StorageVolumeInfo, UserSavedImage, searchRegistryImages, RegistryImageInfo } from '../../services/api';
 import GPUSelector from '../../components/GPUSelector';
+import { getCleanupLabel } from '../../utils/cleanup';
 import './CreatePodModal.css';
 
 const { Text } = Typography;
@@ -693,7 +694,7 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
             </div>
 
             <Alert
-              message={<span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span>⏰</span> 所有 Pod 将在今晚 23:00 自动删除</span>}
+              message={<span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span>⏰</span> 所有 Pod 将在 {getCleanupLabel(config?.cleanupSchedule, config?.cleanupTimezone) || '定时'} 自动删除</span>}
               type="warning"
               showIcon={false}
               className="time-warning"

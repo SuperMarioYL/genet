@@ -157,11 +157,6 @@ backend:
       defaultCPU: "16"
       defaultMemory: "64Gi"
 
-    lifecycle:
-      # 每日自动删除所有 Pod 的时间
-      autoDeleteTime: "23:00"
-      timezone: "Asia/Shanghai"
-
     storage:
       # ============================================
       # 存储卷配置（新格式，推荐）
@@ -554,6 +549,8 @@ frontend:
 cleanup:
   # 每天 23:00 执行清理（删除所有用户 Pod）
   schedule: "0 23 * * *"
+  # 时区（用于前端显示和 CronJob 调度参考）
+  timezone: "Asia/Shanghai"
   image:
     # cleanup 使用 backend 镜像
     repository: genet-backend

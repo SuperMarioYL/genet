@@ -581,7 +581,7 @@ func (h *PodHandler) ExtendPod(c *gin.Context) {
 	}
 
 	// 获取配置的时区，默认使用 Asia/Shanghai
-	timezone := h.config.Lifecycle.Timezone
+	timezone := h.config.Cleanup.Timezone
 	if timezone == "" {
 		timezone = "Asia/Shanghai"
 	}

@@ -14,7 +14,7 @@ type Config struct {
 	GPU              GPUConfig           `yaml:"gpu" json:"gpu"`
 	PresetImages     []PresetImage       `yaml:"presetImages" json:"presetImages"`
 	UI               UIConfig            `yaml:"ui" json:"ui"`
-	Lifecycle        LifecycleConfig     `yaml:"lifecycle" json:"lifecycle"`
+	Cleanup          CleanupConfig       `yaml:"cleanup" json:"cleanup"`
 	Storage          StorageConfig       `yaml:"storage" json:"storage"`
 	Pod              PodConfig           `yaml:"pod" json:"pod"`
 	OAuth            OAuthConfig         `yaml:"oauth" json:"oauth"`
@@ -348,10 +348,10 @@ type UIConfig struct {
 	DefaultMemory     string   `yaml:"defaultMemory" json:"defaultMemory"` // 默认内存
 }
 
-// LifecycleConfig 生命周期配置
-type LifecycleConfig struct {
-	AutoDeleteTime string `yaml:"autoDeleteTime"` // 每日自动删除时间（如 "23:00"）
-	Timezone       string `yaml:"timezone"`       // 时区（如 "Asia/Shanghai"）
+// CleanupConfig Pod 清理配置
+type CleanupConfig struct {
+	Schedule string `yaml:"schedule" json:"schedule"` // Cron 表达式（如 "0 23 * * *"）
+	Timezone string `yaml:"timezone" json:"timezone"` // 时区（如 "Asia/Shanghai"）
 }
 
 // LoadConfig 从文件加载配置
@@ -396,9 +396,9 @@ func DefaultConfig() *Config {
 			DefaultCPU:        "4",
 			DefaultMemory:     "8Gi",
 		},
-		Lifecycle: LifecycleConfig{
-			AutoDeleteTime: "23:00",
-			Timezone:       "Asia/Shanghai",
+		Cleanup: CleanupConfig{
+			Schedule: "0 23 * * *",
+			Timezone: "Asia/Shanghai",
 		},
 		Storage: StorageConfig{
 			Volumes: []StorageVolume{

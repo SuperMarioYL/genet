@@ -84,4 +84,7 @@ type ConfigResponse struct {
 	UserImages []UserSavedImage `json:"userImages,omitempty"` // 用户保存的镜像列表
 	// 镜像仓库
 	RegistryURL string `json:"registryUrl,omitempty"` // 镜像仓库地址（用于前端展示）
+	// Pod 清理
+	CleanupSchedule string `json:"cleanupSchedule,omitempty"` // Cron 表达式（如 "0 23 * * *"）
+	CleanupTimezone string `json:"cleanupTimezone,omitempty"` // 时区（如 "Asia/Shanghai"）
 }
