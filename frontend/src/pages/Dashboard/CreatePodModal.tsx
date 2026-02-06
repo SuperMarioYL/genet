@@ -168,6 +168,13 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
       return;
     }
 
+    // 镜像已包含 tag（如 image:v1.0），不再获取 tags
+    if (imageName.includes(':')) {
+      setSelectedRegistryImage('');
+      setImageTags([]);
+      return;
+    }
+
     setSelectedRegistryImage(imageName);
     setImageTags([]);
     setTagsLoading(true);
