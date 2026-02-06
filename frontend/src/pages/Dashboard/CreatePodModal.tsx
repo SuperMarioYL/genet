@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Modal, Form, Select, InputNumber, Input, message, Alert, AutoComplete, Collapse, Typography, Tooltip, Button, Space, Spin } from 'antd';
 import { PlusOutlined, SettingOutlined, QuestionCircleOutlined, EnvironmentOutlined, FolderOutlined, DeleteOutlined, DatabaseOutlined, ThunderboltOutlined, AppstoreOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import { getConfig, createPod, getGPUOverview, GPUOverviewResponse, NodeGPUInfo, CreatePodRequest, UserMount, StorageVolumeInfo, UserSavedImage, searchRegistryImages, RegistryImageInfo } from '../../services/api';
+import { getConfig, createPod, getGPUOverview, GPUOverviewResponse, NodeGPUInfo, CreatePodRequest, UserMount, StorageVolumeInfo, UserSavedImage, searchRegistryImages, RegistryImageInfo, getRegistryImageTags } from '../../services/api';
 import GPUSelector from '../../components/GPUSelector';
 import { getCleanupLabel } from '../../utils/cleanup';
 import './CreatePodModal.css';
@@ -34,6 +34,11 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
   const [registryImages, setRegistryImages] = useState<RegistryImageInfo[]>([]);
   const [registrySearchLoading, setRegistrySearchLoading] = useState(false);
   const searchTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Tag 选择相关状态
+  const [selectedRegistryImage, setSelectedRegistryImage] = useState<string>('');
+  const [imageTags, setImageTags] = useState<string[]>([]);
+  const [tagsLoading, setTagsLoading] = useState(false);
 
   // 解析 Platform+GPU 类型选择值
   const parseSelectedPlatformGPU = useCallback(() => {
@@ -75,6 +80,8 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
       setSelectedGPUDevices([]);
       setUserMounts([]);
       setRegistryImages([]);
+      setSelectedRegistryImage('');
+      setImageTags([]);
     }
     return () => {
       // 清理搜索定时器
@@ -146,6 +153,35 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
     }, 300);
   }, []);
 
+  // 选中镜像后获取 Tags
+  const handleImageSelect = useCallback(async (value: string) => {
+    // 从 value 中提取镜像名（去掉 registryUrl 前缀）
+    const registryUrl = config?.registryUrl || '';
+    const imageName = registryUrl && value.startsWith(registryUrl + '/')
+      ? value.slice(registryUrl.length + 1)
+      : '';
+
+    if (!imageName) {
+      // 非 Registry 镜像（预设/用户保存的），不获取 tags
+      setSelectedRegistryImage('');
+      setImageTags([]);
+      return;
+    }
+
+    setSelectedRegistryImage(imageName);
+    setImageTags([]);
+    setTagsLoading(true);
+    try {
+      const result = await getRegistryImageTags(imageName, selectedPlatform || undefined);
+      setImageTags(result.tags || []);
+    } catch (error) {
+      console.error('Failed to fetch image tags:', error);
+      message.error('获取镜像 Tag 失败');
+    } finally {
+      setTagsLoading(false);
+    }
+  }, [config?.registryUrl, selectedPlatform]);
+
   // 获取过滤后的预设镜像（根据 platform 过滤）
   const getFilteredPresetImages = useCallback(() => {
     if (!config?.presetImages) return [];
@@ -176,8 +212,14 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
 
       setLoading(true);
 
+      // 拼接镜像和 Tag
+      let finalImage = values.image;
+      if (values.imageTag && !finalImage.includes(':')) {
+        finalImage = `${finalImage}:${values.imageTag}`;
+      }
+
       const payload: CreatePodRequest = {
-        image: values.image,
+        image: finalImage,
         gpuCount: effectiveGPUCount,
         gpuType: watchedGPUType, // 使用解析后的 GPU 类型名称
         cpu: values.cpu,
@@ -545,6 +587,7 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
                   <AutoComplete
                     placeholder={config?.registryUrl ? `输入关键字搜索 ${config.registryUrl} 镜像...` : "输入或选择镜像名称"}
                     onSearch={config?.registryUrl ? handleRegistrySearch : undefined}
+                    onSelect={config?.registryUrl ? handleImageSelect : undefined}
                     notFoundContent={registrySearchLoading ? <Spin size="small" tip="搜索中..." /> : null}
                     filterOption={!config?.registryUrl ? (inputValue, option) => {
                       if (!option) return false;
@@ -597,6 +640,24 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
                 </Select>
               )}
             </Form.Item>
+
+            {selectedRegistryImage && (
+              <Form.Item
+                label="镜像 Tag"
+                name="imageTag"
+                help="选择镜像版本 Tag，不选则使用 latest"
+              >
+                <Select
+                  placeholder={tagsLoading ? "加载 Tags 中..." : "选择 Tag（可选）"}
+                  loading={tagsLoading}
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                  notFoundContent={tagsLoading ? <Spin size="small" /> : "暂无 Tag"}
+                  options={imageTags.map(tag => ({ value: tag, label: tag }))}
+                />
+              </Form.Item>
+            )}
 
             <Form.Item
               label={
