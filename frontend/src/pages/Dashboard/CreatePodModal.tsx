@@ -808,6 +808,14 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
                           添加
                         </Button>
                       </div>
+                      {config?.userMountAllowedPaths?.length > 0 && (
+                        <div className="user-mounts-allowed-paths">
+                          <Text type="secondary">允许挂载的路径: </Text>
+                          {config.userMountAllowedPaths.map((p: string, i: number) => (
+                            <Text code key={i}>{p}</Text>
+                          ))}
+                        </div>
+                      )}
                       {userMounts.length === 0 ? (
                         <Text type="secondary" className="user-mounts-empty">可挂载宿主机目录到 Pod 中</Text>
                       ) : (
