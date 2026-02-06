@@ -1,5 +1,5 @@
-import { CloudDownloadOutlined, HeatMapOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
-import { Button, Col, Empty, Layout, message, Modal, Row, Space, Statistic, Typography } from 'antd';
+import { CloudDownloadOutlined, HeatMapOutlined, PlusOutlined, ReloadOutlined, SwapOutlined } from '@ant-design/icons';
+import { Button, Col, Empty, Layout, message, Modal, Row, Space, Statistic, Tag, Typography } from 'antd';
 import React, { useEffect, useState } from 'react';
 import AcceleratorHeatmap from '../../components/AcceleratorHeatmap';
 import GlassCard from '../../components/GlassCard';
@@ -25,6 +25,8 @@ const Dashboard: React.FC = () => {
   const [cleanupLabel, setCleanupLabel] = useState<string>('');
   const [cleanupSchedule, setCleanupSchedule] = useState<string>('');
   const [cleanupTimezone, setCleanupTimezone] = useState<string>('');
+  const [imageTransferModalVisible, setImageTransferModalVisible] = useState(false);
+  const [imageTransferConfig, setImageTransferConfig] = useState<any>(null);
 
   const initialLoadDone = React.useRef(false);
 
@@ -58,6 +60,9 @@ const Dashboard: React.FC = () => {
         setCleanupTimezone(config.cleanupTimezone || '');
         const label = getCleanupLabel(config.cleanupSchedule, config.cleanupTimezone);
         if (label) setCleanupLabel(label);
+      }
+      if (config?.ui?.imageTransfer?.issueURL) {
+        setImageTransferConfig(config.ui.imageTransfer);
       }
     }).catch(() => {});
     // 每 10 秒轮询一次，提高响应速度
@@ -134,6 +139,15 @@ const Dashboard: React.FC = () => {
                 className="action-btn glass-button"
               >
                 Kubeconfig
+              </Button>
+            )}
+            {imageTransferConfig && (
+              <Button
+                icon={<SwapOutlined />}
+                onClick={() => setImageTransferModalVisible(true)}
+                className="action-btn glass-button"
+              >
+                镜像摆渡
               </Button>
             )}
             <Button
@@ -396,6 +410,94 @@ const Dashboard: React.FC = () => {
           onError={(error) => message.error(`加载加速卡数据失败: ${error.message}`)}
         />
       </Modal>
+
+      {/* 镜像摆渡对话框 */}
+      {imageTransferConfig && (
+        <Modal
+          title={
+            <div className="modal-title-custom">
+              <SwapOutlined />
+              <span>镜像摆渡</span>
+            </div>
+          }
+          open={imageTransferModalVisible}
+          onCancel={() => setImageTransferModalVisible(false)}
+          width={640}
+          footer={[
+            <Button key="close" onClick={() => setImageTransferModalVisible(false)}>
+              关闭
+            </Button>,
+          ]}
+        >
+          <div className="image-transfer-content">
+            <div className="image-transfer-desc">
+              <Text type="secondary">
+                通过以下步骤，将 DockerHub 上的镜像摆渡到内部 Harbor 镜像仓库。
+              </Text>
+            </div>
+
+            <div className="image-transfer-steps">
+              <div className="transfer-step-card">
+                <div className="transfer-step-header">
+                  <Tag color="blue">Step 1</Tag>
+                  <Text strong>提交摆渡请求</Text>
+                </div>
+                <Text type="secondary" className="transfer-step-desc">
+                  在 GitHub Issue 中填写需要摆渡的镜像信息，提交后将自动触发摆渡流程
+                </Text>
+                <Button
+                  type="primary"
+                  href={imageTransferConfig.issueURL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  block
+                  className="transfer-step-btn"
+                >
+                  前往提交 Issue
+                </Button>
+              </div>
+
+              <div className="transfer-step-card">
+                <div className="transfer-step-header">
+                  <Tag color="orange">Step 2</Tag>
+                  <Text strong>查看摆渡状态</Text>
+                </div>
+                <Text type="secondary" className="transfer-step-desc">
+                  查看 GitHub Action 运行状态，确认镜像是否已成功摆渡
+                </Text>
+                <Button
+                  href={imageTransferConfig.actionURL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  block
+                  className="transfer-step-btn glass-button"
+                >
+                  查看 Action
+                </Button>
+              </div>
+
+              <div className="transfer-step-card">
+                <div className="transfer-step-header">
+                  <Tag color="green">Step 3</Tag>
+                  <Text strong>手动强制同步</Text>
+                </div>
+                <Text type="secondary" className="transfer-step-desc">
+                  内部同步会自动执行，如需立即同步可手动强制触发
+                </Text>
+                <Button
+                  href={imageTransferConfig.triggerURL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  block
+                  className="transfer-step-btn glass-button"
+                >
+                  强制同步
+                </Button>
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
     </Layout>
   );
 };

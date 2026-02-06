@@ -156,6 +156,12 @@ backend:
         - "256Gi"
       defaultCPU: "16"
       defaultMemory: "64Gi"
+      # 镜像摆渡配置（可选，配置后 Dashboard 显示"镜像摆渡"按钮）
+      # 流程: DockerHub -> GitHub Action -> Huawei SWR -> Internal Harbor
+      # imageTransfer:
+      #   issueURL: "https://github.com/org/repo/issues/new?template=image-ferry.yml"   # 提交摆渡请求（GitHub Issue）
+      #   actionURL: "https://github.com/org/repo/actions"                               # 查看摆渡状态（GitHub Action）
+      #   triggerURL: "https://internal-ci.example.com/trigger-sync"                     # 手动强制触发内网同步
 
     storage:
       # ============================================

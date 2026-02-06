@@ -346,14 +346,23 @@ type PresetImage struct {
 	Platform string `yaml:"platform,omitempty" json:"platform,omitempty"` // CPU 架构：amd64 | arm64，空表示通用
 }
 
+// ImageTransferConfig 镜像摆渡配置
+// 用于配置从外部镜像仓库（如 DockerHub）摆渡镜像到内部 Harbor 的工作流链接
+type ImageTransferConfig struct {
+	IssueURL   string `yaml:"issueURL" json:"issueURL"`     // 提交摆渡请求的 GitHub Issue 链接
+	ActionURL  string `yaml:"actionURL" json:"actionURL"`   // 查看 GitHub Action 运行状态链接
+	TriggerURL string `yaml:"triggerURL" json:"triggerURL"` // 手动强制触发内网同步链接
+}
+
 // UIConfig UI 相关配置
 type UIConfig struct {
-	EnableJupyter     bool     `yaml:"enableJupyter" json:"enableJupyter"`
-	EnableCustomImage bool     `yaml:"enableCustomImage" json:"enableCustomImage"`
-	CPUOptions        []string `yaml:"cpuOptions" json:"cpuOptions"`       // CPU 选项，如 ["2", "4", "8"]
-	MemoryOptions     []string `yaml:"memoryOptions" json:"memoryOptions"` // 内存选项，如 ["4Gi", "8Gi", "16Gi"]
-	DefaultCPU        string   `yaml:"defaultCPU" json:"defaultCPU"`       // 默认 CPU
-	DefaultMemory     string   `yaml:"defaultMemory" json:"defaultMemory"` // 默认内存
+	EnableJupyter     bool                 `yaml:"enableJupyter" json:"enableJupyter"`
+	EnableCustomImage bool                 `yaml:"enableCustomImage" json:"enableCustomImage"`
+	CPUOptions        []string             `yaml:"cpuOptions" json:"cpuOptions"`                           // CPU 选项，如 ["2", "4", "8"]
+	MemoryOptions     []string             `yaml:"memoryOptions" json:"memoryOptions"`                     // 内存选项，如 ["4Gi", "8Gi", "16Gi"]
+	DefaultCPU        string               `yaml:"defaultCPU" json:"defaultCPU"`                           // 默认 CPU
+	DefaultMemory     string               `yaml:"defaultMemory" json:"defaultMemory"`                     // 默认内存
+	ImageTransfer     *ImageTransferConfig `yaml:"imageTransfer,omitempty" json:"imageTransfer,omitempty"` // 镜像摆渡配置（可选）
 }
 
 // CleanupConfig Pod 清理配置
