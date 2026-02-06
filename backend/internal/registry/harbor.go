@@ -24,6 +24,17 @@ type HarborClient struct {
 
 // NewHarborClient 创建 Harbor 客户端
 func NewHarborClient(config *models.RegistryConfig) *HarborClient {
+	baseURL := strings.TrimSuffix(config.URL, "/")
+
+	// 确保 URL 包含协议
+	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+		if config.Insecure {
+			baseURL = "http://" + baseURL
+		} else {
+			baseURL = "https://" + baseURL
+		}
+	}
+
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: config.Insecure,
@@ -31,7 +42,7 @@ func NewHarborClient(config *models.RegistryConfig) *HarborClient {
 	}
 
 	return &HarborClient{
-		baseURL:  strings.TrimSuffix(config.URL, "/"),
+		baseURL:  baseURL,
 		username: config.Username,
 		password: config.Password,
 		httpClient: &http.Client{

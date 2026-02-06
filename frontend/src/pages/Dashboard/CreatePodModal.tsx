@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Modal, Form, Select, InputNumber, Input, message, Alert, AutoComplete, Collapse, Typography, Tooltip, Button, Space, Spin } from 'antd';
-import { PlusOutlined, SettingOutlined, QuestionCircleOutlined, EnvironmentOutlined, FolderOutlined, DeleteOutlined, DatabaseOutlined } from '@ant-design/icons';
+import { PlusOutlined, SettingOutlined, QuestionCircleOutlined, EnvironmentOutlined, FolderOutlined, DeleteOutlined, DatabaseOutlined, ThunderboltOutlined, AppstoreOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { getConfig, createPod, getGPUOverview, GPUOverviewResponse, NodeGPUInfo, CreatePodRequest, UserMount, StorageVolumeInfo, UserSavedImage, searchRegistryImages, RegistryImageInfo } from '../../services/api';
 import GPUSelector from '../../components/GPUSelector';
@@ -138,6 +138,7 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
         setRegistryImages(result.images || []);
       } catch (error) {
         console.error('Failed to search registry images:', error);
+        message.error('镜像搜索失败，请检查网络或仓库配置');
         setRegistryImages([]);
       } finally {
         setRegistrySearchLoading(false);
@@ -382,7 +383,8 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
   // 判断是否需要显示右栏（CPU Only 模式下不需要 GPU 面板）
   const hasGPUPanel = !isCPUOnly && effectiveGPUCount > 0 && gpuOverview && gpuOverview.acceleratorGroups.length > 0;
   const hasStorageVolumes = config?.storageVolumes && config.storageVolumes.length > 0;
-  const showRightPanel = hasGPUPanel || hasStorageVolumes;
+  const hasStorageSection = hasStorageVolumes || config?.allowUserMounts;
+  const showRightPanel = hasGPUPanel || hasStorageSection;
 
   return (
     <Modal
@@ -409,9 +411,15 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
         className="create-pod-form"
       >
         <div className={showRightPanel ? 'create-pod-layout' : ''}>
-          {/* 左栏：基础配置 */}
+          {/* 左栏 */}
           <div className={showRightPanel ? 'create-pod-left' : ''}>
-            {/* Platform + GPU 类型选择器 */}
+
+            {/* ── 计算资源 ── */}
+            <div className="form-section-title">
+              <ThunderboltOutlined />
+              <span>计算资源</span>
+            </div>
+
             <Form.Item
               label="平台 / 计算类型"
               name="platformGpuType"
@@ -420,7 +428,6 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
               <Select
                 placeholder="选择平台和计算类型"
                 onChange={() => {
-                  // 类型变化时清空节点和 GPU 卡选择
                   setSelectedNode(undefined);
                   setSelectedGPUDevices([]);
                 }}
@@ -432,100 +439,6 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
                   </Select.Option>
                 ))}
               </Select>
-            </Form.Item>
-
-            <Form.Item
-              label="基础镜像"
-              name="image"
-              rules={[
-                { required: true, message: '请输入镜像' },
-                { pattern: /^[a-zA-Z0-9\-_./:]+$/, message: '请输入有效的镜像名称' },
-              ]}
-              help={config?.ui?.enableCustomImage
-                ? (config?.registryUrl ? `支持模糊搜索 ${config.registryUrl} 中的镜像` : '可以从列表选择或输入自定义镜像')
-                : '请从预设列表中选择镜像'}
-            >
-              {config?.ui?.enableCustomImage ? (
-                <AutoComplete
-                  placeholder={config?.registryUrl ? `输入关键字搜索 ${config.registryUrl} 镜像...` : "输入或选择镜像名称"}
-                  onSearch={config?.registryUrl ? handleRegistrySearch : undefined}
-                  notFoundContent={registrySearchLoading ? <Spin size="small" /> : null}
-                  filterOption={!config?.registryUrl ? (inputValue, option) => {
-                    if (!option) return false;
-                    const val = (option as any).value;
-                    return val ? String(val).toUpperCase().indexOf(inputValue.toUpperCase()) !== -1 : false;
-                  } : false}
-                  options={[
-                    // Registry 搜索结果
-                    ...(registryImages.length > 0 ? [{
-                      label: 'Registry 镜像',
-                      options: registryImages.map((img: RegistryImageInfo) => ({
-                        value: `${config?.registryUrl}/${img.name}`,
-                        label: img.name + (img.description ? ` - ${img.description}` : ''),
-                      })),
-                    }] : []),
-                    // 用户保存的镜像
-                    ...(config?.userImages?.length ? [{
-                      label: '我保存的镜像',
-                      options: config.userImages.map((img: UserSavedImage) => ({
-                        value: img.image,
-                        label: `${img.image.split('/').pop()} (${dayjs(img.savedAt).format('MM-DD HH:mm')})`,
-                      })),
-                    }] : []),
-                    // 按 platform 过滤后的预设镜像
-                    ...(getFilteredPresetImages().length ? [{
-                      label: '预设镜像',
-                      options: getFilteredPresetImages().map((img: any) => ({
-                        value: img.image,
-                        label: img.image,
-                      })),
-                    }] : []),
-                  ]}
-                />
-              ) : (
-                <Select placeholder="选择镜像" showSearch optionFilterProp="label">
-                  {config?.userImages?.length > 0 && (
-                    <Select.OptGroup label="我保存的镜像">
-                      {config.userImages.map((img: UserSavedImage) => (
-                        <Select.Option key={img.image} value={img.image} label={img.image}>
-                          {img.image.split('/').pop()} <Text type="secondary">({dayjs(img.savedAt).format('MM-DD HH:mm')})</Text>
-                        </Select.Option>
-                      ))}
-                    </Select.OptGroup>
-                  )}
-                  <Select.OptGroup label="预设镜像">
-                    {getFilteredPresetImages().map((img: any) => (
-                      <Select.Option key={img.image} value={img.image} label={img.image}>
-                        {img.image}
-                      </Select.Option>
-                    ))}
-                  </Select.OptGroup>
-                </Select>
-              )}
-            </Form.Item>
-
-            <Form.Item
-              label={
-                <span>
-                  Pod 名称
-                  <Tooltip title="自定义 Pod 名称后缀，留空则使用时间戳自动生成">
-                    <QuestionCircleOutlined style={{ marginLeft: 4, color: '#999' }} />
-                  </Tooltip>
-                </span>
-              }
-              name="name"
-              rules={[
-                {
-                  pattern: /^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/,
-                  message: '只能包含小写字母、数字和连字符，不能以连字符开头或结尾',
-                },
-                { max: 20, message: '最多 20 个字符' },
-              ]}
-            >
-              <Input
-                placeholder="例如: train, dev, test（留空自动生成）"
-                allowClear
-              />
             </Form.Item>
 
             <div className="form-row">
@@ -610,75 +523,106 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
               />
             )}
 
-            {/* 用户自定义挂载 */}
-            {config?.allowUserMounts && (
-              <div className="user-mounts-section">
-                <div className="user-mounts-header">
-                  <FolderOutlined />
-                  <span>自定义挂载</span>
-                  <Button
-                    type="link"
-                    size="small"
-                    icon={<PlusOutlined />}
-                    onClick={() => setUserMounts([...userMounts, { hostPath: '', mountPath: '', readOnly: false }])}
-                  >
-                    添加
-                  </Button>
-                </div>
-                {userMounts.length === 0 ? (
-                  <Text type="secondary" className="user-mounts-empty">可挂载宿主机目录到 Pod 中</Text>
-                ) : (
-                  <Space direction="vertical" style={{ width: '100%' }} size={8}>
-                    {userMounts.map((mount, index) => (
-                      <div key={index} className="user-mount-item">
-                        <Input
-                          placeholder="宿主机路径，如 /data/models"
-                          value={mount.hostPath}
-                          onChange={(e) => {
-                            const newMounts = [...userMounts];
-                            newMounts[index].hostPath = e.target.value;
-                            setUserMounts(newMounts);
-                          }}
-                          style={{ flex: 1 }}
-                        />
-                        <Input
-                          placeholder="挂载路径，如 /models"
-                          value={mount.mountPath}
-                          onChange={(e) => {
-                            const newMounts = [...userMounts];
-                            newMounts[index].mountPath = e.target.value;
-                            setUserMounts(newMounts);
-                          }}
-                          style={{ flex: 1 }}
-                        />
-                        <Tooltip title="只读">
-                          <Select
-                            value={mount.readOnly ? 'ro' : 'rw'}
-                            onChange={(v) => {
-                              const newMounts = [...userMounts];
-                              newMounts[index].readOnly = v === 'ro';
-                              setUserMounts(newMounts);
-                            }}
-                            style={{ width: 70 }}
-                            size="small"
-                          >
-                            <Select.Option value="rw">读写</Select.Option>
-                            <Select.Option value="ro">只读</Select.Option>
-                          </Select>
-                        </Tooltip>
-                        <Button
-                          type="text"
-                          danger
-                          icon={<DeleteOutlined />}
-                          onClick={() => setUserMounts(userMounts.filter((_, i) => i !== index))}
-                        />
-                      </div>
-                    ))}
-                  </Space>
-                )}
-              </div>
-            )}
+            {/* ── 镜像与基本信息 ── */}
+            <div className="form-section-title">
+              <AppstoreOutlined />
+              <span>镜像与基本信息</span>
+            </div>
 
+            <Form.Item
+              label="基础镜像"
+              name="image"
+              rules={[
+                { required: true, message: '请输入镜像' },
+                { pattern: /^[a-zA-Z0-9\-_./:]+$/, message: '请输入有效的镜像名称' },
+              ]}
+              help={config?.ui?.enableCustomImage
+                ? (config?.registryUrl ? `支持模糊搜索 ${config.registryUrl} 中的镜像` : '可以从列表选择或输入自定义镜像')
+                : '请从预设列表中选择镜像'}
+            >
+              {config?.ui?.enableCustomImage ? (
+                <Spin spinning={registrySearchLoading} size="small">
+                  <AutoComplete
+                    placeholder={config?.registryUrl ? `输入关键字搜索 ${config.registryUrl} 镜像...` : "输入或选择镜像名称"}
+                    onSearch={config?.registryUrl ? handleRegistrySearch : undefined}
+                    notFoundContent={registrySearchLoading ? <Spin size="small" tip="搜索中..." /> : null}
+                    filterOption={!config?.registryUrl ? (inputValue, option) => {
+                      if (!option) return false;
+                      const val = (option as any).value;
+                      return val ? String(val).toUpperCase().indexOf(inputValue.toUpperCase()) !== -1 : false;
+                    } : false}
+                    options={[
+                      ...(registryImages.length > 0 ? [{
+                        label: 'Registry 镜像',
+                        options: registryImages.map((img: RegistryImageInfo) => ({
+                          value: `${config?.registryUrl}/${img.name}`,
+                          label: img.name + (img.description ? ` - ${img.description}` : ''),
+                        })),
+                      }] : []),
+                      ...(config?.userImages?.length ? [{
+                        label: '我保存的镜像',
+                        options: config.userImages.map((img: UserSavedImage) => ({
+                          value: img.image,
+                          label: `${img.image.split('/').pop()} (${dayjs(img.savedAt).format('MM-DD HH:mm')})`,
+                        })),
+                      }] : []),
+                      ...(getFilteredPresetImages().length ? [{
+                        label: '预设镜像',
+                        options: getFilteredPresetImages().map((img: any) => ({
+                          value: img.image,
+                          label: img.image,
+                        })),
+                      }] : []),
+                    ]}
+                  />
+                </Spin>
+              ) : (
+                <Select placeholder="选择镜像" showSearch optionFilterProp="label">
+                  {config?.userImages?.length > 0 && (
+                    <Select.OptGroup label="我保存的镜像">
+                      {config.userImages.map((img: UserSavedImage) => (
+                        <Select.Option key={img.image} value={img.image} label={img.image}>
+                          {img.image.split('/').pop()} <Text type="secondary">({dayjs(img.savedAt).format('MM-DD HH:mm')})</Text>
+                        </Select.Option>
+                      ))}
+                    </Select.OptGroup>
+                  )}
+                  <Select.OptGroup label="预设镜像">
+                    {getFilteredPresetImages().map((img: any) => (
+                      <Select.Option key={img.image} value={img.image} label={img.image}>
+                        {img.image}
+                      </Select.Option>
+                    ))}
+                  </Select.OptGroup>
+                </Select>
+              )}
+            </Form.Item>
+
+            <Form.Item
+              label={
+                <span>
+                  Pod 名称
+                  <Tooltip title="自定义 Pod 名称后缀，留空则使用时间戳自动生成">
+                    <QuestionCircleOutlined style={{ marginLeft: 4, color: '#999' }} />
+                  </Tooltip>
+                </span>
+              }
+              name="name"
+              rules={[
+                {
+                  pattern: /^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/,
+                  message: '只能包含小写字母、数字和连字符，不能以连字符开头或结尾',
+                },
+                { max: 20, message: '最多 20 个字符' },
+              ]}
+            >
+              <Input
+                placeholder="例如: train, dev, test（留空自动生成）"
+                allowClear
+              />
+            </Form.Item>
+
+            {/* ── 底部信息 ── */}
             <div className="quota-preview">
               <div className="quota-preview-title">创建后配额使用</div>
               <div className="quota-preview-items">
@@ -701,38 +645,12 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
             />
           </div>
 
-          {/* 右栏：存储卷信息 + 节点和 GPU 选择 */}
+          {/* 右栏：节点调度 + 存储挂载 */}
           {showRightPanel && (
             <div className="create-pod-right">
-              {/* 存储卷信息 */}
-              {hasStorageVolumes && (
-                <div className="storage-volumes-section">
-                  <div className="storage-volumes-header">
-                    <DatabaseOutlined />
-                    <span>已挂载目录</span>
-                  </div>
-                  <div className="storage-volumes-list">
-                    {config.storageVolumes.map((vol: StorageVolumeInfo) => (
-                      <div key={vol.name} className="storage-volume-item">
-                        <div className="storage-volume-path">
-                          <Text code>{vol.mountPath}</Text>
-                          {vol.readOnly && <Text type="secondary" style={{ marginLeft: 4 }}>(只读)</Text>}
-                        </div>
-                        {vol.description && (
-                          <div className="storage-volume-desc">
-                            <Text type="secondary">{vol.description}</Text>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               {/* GPU 节点选择 */}
               {hasGPUPanel && (
                 isSharing ? (
-                  // 共享模式：直接显示，不折叠
                   <div className="gpu-selection-panel">
                     <div className="gpu-selection-panel-title">
                       <EnvironmentOutlined />
@@ -742,7 +660,6 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
                     {selectedNode && (hasPrometheus || isSharing) && renderGPUSelector()}
                   </div>
                 ) : (
-                  // 独占模式：保持 Collapse 折叠
                   <Collapse
                     ghost
                     className="advanced-settings-collapse"
@@ -779,6 +696,104 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
                     ]}
                   />
                 )
+              )}
+
+              {/* 存储与挂载 */}
+              {hasStorageSection && (
+                <div className="storage-mounts-section">
+                  <div className="storage-mounts-header">
+                    <DatabaseOutlined />
+                    <span>存储与挂载</span>
+                  </div>
+
+                  {/* 系统已挂载目录 */}
+                  {hasStorageVolumes && (
+                    <div className="storage-volumes-list">
+                      {config.storageVolumes.map((vol: StorageVolumeInfo) => (
+                        <div key={vol.name} className="storage-volume-item">
+                          <div className="storage-volume-path">
+                            <Text code>{vol.mountPath}</Text>
+                            {vol.readOnly && <Text type="secondary" style={{ marginLeft: 4 }}>(只读)</Text>}
+                          </div>
+                          {vol.description && (
+                            <div className="storage-volume-desc">
+                              <Text type="secondary">{vol.description}</Text>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* 自定义挂载 */}
+                  {config?.allowUserMounts && (
+                    <div className="user-mounts-subsection">
+                      <div className="user-mounts-header">
+                        <FolderOutlined />
+                        <span>自定义挂载</span>
+                        <Button
+                          type="link"
+                          size="small"
+                          icon={<PlusOutlined />}
+                          onClick={() => setUserMounts([...userMounts, { hostPath: '', mountPath: '', readOnly: false }])}
+                        >
+                          添加
+                        </Button>
+                      </div>
+                      {userMounts.length === 0 ? (
+                        <Text type="secondary" className="user-mounts-empty">可挂载宿主机目录到 Pod 中</Text>
+                      ) : (
+                        <Space direction="vertical" style={{ width: '100%' }} size={8}>
+                          {userMounts.map((mount, index) => (
+                            <div key={index} className="user-mount-item">
+                              <Input
+                                placeholder="宿主机路径"
+                                value={mount.hostPath}
+                                onChange={(e) => {
+                                  const newMounts = [...userMounts];
+                                  newMounts[index].hostPath = e.target.value;
+                                  setUserMounts(newMounts);
+                                }}
+                                style={{ flex: 1 }}
+                              />
+                              <Input
+                                placeholder="挂载路径"
+                                value={mount.mountPath}
+                                onChange={(e) => {
+                                  const newMounts = [...userMounts];
+                                  newMounts[index].mountPath = e.target.value;
+                                  setUserMounts(newMounts);
+                                }}
+                                style={{ flex: 1 }}
+                              />
+                              <Tooltip title="只读">
+                                <Select
+                                  value={mount.readOnly ? 'ro' : 'rw'}
+                                  onChange={(v) => {
+                                    const newMounts = [...userMounts];
+                                    newMounts[index].readOnly = v === 'ro';
+                                    setUserMounts(newMounts);
+                                  }}
+                                  style={{ width: 70 }}
+                                  size="small"
+                                >
+                                  <Select.Option value="rw">读写</Select.Option>
+                                  <Select.Option value="ro">只读</Select.Option>
+                                </Select>
+                              </Tooltip>
+                              <Button
+                                type="text"
+                                danger
+                                icon={<DeleteOutlined />}
+                                onClick={() => setUserMounts(userMounts.filter((_, i) => i !== index))}
+                              />
+                            </div>
+                          ))}
+                        </Space>
+                      )}
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           )}

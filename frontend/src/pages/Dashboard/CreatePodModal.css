@@ -10,6 +10,23 @@
 .form-row { display: flex; gap: 16px; }
 .form-col { flex: 1; }
 
+/* 分组标题 */
+.form-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.form-section-title:not(:first-child) {
+  margin-top: 8px;
+}
+
 /* 两栏布局 */
 .create-pod-layout {
   display: flex;
@@ -32,6 +49,7 @@
   border: 1px solid var(--border-color);
   border-radius: 12px;
   padding: 16px;
+  margin-bottom: 16px;
 }
 
 .gpu-selection-panel-title {
@@ -69,8 +87,8 @@
 [data-theme="dark"] .quota-preview { background: #1a1a2e; }
 [data-theme="dark"] .time-warning { background: rgba(237, 137, 54, 0.2) !important; }
 
-/* 系统存储卷信息样式 */
-.storage-volumes-section {
+/* 存储与挂载统一分组 */
+.storage-mounts-section {
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 12px;
@@ -78,7 +96,7 @@
   margin-bottom: 16px;
 }
 
-.storage-volumes-header {
+.storage-mounts-header {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -109,7 +127,7 @@
   font-size: 12px;
 }
 
-[data-theme="dark"] .storage-volumes-section {
+[data-theme="dark"] .storage-mounts-section {
   background: #1a1a2e;
 }
 
@@ -117,13 +135,11 @@
   background: #141425;
 }
 
-/* 用户自定义挂载样式 */
-.user-mounts-section {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-  padding: 12px 16px;
-  margin-bottom: 16px;
+/* 自定义挂载子区域 */
+.user-mounts-subsection {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color);
 }
 
 .user-mounts-header {
@@ -152,10 +168,6 @@
 
 .user-mount-item .ant-input {
   font-size: 12px;
-}
-
-[data-theme="dark"] .user-mounts-section {
-  background: #1a1a2e;
 }
 
 /* 高级设置样式 */
