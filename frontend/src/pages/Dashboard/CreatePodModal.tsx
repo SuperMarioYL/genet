@@ -34,6 +34,7 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
   const [registryImages, setRegistryImages] = useState<RegistryImageInfo[]>([]);
   const [registrySearchLoading, setRegistrySearchLoading] = useState(false);
   const searchTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const justSelectedRef = useRef(false);
 
   // Tag 选择相关状态
   const [selectedRegistryImage, setSelectedRegistryImage] = useState<string>('');
@@ -129,6 +130,12 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
 
   // Registry 镜像搜索（防抖）
   const handleRegistrySearch = useCallback((keyword: string) => {
+    // 刚刚选中镜像后 AutoComplete 会触发 onSearch，跳过这次搜索
+    if (justSelectedRef.current) {
+      justSelectedRef.current = false;
+      return;
+    }
+
     if (searchTimerRef.current) {
       clearTimeout(searchTimerRef.current);
     }
@@ -155,6 +162,13 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
 
   // 选中镜像后获取 Tags
   const handleImageSelect = useCallback(async (value: string) => {
+    // 标记刚刚选中，防止 onSearch 触发不必要的搜索
+    justSelectedRef.current = true;
+    if (searchTimerRef.current) {
+      clearTimeout(searchTimerRef.current);
+      searchTimerRef.current = null;
+    }
+
     // 从 value 中提取镜像名（去掉 registryUrl 前缀）
     const registryUrl = config?.registryUrl || '';
     const imageName = registryUrl && value.startsWith(registryUrl + '/')
@@ -221,7 +235,17 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
 
       // 拼接镜像和 Tag
       let finalImage = values.image;
-      if (values.imageTag && !finalImage.includes(':')) {
+
+      // 防御性修复：如果选中了 Registry 镜像但 image 缺少 registry 前缀，补上前缀
+      const registryUrl = config?.registryUrl || '';
+      if (selectedRegistryImage && registryUrl && !finalImage.startsWith(registryUrl + '/')) {
+        finalImage = `${registryUrl}/${selectedRegistryImage}`;
+      }
+
+      // 检查镜像名最后一段是否已有 tag（避免端口号中的 : 干扰判断）
+      const lastSlashIdx = finalImage.lastIndexOf('/');
+      const afterLastSlash = lastSlashIdx >= 0 ? finalImage.slice(lastSlashIdx) : finalImage;
+      if (values.imageTag && !afterLastSlash.includes(':')) {
         finalImage = `${finalImage}:${values.imageTag}`;
       }
 

@@ -1,0 +1,136 @@
+digraph GenetArchitecture {
+  graph [
+    rankdir=LR,
+    splines=spline,
+    nodesep=0.65,
+    ranksep=1.0,
+    pad=0.35,
+    bgcolor="#ECECEC",
+    fontname="Helvetica",
+    labelloc="t",
+    label="Genet Architecture"
+  ];
+
+  node [
+    shape=box,
+    style="rounded,filled",
+    color="#9CA3AF",
+    fillcolor="#FFFFFF",
+    fontname="Helvetica",
+    fontsize=12,
+    margin="0.14,0.1"
+  ];
+
+  edge [
+    color="#1F2937",
+    penwidth=1.35,
+    arrowsize=0.85,
+    fontname="Helvetica",
+    fontsize=11
+  ];
+
+  client [
+    label="Client SDK\nBrowser / kubectl / IDE",
+    fillcolor="#D5DBE4",
+    color="#D5DBE4",
+    fontname="Helvetica-Bold",
+    fontsize=13
+  ];
+
+  frontend_panel [
+    shape=plain,
+    label=<
+      <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="12" CELLPADDING="10" BGCOLOR="#CBD2EE">
+        <TR><TD><B><FONT POINT-SIZE="16">Frontend</FONT></B></TD></TR>
+        <TR><TD BGCOLOR="#EEF1F9" BORDER="1" COLOR="#EEF1F9">React App</TD></TR>
+        <TR><TD BGCOLOR="#EEF1F9" BORDER="1" COLOR="#EEF1F9">Router</TD></TR>
+        <TR><TD BGCOLOR="#EEF1F9" BORDER="1" COLOR="#EEF1F9">Dashboard</TD></TR>
+        <TR><TD BGCOLOR="#EEF1F9" BORDER="1" COLOR="#EEF1F9">Pod Detail</TD></TR>
+        <TR><TD BGCOLOR="#EEF1F9" BORDER="1" COLOR="#EEF1F9">Axios /api</TD></TR>
+      </TABLE>
+    >
+  ];
+
+  subgraph cluster_core {
+    label="Genet Core";
+    style="rounded,filled";
+    color="#CDD3DB";
+    fillcolor="#F3F4F6";
+
+    coordinator [
+      label="Coordinator\nGin API + Auth + Route Dispatch",
+      fillcolor="#CCD3DD",
+      color="#CCD3DD",
+      fontname="Helvetica-Bold",
+      fontsize=14
+    ];
+
+    subgraph cluster_workers {
+      label="Workers";
+      style="rounded,dashed";
+      color="#4B5563";
+      fillcolor="#F9FAFB";
+
+      pod_svc [
+        label="Pod Service\nCreate / Delete / Extend\nLogs / Events / Commit",
+        fillcolor="#F4DEBA",
+        color="#F4DEBA",
+        fontname="Helvetica-Bold"
+      ];
+
+      cluster_svc [
+        label="Cluster Service\nGPU Overview\nPrometheus Metrics",
+        fillcolor="#9FE1D4",
+        color="#9FE1D4",
+        fontname="Helvetica-Bold"
+      ];
+
+      image_svc [
+        label="Image & Access Service\nImage Search / Tags\nKubeconfig / OIDC",
+        fillcolor="#A9D9EC",
+        color="#A9D9EC",
+        fontname="Helvetica-Bold"
+      ];
+
+      pod_svc -> cluster_svc [style=invis, weight=20];
+      cluster_svc -> image_svc [style=invis, weight=20];
+    }
+
+    adapter [
+      label="Adapter Layer\ninternal/k8s + internal/prometheus\ninternal/registry + internal/oidc + models",
+      fillcolor="#DCE2EA",
+      color="#DCE2EA"
+    ];
+
+    coordinator -> pod_svc [label="management"];
+    coordinator -> cluster_svc;
+    coordinator -> image_svc;
+
+    pod_svc -> adapter;
+    cluster_svc -> adapter;
+    image_svc -> adapter;
+  }
+
+  deps_panel [
+    shape=plain,
+    label=<
+      <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="12" CELLPADDING="10" BGCOLOR="#D6DCE5">
+        <TR><TD><B><FONT POINT-SIZE="16">Platform Dependencies</FONT></B></TD></TR>
+        <TR><TD BGCOLOR="#F2F4F7" BORDER="1" COLOR="#F2F4F7"><B>Kubernetes API</B><BR/>Pods / Namespaces / PVC / Jobs / RBAC</TD></TR>
+        <TR><TD BGCOLOR="#F2F4F7" BORDER="1" COLOR="#F2F4F7"><B>OAuth / OIDC Provider</B></TD></TR>
+        <TR><TD BGCOLOR="#F2F4F7" BORDER="1" COLOR="#F2F4F7"><B>Prometheus</B></TD></TR>
+        <TR><TD BGCOLOR="#F2F4F7" BORDER="1" COLOR="#F2F4F7"><B>Container Registry</B></TD></TR>
+        <TR><TD BGCOLOR="#F2F4F7" BORDER="1" COLOR="#F2F4F7"><B>Cleanup CronJob</B><BR/>(backend/cmd/cleanup)</TD></TR>
+      </TABLE>
+    >
+  ];
+
+  client -> frontend_panel [label="UI request"];
+  frontend_panel -> coordinator [label="REST /api", color="#2563EB", fontcolor="#2563EB"];
+
+  adapter -> deps_panel [label="Resource / Metrics / Image Ops"];
+  coordinator -> deps_panel [label="OAuth callback", color="#111827"];
+  deps_panel -> pod_svc [label="state sync + scheduled cleanup", dir=both, color="#374151"];
+
+  client -> deps_panel [label="kubectl direct", style=dashed, color="#0F766E", fontcolor="#0F766E"];
+}

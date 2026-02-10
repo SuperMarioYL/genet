@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Genet Architecture</title>
+  <style>
+    :root {
+      --bg: #ececec;
+      --text: #111827;
+      --muted: #4b5563;
+
+      --left-panel: #d4daf3;
+      --left-item: #eef1f9;
+
+      --coord: #cbd3dd;
+      --workers-outline: #4b5563;
+      --pod-service: #f4deba;
+      --cluster-service: #9fe1d4;
+      --image-service: #a9d9ec;
+      --adapter: #dce2ea;
+
+      --right-panel: #d6dce5;
+      --right-item: #f2f4f7;
+
+      --link-blue: #2563eb;
+      --link-orange: #d97706;
+      --link-cyan: #0ea5e9;
+      --link-teal: #0f766e;
+      --link-dark: #1f2937;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    }
+
+    .wrap {
+      max-width: 1700px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    svg {
+      width: 100%;
+      height: auto;
+      display: block;
+      background: var(--bg);
+    }
+
+    .title {
+      font-size: 52px;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+    }
+
+    .panel-title {
+      font-size: 34px;
+      font-weight: 700;
+      fill: #111111;
+    }
+
+    .section-title {
+      font-size: 30px;
+      font-weight: 700;
+      fill: #111111;
+    }
+
+    .node-title {
+      font-size: 28px;
+      font-weight: 700;
+      fill: #111111;
+    }
+
+    .node-text {
+      font-size: 22px;
+      fill: #111111;
+    }
+
+    .small-text {
+      font-size: 20px;
+      fill: #111111;
+    }
+
+    .label {
+      font-size: 26px;
+      fill: #111111;
+    }
+
+    .line {
+      fill: none;
+      stroke: var(--link-dark);
+      stroke-width: 3;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .line-blue { stroke: var(--link-blue); }
+    .line-cyan { stroke: var(--link-cyan); }
+    .line-orange { stroke: var(--link-orange); }
+    .line-teal { stroke: var(--link-teal); }
+    .line-dashed { stroke-dasharray: 10 8; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <svg viewBox="0 0 2200 1220" aria-labelledby="title desc" role="img">
+      <title id="title">Genet Architecture</title>
+      <desc id="desc">Layered architecture diagram for Genet using HTML and SVG.</desc>
+
+      <defs>
+        <marker id="arrow-dark" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+          <path d="M0,0 L12,6 L0,12 z" fill="#1f2937" />
+        </marker>
+        <marker id="arrow-blue" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+          <path d="M0,0 L12,6 L0,12 z" fill="#2563eb" />
+        </marker>
+        <marker id="arrow-cyan" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+          <path d="M0,0 L12,6 L0,12 z" fill="#0ea5e9" />
+        </marker>
+        <marker id="arrow-orange" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+          <path d="M0,0 L12,6 L0,12 z" fill="#d97706" />
+        </marker>
+        <marker id="arrow-teal" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+          <path d="M0,0 L12,6 L0,12 z" fill="#0f766e" />
+        </marker>
+      </defs>
+
+      <text x="1100" y="90" text-anchor="middle" class="title">Genet Architecture</text>
+
+      <!-- Left: client -->
+      <rect x="70" y="520" width="220" height="120" rx="28" fill="#d5dbe4" />
+      <text x="180" y="572" text-anchor="middle" class="node-title">Client SDK</text>
+      <text x="180" y="607" text-anchor="middle" class="small-text">Browser / kubectl / IDE</text>
+
+      <!-- Frontend panel -->
+      <rect x="350" y="180" width="220" height="780" rx="28" fill="#d4daf3" />
+      <text x="460" y="240" text-anchor="middle" class="panel-title">Frontend</text>
+
+      <rect x="378" y="285" width="164" height="84" rx="16" fill="#eef1f9" />
+      <text x="460" y="336" text-anchor="middle" class="node-text">React App</text>
+
+      <rect x="378" y="395" width="164" height="84" rx="16" fill="#eef1f9" />
+      <text x="460" y="446" text-anchor="middle" class="node-text">Router</text>
+
+      <rect x="378" y="505" width="164" height="84" rx="16" fill="#eef1f9" />
+      <text x="460" y="556" text-anchor="middle" class="node-text">Dashboard</text>
+
+      <rect x="378" y="615" width="164" height="84" rx="16" fill="#eef1f9" />
+      <text x="460" y="666" text-anchor="middle" class="node-text">Pod Detail</text>
+
+      <rect x="378" y="725" width="164" height="84" rx="16" fill="#eef1f9" />
+      <text x="460" y="776" text-anchor="middle" class="node-text">Axios /api</text>
+
+      <!-- Center: coordinator + workers -->
+      <rect x="740" y="180" width="900" height="100" rx="28" fill="#cbd3dd" />
+      <text x="1190" y="240" text-anchor="middle" class="section-title">Coordinator</text>
+
+      <rect x="730" y="350" width="920" height="650" rx="24" fill="none" stroke="#4b5563" stroke-width="3" stroke-dasharray="10 8" />
+      <text x="760" y="395" class="section-title">Workers</text>
+
+      <rect x="760" y="430" width="860" height="180" rx="24" fill="#f4deba" />
+      <text x="790" y="487" class="node-title">Pod Lifecycle Service</text>
+      <rect x="790" y="515" width="250" height="70" rx="14" fill="#f7f3eb" />
+      <rect x="1065" y="515" width="250" height="70" rx="14" fill="#f7f3eb" />
+      <rect x="1340" y="515" width="250" height="70" rx="14" fill="#f7f3eb" />
+      <text x="915" y="559" text-anchor="middle" class="small-text">Create/Delete/Extend</text>
+      <text x="1190" y="559" text-anchor="middle" class="small-text">Logs/Events</text>
+      <text x="1465" y="559" text-anchor="middle" class="small-text">Commit Image</text>
+
+      <rect x="760" y="680" width="510" height="230" rx="20" fill="#9fe1d4" />
+      <text x="790" y="735" class="node-title">Cluster Service</text>
+      <rect x="790" y="760" width="220" height="64" rx="12" fill="#f4f6f8" />
+      <rect x="1025" y="760" width="220" height="64" rx="12" fill="#f4f6f8" />
+      <rect x="790" y="836" width="220" height="64" rx="12" fill="#f4f6f8" />
+      <rect x="1025" y="836" width="220" height="64" rx="12" fill="#f4f6f8" />
+      <text x="900" y="801" text-anchor="middle" class="small-text">GPU Overview</text>
+      <text x="1135" y="801" text-anchor="middle" class="small-text">Node Stats</text>
+      <text x="900" y="877" text-anchor="middle" class="small-text">Heatmap Data</text>
+      <text x="1135" y="877" text-anchor="middle" class="small-text">Prom Metrics</text>
+
+      <rect x="1295" y="680" width="325" height="230" rx="20" fill="#a9d9ec" />
+      <text x="1325" y="735" class="node-title">Image & Access Service</text>
+      <rect x="1325" y="760" width="265" height="64" rx="12" fill="#f4f6f8" />
+      <rect x="1325" y="836" width="265" height="64" rx="12" fill="#f4f6f8" />
+      <text x="1458" y="801" text-anchor="middle" class="small-text">Registry Search/Tags</text>
+      <text x="1458" y="877" text-anchor="middle" class="small-text">Kubeconfig / OIDC</text>
+
+      <rect x="760" y="935" width="860" height="95" rx="18" fill="#dce2ea" />
+      <text x="1190" y="988" text-anchor="middle" class="node-text">Adapter Layer: internal/k8s + internal/prometheus + internal/registry + internal/oidc + models</text>
+
+      <!-- Right: dependencies panel -->
+      <rect x="1730" y="180" width="400" height="850" rx="28" fill="#d6dce5" />
+      <text x="1930" y="240" text-anchor="middle" class="panel-title">Platform Dependencies</text>
+
+      <rect x="1760" y="285" width="340" height="130" rx="18" fill="#f2f4f7" />
+      <text x="1930" y="335" text-anchor="middle" class="node-title">Kubernetes API</text>
+      <text x="1930" y="370" text-anchor="middle" class="small-text">Pods / Namespaces / PVC / Jobs / RBAC</text>
+
+      <rect x="1760" y="440" width="340" height="98" rx="18" fill="#f2f4f7" />
+      <text x="1930" y="498" text-anchor="middle" class="node-title">OAuth / OIDC Provider</text>
+
+      <rect x="1760" y="563" width="340" height="98" rx="18" fill="#f2f4f7" />
+      <text x="1930" y="621" text-anchor="middle" class="node-title">Prometheus</text>
+
+      <rect x="1760" y="686" width="340" height="98" rx="18" fill="#f2f4f7" />
+      <text x="1930" y="744" text-anchor="middle" class="node-title">Container Registry</text>
+
+      <rect x="1760" y="809" width="340" height="170" rx="18" fill="#f2f4f7" />
+      <text x="1930" y="868" text-anchor="middle" class="node-title">Cleanup CronJob</text>
+      <text x="1930" y="904" text-anchor="middle" class="small-text">backend/cmd/cleanup</text>
+      <text x="1930" y="940" text-anchor="middle" class="small-text">Daily pod garbage collection</text>
+
+      <!-- Connections -->
+      <path d="M 290 580 L 350 580" class="line" marker-end="url(#arrow-dark)" />
+      <text x="315" y="560" text-anchor="middle" class="label">UI</text>
+
+      <path d="M 570 767 L 640 767 L 640 230 L 740 230" class="line line-blue" marker-end="url(#arrow-blue)" />
+      <text x="640" y="500" class="label" fill="#2563eb">REST /api</text>
+
+      <path d="M 1190 280 L 1190 350" class="line" marker-end="url(#arrow-dark)" />
+      <text x="1210" y="327" class="label">Management</text>
+
+      <path d="M 1190 1030 L 1560 1030 L 1560 350 L 1760 350" class="line" marker-end="url(#arrow-dark)" />
+      <text x="1495" y="700" class="label">Resource Ops</text>
+
+      <path d="M 1190 280 L 1520 280 L 1520 488 L 1760 488" class="line" marker-end="url(#arrow-dark)" />
+      <text x="1580" y="430" class="label">Auth Callback</text>
+
+      <path d="M 1015 835 L 1450 835 L 1450 612 L 1760 612" class="line line-cyan" marker-end="url(#arrow-cyan)" />
+      <text x="1470" y="670" class="label" fill="#0ea5e9">Metrics</text>
+
+      <path d="M 1458 792 L 1660 792 L 1660 735 L 1760 735" class="line line-orange" marker-end="url(#arrow-orange)" />
+      <text x="1625" y="770" class="label" fill="#d97706">Image Push/Pull</text>
+
+      <path d="M 1760 895 L 1600 895 L 1600 575 L 1200 575" class="line line-orange" marker-end="url(#arrow-orange)" />
+      <text x="1530" y="905" class="label" fill="#d97706">Scheduled Cleanup</text>
+
+      <path d="M 290 610 L 290 1130 L 1680 1130 L 1680 350 L 1760 350" class="line line-teal line-dashed" marker-end="url(#arrow-teal)" />
+      <text x="980" y="1125" text-anchor="middle" class="label" fill="#0f766e">kubectl direct path</text>
+    </svg>
+  </div>
+</body>
+</html>
