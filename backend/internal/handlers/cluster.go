@@ -258,7 +258,7 @@ func (h *ClusterHandler) buildAcceleratorGroup(
 		if !hasCapacity && !hasAllocatable {
 			continue
 		}
-		// 优先用 Capacity（物理设备数），Allocatable 可能因 device plugin 问题偏小
+		// 取 Capacity、Allocatable、Prometheus 三者最大值作为物理设备数
 		capacityVal := int64(0)
 		if hasCapacity {
 			capacityVal = capacity.Value()
@@ -271,8 +271,17 @@ func (h *ClusterHandler) buildAcceleratorGroup(
 			continue
 		}
 		totalDevices := int(capacityVal)
-		if totalDevices == 0 {
+		if int(allocatableVal) > totalDevices {
 			totalDevices = int(allocatableVal)
+		}
+		// Prometheus 可能报告更多设备（K8s device plugin 未完全注册时）
+		if nodeMetrics, ok := metricsMap[node.Name]; ok {
+			for deviceID := range nodeMetrics {
+				idx := prometheus.ParseDeviceID(deviceID)
+				if idx+1 > totalDevices {
+					totalDevices = idx + 1
+				}
+			}
 		}
 
 		// 检测时分复用配置

@@ -609,7 +609,7 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
                 { required: true, message: '请输入镜像' },
                 { pattern: /^[a-zA-Z0-9\-_./:]+$/, message: '请输入有效的镜像名称' },
               ]}
-              help={config?.ui?.enableCustomImage
+              extra={config?.ui?.enableCustomImage
                 ? (config?.registryUrl ? `可选择预设镜像，或输入关键字搜索 ${config.registryUrl} 中的镜像` : '可以从列表选择或输入自定义镜像')
                 : '请从预设列表中选择镜像'}
             >
