@@ -169,6 +169,9 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
       searchTimerRef.current = null;
     }
 
+    // 显式设置表单值，防止 onSearch 干扰 Form 的值同步
+    form.setFieldsValue({ image: value });
+
     // 从 value 中提取镜像名（去掉 registryUrl 前缀）
     const registryUrl = config?.registryUrl || '';
     const imageName = registryUrl && value.startsWith(registryUrl + '/')
