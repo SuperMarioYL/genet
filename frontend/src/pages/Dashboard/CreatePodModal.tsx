@@ -141,7 +141,7 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
     }
 
     if (!keyword || keyword.length < 1) {
-      setRegistryImages([]);
+      setRegistryImages(prev => prev.length > 0 ? [] : prev);
       return;
     }
 
@@ -610,16 +610,17 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
                 { pattern: /^[a-zA-Z0-9\-_./:]+$/, message: '请输入有效的镜像名称' },
               ]}
               help={config?.ui?.enableCustomImage
-                ? (config?.registryUrl ? `支持模糊搜索 ${config.registryUrl} 中的镜像` : '可以从列表选择或输入自定义镜像')
+                ? (config?.registryUrl ? `可选择预设镜像，或输入关键字搜索 ${config.registryUrl} 中的镜像` : '可以从列表选择或输入自定义镜像')
                 : '请从预设列表中选择镜像'}
             >
               {config?.ui?.enableCustomImage ? (
                 <Spin spinning={registrySearchLoading} size="small">
                   <AutoComplete
-                    placeholder={config?.registryUrl ? `输入关键字搜索 ${config.registryUrl} 镜像...` : "输入或选择镜像名称"}
+                    placeholder={config?.registryUrl ? `点击选择预设镜像，或输入关键字搜索 ${config.registryUrl}` : "输入或选择镜像名称"}
                     onSearch={config?.registryUrl ? handleRegistrySearch : undefined}
                     onSelect={config?.registryUrl ? handleImageSelect : undefined}
                     notFoundContent={registrySearchLoading ? <Spin size="small" tip="搜索中..." /> : null}
+                    defaultActiveFirstOption={false}
                     filterOption={!config?.registryUrl ? (inputValue, option) => {
                       if (!option) return false;
                       const val = (option as any).value;

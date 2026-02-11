@@ -251,14 +251,29 @@ func (h *ClusterHandler) buildAcceleratorGroup(
 
 	// 遍历节点
 	for _, node := range nodes {
-		// 检查节点是否有该类型的加速卡
+		// 检查节点是否有该类型的加速卡（用 Capacity 判断物理设备数）
 		resourceName := corev1.ResourceName(accType.ResourceName)
-		allocatable, ok := node.Status.Allocatable[resourceName]
-		if !ok || allocatable.Value() == 0 {
+		capacity, hasCapacity := node.Status.Capacity[resourceName]
+		allocatable, hasAllocatable := node.Status.Allocatable[resourceName]
+		if !hasCapacity && !hasAllocatable {
 			continue
 		}
-
-		totalDevices := int(allocatable.Value())
+		// 优先用 Capacity（物理设备数），Allocatable 可能因 device plugin 问题偏小
+		capacityVal := int64(0)
+		if hasCapacity {
+			capacityVal = capacity.Value()
+		}
+		allocatableVal := int64(0)
+		if hasAllocatable {
+			allocatableVal = allocatable.Value()
+		}
+		if capacityVal == 0 && allocatableVal == 0 {
+			continue
+		}
+		totalDevices := int(capacityVal)
+		if totalDevices == 0 {
+			totalDevices = int(allocatableVal)
+		}
 
 		// 检测时分复用配置
 		timeSharingEnabled, timeSharingReplicas := detectTimeSharing(node, resourceName)
@@ -304,7 +319,6 @@ func (h *ClusterHandler) buildAcceleratorGroup(
 					nodeInfo.Slots[idx].Utilization = metric.Utilization
 					nodeInfo.Slots[idx].MemoryUsed = metric.MemoryUsed
 					nodeInfo.Slots[idx].MemoryTotal = metric.MemoryTotal
-					// 注意：不从 Prometheus 获取 Pod 信息，因为 DCGM 的 pod/namespace 是 exporter 自己的
 				}
 			}
 		} else {
