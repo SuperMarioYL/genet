@@ -112,6 +112,24 @@ func (c *PodCleaner) CleanupAllPods() error {
 					zap.String("pod", pod.Name),
 					zap.Error(err))
 			} else {
+				// 删除 scope="pod" 的 PVC（失败仅告警，不影响主流程）
+				userIdentifier := pod.Labels["genet.io/user"]
+				if userIdentifier == "" && strings.HasPrefix(ns.Name, "user-") {
+					userIdentifier = strings.TrimPrefix(ns.Name, "user-")
+				}
+
+				if userIdentifier == "" {
+					c.log.Warn("Skip deleting scope=pod PVCs: user identifier missing",
+						zap.String("pod", pod.Name),
+						zap.String("namespace", ns.Name))
+				} else if err := c.k8sClient.DeletePodScopedPVCs(ctx, ns.Name, userIdentifier, pod.Name); err != nil {
+					c.log.Warn("Failed to delete some scope=pod PVCs",
+						zap.String("pod", pod.Name),
+						zap.String("namespace", ns.Name),
+						zap.String("userIdentifier", userIdentifier),
+						zap.Error(err))
+				}
+
 				totalDeleted++
 				c.log.Info("Successfully deleted pod",
 					zap.String("pod", pod.Name))

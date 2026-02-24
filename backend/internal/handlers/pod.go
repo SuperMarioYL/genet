@@ -698,36 +698,12 @@ func (h *PodHandler) DeletePod(c *gin.Context) {
 		zap.String("user", username),
 		zap.String("podID", podID))
 
-	// 根据 Scope 决定是否删除 PVC
-	// scope="pod": Pod 删除时同时删除 PVC
-	// scope="user"（默认）: 保留 PVC，用户的其他 Pod 可继续使用
-	storageVolumes := h.k8sClient.GetStorageVolumes()
-	for _, vol := range storageVolumes {
-		if vol.Type != "pvc" {
-			continue
-		}
-
-		scope := strings.ToLower(vol.Scope)
-
-		// 只有 scope="pod" 时才删除 PVC
-		if scope == "pod" {
-			pvcName := h.k8sClient.GetPVCName(vol, username, podID)
-			if pvcName != "" {
-				h.log.Info("Deleting PVC due to scope=pod",
-					zap.String("pvcName", pvcName),
-					zap.String("volumeName", vol.Name),
-					zap.String("user", username))
-
-				if err := h.k8sClient.DeletePVC(ctx, namespace, pvcName); err != nil {
-					h.log.Warn("Failed to delete PVC (continuing anyway)",
-						zap.String("pvcName", pvcName),
-						zap.Error(err))
-				} else {
-					h.log.Info("PVC deleted successfully",
-						zap.String("pvcName", pvcName))
-				}
-			}
-		}
+	// 删除 scope="pod" 的 PVC（失败仅告警，不影响 Pod 删除结果）
+	if err := h.k8sClient.DeletePodScopedPVCs(ctx, namespace, userIdentifier, podID); err != nil {
+		h.log.Warn("Failed to delete some scope=pod PVCs (continuing anyway)",
+			zap.String("userIdentifier", userIdentifier),
+			zap.String("podID", podID),
+			zap.Error(err))
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Pod 删除成功"})

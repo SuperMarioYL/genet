@@ -6,11 +6,11 @@ import (
 	"strings"
 
 	"github.com/uc-package/genet/internal/models"
+	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"go.uber.org/zap"
 )
 
 // EnsureVolumePVCs 根据 storage.volumes 配置，确保所有 PVC 类型的卷对应的 PVC 存在
@@ -124,5 +124,58 @@ func (c *Client) DeletePVC(ctx context.Context, namespace, name string) error {
 	if err != nil && !errors.IsNotFound(err) {
 		return fmt.Errorf("删除 PVC 失败: %w", err)
 	}
+	return nil
+}
+
+// DeletePodScopedPVCs 删除指定 Pod 对应的 scope="pod" PVC
+// userIdentifier 必须与创建 Pod/PVC 时使用的标识一致
+func (c *Client) DeletePodScopedPVCs(ctx context.Context, namespace, userIdentifier, podName string) error {
+	if userIdentifier == "" {
+		return fmt.Errorf("userIdentifier 不能为空")
+	}
+	if podName == "" {
+		return fmt.Errorf("podName 不能为空")
+	}
+
+	storageVolumes := c.config.Storage.GetEffectiveVolumes()
+	var failed []string
+
+	for _, vol := range storageVolumes {
+		if vol.Type != "pvc" {
+			continue
+		}
+		if strings.ToLower(vol.Scope) != "pod" {
+			continue
+		}
+
+		pvcName := c.GetPVCName(vol, userIdentifier, podName)
+		if pvcName == "" {
+			continue
+		}
+
+		c.log.Info("Deleting PVC due to scope=pod",
+			zap.String("pvcName", pvcName),
+			zap.String("namespace", namespace),
+			zap.String("volumeName", vol.Name),
+			zap.String("podName", podName),
+			zap.String("userIdentifier", userIdentifier))
+
+		if err := c.DeletePVC(ctx, namespace, pvcName); err != nil {
+			failed = append(failed, fmt.Sprintf("%s: %v", pvcName, err))
+			c.log.Warn("Failed to delete PVC",
+				zap.String("pvcName", pvcName),
+				zap.Error(err))
+			continue
+		}
+
+		c.log.Info("PVC deleted successfully",
+			zap.String("pvcName", pvcName),
+			zap.String("namespace", namespace))
+	}
+
+	if len(failed) > 0 {
+		return fmt.Errorf("删除部分 scope=pod PVC 失败: %s", strings.Join(failed, "; "))
+	}
+
 	return nil
 }
