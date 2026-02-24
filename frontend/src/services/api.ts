@@ -111,6 +111,10 @@ export const getPod = (id: string) => {
   return api.get(`/pods/${id}`);
 };
 
+export const downloadPodYAML = (id: string) => {
+  window.location.href = `/api/pods/${encodeURIComponent(id)}/yaml`;
+};
+
 export const deletePod = (id: string) => {
   return api.delete(`/pods/${id}`);
 };
@@ -333,4 +337,3 @@ export const getRegistryImageTags = (imageName: string, platform?: string): Prom
 };
 
 export default api;
-

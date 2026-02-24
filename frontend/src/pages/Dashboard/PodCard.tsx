@@ -1,11 +1,11 @@
-import { CloudServerOutlined, CodeOutlined, CopyOutlined, DeleteOutlined, EyeOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
+import { CloudServerOutlined, CodeOutlined, CopyOutlined, DeleteOutlined, DownloadOutlined, EyeOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import { Button, Divider, Modal, Space, Tooltip, Typography, message } from 'antd';
 import dayjs from 'dayjs';
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import GlassCard from '../../components/GlassCard';
 import StatusBadge from '../../components/StatusBadge';
-import { deletePod, extendPod } from '../../services/api';
+import { deletePod, downloadPodYAML, extendPod } from '../../services/api';
 import { getNextCleanupTime } from '../../utils/cleanup';
 import './PodCard.css';
 
@@ -243,6 +243,10 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate, cleanupSchedule, clean
     });
   };
 
+  const handleDownloadYAML = () => {
+    downloadPodYAML(pod.id);
+  };
+
   const isRunning = pod.status === 'Running';
 
   // 处理延长保护
@@ -351,7 +355,7 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate, cleanupSchedule, clean
             </svg>
           </span>
           <span className="spec-value">
-            {pod.gpuType ? `${pod.gpuType} ×${pod.gpuCount}` : '无 GPU'}
+            {pod.gpuType ? `${pod.gpuType} ×${pod.gpuCount}` : (pod.gpuCount > 0 ? `GPU ×${pod.gpuCount}` : '无 GPU')}
           </span>
         </div>
       </div>
@@ -428,6 +432,14 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate, cleanupSchedule, clean
           className="glass-button"
         >
           详情
+        </Button>
+        <Button
+          size="small"
+          icon={<DownloadOutlined />}
+          onClick={handleDownloadYAML}
+          className="glass-button"
+        >
+          YAML
         </Button>
         <Button
           size="small"

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +18,7 @@ import (
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/yaml"
 )
 
 // PodHandler Pod 处理器
@@ -23,6 +26,16 @@ type PodHandler struct {
 	k8sClient *k8s.Client
 	config    *models.Config
 	log       *zap.Logger
+}
+
+type podDisplayInfo struct {
+	ContainerName string
+	Image         string
+	GPUType       string
+	GPUCount      int
+	CPU           string
+	Memory        string
+	CreatedAt     time.Time
 }
 
 // NewPodHandler 创建 Pod 处理器
@@ -73,16 +86,8 @@ func (h *PodHandler) ListPods(c *gin.Context) {
 	totalGPU := 0
 
 	for _, pod := range pods {
-		// 解析 GPU 信息
-		gpuCount := 0
-		if len(pod.Spec.Containers) > 0 {
-			gpuQuantity := pod.Spec.Containers[0].Resources.Requests["nvidia.com/gpu"]
-			gpuCount = int(gpuQuantity.Value())
-		}
-		totalGPU += gpuCount
-
-		// 解析时间
-		createdAt, _ := time.Parse(time.RFC3339, pod.Annotations["genet.io/created-at"])
+		display := h.getPodDisplayInfo(&pod)
+		totalGPU += display.GPUCount
 
 		// 解析保护截止时间
 		var protectedUntil *time.Time
@@ -95,25 +100,19 @@ func (h *PodHandler) ListPods(c *gin.Context) {
 		// 获取节点 IP
 		nodeIP := h.getNodeIP(ctx, pod.Spec.NodeName)
 
-		// 获取容器名称（默认为 workspace）
-		containerName := "workspace"
-		if len(pod.Spec.Containers) > 0 {
-			containerName = pod.Spec.Containers[0].Name
-		}
-
 		podResponses = append(podResponses, models.PodResponse{
 			ID:             pod.Name,
 			Name:           pod.Name,
-			Namespace:      namespace,
-			Container:      containerName,
+			Namespace:      pod.Namespace,
+			Container:      display.ContainerName,
 			Status:         h.getPodStatus(&pod),
 			Phase:          string(pod.Status.Phase),
-			Image:          pod.Annotations["genet.io/image"],
-			GPUType:        pod.Annotations["genet.io/gpu-type"],
-			GPUCount:       gpuCount,
-			CPU:            pod.Annotations["genet.io/cpu"],
-			Memory:         pod.Annotations["genet.io/memory"],
-			CreatedAt:      createdAt,
+			Image:          display.Image,
+			GPUType:        display.GPUType,
+			GPUCount:       display.GPUCount,
+			CPU:            display.CPU,
+			Memory:         display.Memory,
+			CreatedAt:      display.CreatedAt,
 			NodeIP:         nodeIP,
 			ProtectedUntil: protectedUntil,
 		})
@@ -507,15 +506,7 @@ func (h *PodHandler) GetPod(c *gin.Context) {
 		return
 	}
 
-	// 解析 GPU 信息
-	gpuCount := 0
-	if len(pod.Spec.Containers) > 0 {
-		gpuQuantity := pod.Spec.Containers[0].Resources.Requests["nvidia.com/gpu"]
-		gpuCount = int(gpuQuantity.Value())
-	}
-
-	// 解析时间
-	createdAt, _ := time.Parse(time.RFC3339, pod.Annotations["genet.io/created-at"])
+	display := h.getPodDisplayInfo(pod)
 
 	// 解析保护截止时间
 	var protectedUntil *time.Time
@@ -528,30 +519,59 @@ func (h *PodHandler) GetPod(c *gin.Context) {
 	// 获取节点 IP
 	nodeIP := h.getNodeIP(ctx, pod.Spec.NodeName)
 
-	// 获取容器名称（默认为 workspace）
-	containerName := "workspace"
-	if len(pod.Spec.Containers) > 0 {
-		containerName = pod.Spec.Containers[0].Name
-	}
-
 	response := models.PodResponse{
 		ID:             pod.Name,
 		Name:           pod.Name,
-		Namespace:      namespace,
-		Container:      containerName,
+		Namespace:      pod.Namespace,
+		Container:      display.ContainerName,
 		Status:         h.getPodStatus(pod),
 		Phase:          string(pod.Status.Phase),
-		Image:          pod.Annotations["genet.io/image"],
-		GPUType:        pod.Annotations["genet.io/gpu-type"],
-		GPUCount:       gpuCount,
-		CPU:            pod.Annotations["genet.io/cpu"],
-		Memory:         pod.Annotations["genet.io/memory"],
-		CreatedAt:      createdAt,
+		Image:          display.Image,
+		GPUType:        display.GPUType,
+		GPUCount:       display.GPUCount,
+		CPU:            display.CPU,
+		Memory:         display.Memory,
+		CreatedAt:      display.CreatedAt,
 		NodeIP:         nodeIP,
 		ProtectedUntil: protectedUntil,
 	}
 
 	c.JSON(http.StatusOK, response)
+}
+
+// DownloadPodYAML 下载 Pod 的 portable YAML
+func (h *PodHandler) DownloadPodYAML(c *gin.Context) {
+	username, _ := auth.GetUsername(c)
+	email, _ := auth.GetEmail(c)
+	podID := c.Param("id")
+	userIdentifier := k8s.GetUserIdentifier(username, email)
+	namespace := k8s.GetNamespaceForUserIdentifier(userIdentifier)
+	ctx := c.Request.Context()
+
+	pod, err := h.k8sClient.GetPod(ctx, namespace, podID)
+	if err != nil {
+		h.log.Warn("Pod not found for yaml download",
+			zap.String("user", username),
+			zap.String("podID", podID),
+			zap.Error(err))
+		c.JSON(http.StatusNotFound, gin.H{"error": "Pod 不存在"})
+		return
+	}
+
+	portablePod := buildPortablePod(pod)
+	yamlBytes, err := yaml.Marshal(portablePod)
+	if err != nil {
+		h.log.Error("Failed to marshal pod yaml",
+			zap.String("user", username),
+			zap.String("podID", podID),
+			zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "导出 YAML 失败"})
+		return
+	}
+
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s.yaml", pod.Name))
+	c.Header("Content-Type", "application/x-yaml")
+	c.String(http.StatusOK, string(yamlBytes))
 }
 
 // ExtendPod 延长 Pod 保护期
@@ -1077,10 +1097,7 @@ func (h *PodHandler) checkQuota(ctx context.Context, userIdentifier, namespace s
 	// 检查 GPU 总数限制
 	totalGPU := 0
 	for _, pod := range pods {
-		if len(pod.Spec.Containers) > 0 {
-			gpuQuantity := pod.Spec.Containers[0].Resources.Requests["nvidia.com/gpu"]
-			totalGPU += int(gpuQuantity.Value())
-		}
+		totalGPU += h.getPodDisplayInfo(&pod).GPUCount
 	}
 
 	if totalGPU+requestGPUCount > h.config.GpuLimitPerUser {
@@ -1097,6 +1114,262 @@ func (h *PodHandler) checkQuota(ctx context.Context, userIdentifier, namespace s
 		zap.Int("gpuLimit", h.config.GpuLimitPerUser))
 
 	return nil
+}
+
+func (h *PodHandler) getPodDisplayInfo(pod *corev1.Pod) podDisplayInfo {
+	info := podDisplayInfo{
+		ContainerName: "workspace",
+		CreatedAt:     pod.CreationTimestamp.Time,
+	}
+
+	annotations := pod.Annotations
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+
+	if createdAt := annotations["genet.io/created-at"]; createdAt != "" {
+		if t, err := time.Parse(time.RFC3339, createdAt); err == nil {
+			info.CreatedAt = t
+		}
+	}
+
+	if len(pod.Spec.Containers) == 0 {
+		return info
+	}
+
+	container := pod.Spec.Containers[0]
+	if container.Name != "" {
+		info.ContainerName = container.Name
+	}
+
+	info.Image = annotations["genet.io/image"]
+	if info.Image == "" {
+		info.Image = container.Image
+	}
+
+	info.CPU = annotations["genet.io/cpu"]
+	if info.CPU == "" {
+		info.CPU = getResourceValue(&container, corev1.ResourceCPU)
+	}
+
+	info.Memory = annotations["genet.io/memory"]
+	if info.Memory == "" {
+		info.Memory = getResourceValue(&container, corev1.ResourceMemory)
+	}
+
+	info.GPUType = annotations["genet.io/gpu-type"]
+
+	if gpuCountStr := annotations["genet.io/gpu-count"]; gpuCountStr != "" {
+		if count, err := strconv.Atoi(gpuCountStr); err == nil && count > 0 {
+			info.GPUCount = count
+		}
+	}
+
+	resourceName := ""
+	if info.GPUCount == 0 {
+		resourceName, info.GPUCount = detectAcceleratorResource(container.Resources.Requests)
+		if info.GPUCount == 0 {
+			resourceName, info.GPUCount = detectAcceleratorResource(container.Resources.Limits)
+		}
+	}
+
+	if info.GPUType == "" && info.GPUCount > 0 {
+		info.GPUType = guessAcceleratorType(resourceName)
+		if info.GPUType == "" {
+			info.GPUType = "GPU"
+		}
+	}
+
+	return info
+}
+
+func getResourceValue(container *corev1.Container, resourceName corev1.ResourceName) string {
+	if quantity, ok := container.Resources.Requests[resourceName]; ok && !quantity.IsZero() {
+		return quantity.String()
+	}
+	if quantity, ok := container.Resources.Limits[resourceName]; ok && !quantity.IsZero() {
+		return quantity.String()
+	}
+	return ""
+}
+
+func detectAcceleratorResource(resources corev1.ResourceList) (string, int) {
+	if len(resources) == 0 {
+		return "", 0
+	}
+
+	if quantity, ok := resources[corev1.ResourceName("nvidia.com/gpu")]; ok && !quantity.IsZero() {
+		return "nvidia.com/gpu", int(quantity.Value())
+	}
+
+	names := make([]string, 0, len(resources))
+	for name := range resources {
+		names = append(names, string(name))
+	}
+	sort.Strings(names)
+
+	for _, name := range names {
+		lowerName := strings.ToLower(name)
+		if !strings.Contains(lowerName, "gpu") &&
+			!strings.Contains(lowerName, "npu") &&
+			!strings.Contains(lowerName, "ascend") &&
+			!strings.Contains(lowerName, "dcu") {
+			continue
+		}
+		quantity := resources[corev1.ResourceName(name)]
+		if !quantity.IsZero() {
+			return name, int(quantity.Value())
+		}
+	}
+
+	return "", 0
+}
+
+func guessAcceleratorType(resourceName string) string {
+	lowerName := strings.ToLower(resourceName)
+	switch {
+	case strings.Contains(lowerName, "nvidia"):
+		return "NVIDIA"
+	case strings.Contains(lowerName, "ascend"), strings.Contains(lowerName, "huawei"):
+		return "Ascend"
+	case strings.Contains(lowerName, "amd"), strings.Contains(lowerName, "dcu"):
+		return "AMD"
+	default:
+		return ""
+	}
+}
+
+func buildPortablePod(pod *corev1.Pod) *corev1.Pod {
+	spec := pod.Spec.DeepCopy()
+	spec.NodeName = ""
+	spec.EphemeralContainers = nil
+
+	removedVolumes := sanitizeVolumes(spec)
+	sanitizeVolumeMounts(&spec.Containers, removedVolumes)
+	sanitizeVolumeMounts(&spec.InitContainers, removedVolumes)
+
+	labels := filterPortableLabels(pod.Labels)
+	annotations := filterPortableAnnotations(pod.Annotations)
+
+	portable := &corev1.Pod{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "Pod",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        pod.Name,
+			Namespace:   pod.Namespace,
+			Labels:      labels,
+			Annotations: annotations,
+		},
+		Spec: *spec,
+	}
+
+	return portable
+}
+
+func sanitizeVolumes(spec *corev1.PodSpec) map[string]struct{} {
+	removed := make(map[string]struct{})
+	filtered := make([]corev1.Volume, 0, len(spec.Volumes))
+
+	for _, vol := range spec.Volumes {
+		if shouldDropAutoVolume(vol) {
+			removed[vol.Name] = struct{}{}
+			continue
+		}
+		filtered = append(filtered, vol)
+	}
+
+	spec.Volumes = filtered
+	return removed
+}
+
+func shouldDropAutoVolume(vol corev1.Volume) bool {
+	if strings.HasPrefix(vol.Name, "kube-api-access-") {
+		return true
+	}
+	if vol.Projected == nil {
+		return false
+	}
+	for _, src := range vol.Projected.Sources {
+		if src.ServiceAccountToken != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func sanitizeVolumeMounts(containers *[]corev1.Container, removedVolumes map[string]struct{}) {
+	if len(removedVolumes) == 0 || len(*containers) == 0 {
+		return
+	}
+	for i := range *containers {
+		mounts := (*containers)[i].VolumeMounts
+		if len(mounts) == 0 {
+			continue
+		}
+		filtered := make([]corev1.VolumeMount, 0, len(mounts))
+		for _, mount := range mounts {
+			if _, removed := removedVolumes[mount.Name]; removed {
+				continue
+			}
+			filtered = append(filtered, mount)
+		}
+		(*containers)[i].VolumeMounts = filtered
+	}
+}
+
+func filterPortableLabels(labels map[string]string) map[string]string {
+	if len(labels) == 0 {
+		return nil
+	}
+	filtered := make(map[string]string, len(labels))
+	for k, v := range labels {
+		if shouldDropLabel(k) {
+			continue
+		}
+		filtered[k] = v
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	return filtered
+}
+
+func shouldDropLabel(key string) bool {
+	switch key {
+	case "pod-template-hash", "controller-revision-hash", "controller-uid", "job-name", "statefulset.kubernetes.io/pod-name":
+		return true
+	}
+	return strings.HasPrefix(key, "batch.kubernetes.io/")
+}
+
+func filterPortableAnnotations(annotations map[string]string) map[string]string {
+	if len(annotations) == 0 {
+		return nil
+	}
+	filtered := make(map[string]string, len(annotations))
+	for k, v := range annotations {
+		if shouldDropAnnotation(k) {
+			continue
+		}
+		filtered[k] = v
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	return filtered
+}
+
+func shouldDropAnnotation(key string) bool {
+	switch key {
+	case "kubectl.kubernetes.io/last-applied-configuration",
+		"genet.io/created-at",
+		"genet.io/protected-until":
+		return true
+	}
+	return strings.HasPrefix(key, "kubernetes.io/") ||
+		strings.HasPrefix(key, "k8s.v1.cni.cncf.io/")
 }
 
 // getNodeIP 获取节点 IP

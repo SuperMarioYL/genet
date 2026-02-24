@@ -176,6 +176,7 @@ func main() {
 			pods.GET("/:id/logs", podHandler.GetPodLogs)
 			pods.GET("/:id/events", podHandler.GetPodEvents)
 			pods.GET("/:id/describe", podHandler.GetPodDescribe)
+			pods.GET("/:id/yaml", podHandler.DownloadPodYAML)
 			pods.GET("/:id/shared-gpus", podHandler.GetSharedGPUPods) // 获取共用 GPU 的 Pod
 			pods.POST("/:id/build", podHandler.BuildImage)
 			// 镜像 commit 相关

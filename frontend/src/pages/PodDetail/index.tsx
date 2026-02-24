@@ -333,7 +333,7 @@ const PodDetail: React.FC = () => {
               <Descriptions.Item label="Pod 名称">{pod.name}</Descriptions.Item>
               <Descriptions.Item label="状态"><StatusBadge status={pod.status} /></Descriptions.Item>
               <Descriptions.Item label="镜像"><Text code className="mono">{pod.image}</Text></Descriptions.Item>
-              <Descriptions.Item label="GPU">{pod.gpuType ? `${pod.gpuType} ×${pod.gpuCount}` : '无'}</Descriptions.Item>
+              <Descriptions.Item label="GPU">{pod.gpuType ? `${pod.gpuType} ×${pod.gpuCount}` : (pod.gpuCount > 0 ? `GPU ×${pod.gpuCount}` : '无')}</Descriptions.Item>
               <Descriptions.Item label="CPU / 内存">{pod.cpu || '-'} 核 / {pod.memory || '-'}</Descriptions.Item>
               <Descriptions.Item label="节点 IP">{pod.nodeIP || '-'}</Descriptions.Item>
               <Descriptions.Item label="创建时间">{dayjs(pod.createdAt).format('YYYY-MM-DD HH:mm:ss')}</Descriptions.Item>
@@ -746,6 +746,5 @@ const PodDetail: React.FC = () => {
 };
 
 export default PodDetail;
-
 
 
