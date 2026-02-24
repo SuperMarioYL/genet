@@ -79,7 +79,7 @@ type ConfigResponse struct {
 	MaxPodsPerGPU     int    `json:"maxPodsPerGPU"`     // 每卡最大共享数
 	// 存储相关
 	AllowUserMounts       bool                `json:"allowUserMounts"`                 // 是否允许用户自定义挂载
-	UserMountAllowedPaths []string            `json:"userMountAllowedPaths,omitempty"` // 用户挂载路径白名单
+	UserMountAllowedPaths []string            `json:"userMountAllowedPaths,omitempty"` // 用户读写挂载路径白名单（只读挂载不受限）
 	StorageVolumes        []StorageVolumeInfo `json:"storageVolumes"`                  // 存储卷信息（用于前端展示）
 	// 用户镜像
 	UserImages []UserSavedImage `json:"userImages,omitempty"` // 用户保存的镜像列表

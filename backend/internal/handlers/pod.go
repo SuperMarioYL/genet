@@ -162,19 +162,26 @@ func (h *PodHandler) validateUserMount(mount models.UserMount) error {
 		return fmt.Errorf("挂载路径不能包含 '..': %s", mount.MountPath)
 	}
 
-	// 检查白名单（如果配置了）
+	// 只读挂载允许任意绝对路径（通过上述基础校验即可）
+	if mount.ReadOnly {
+		return nil
+	}
+
+	// 读写挂载必须命中白名单
 	allowedPaths := h.config.Storage.UserMountAllowedPaths
-	if len(allowedPaths) > 0 {
-		matched := false
-		for _, pattern := range allowedPaths {
-			if matchPath(mount.HostPath, pattern) {
-				matched = true
-				break
-			}
+	if len(allowedPaths) == 0 {
+		return fmt.Errorf("当前未配置可读写挂载目录，请改为只读挂载或联系管理员配置 storage.userMountAllowedPaths")
+	}
+
+	matched := false
+	for _, pattern := range allowedPaths {
+		if matchPath(mount.HostPath, pattern) {
+			matched = true
+			break
 		}
-		if !matched {
-			return fmt.Errorf("宿主机路径 %s 不在允许的路径白名单中", mount.HostPath)
-		}
+	}
+	if !matched {
+		return fmt.Errorf("读写挂载路径 %s 不在允许目录中，请改为只读挂载或使用白名单目录", mount.HostPath)
 	}
 
 	return nil

@@ -83,6 +83,12 @@ func (c *Client) ensureUserRole(ctx context.Context, cfg UserRBACConfig) error {
 				Resources: []string{"pods"},
 				Verbs:     []string{"get", "list", "watch", "create", "delete", "patch", "update"},
 			},
+			// Deployment / StatefulSet 增删改查权限
+			{
+				APIGroups: []string{"apps"},
+				Resources: []string{"deployments", "statefulsets"},
+				Verbs:     []string{"get", "list", "watch", "create", "delete", "patch", "update"},
+			},
 			// Pod 日志和 exec
 			{
 				APIGroups: []string{""},

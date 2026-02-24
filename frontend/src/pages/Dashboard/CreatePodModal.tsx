@@ -215,6 +215,23 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
     );
   }, [config?.presetImages, selectedPlatform]);
 
+  // 与后端 matchPath 规则保持一致：支持 "*" 结尾前缀匹配、精确匹配、目录前缀匹配
+  const isPathAllowedForReadWrite = useCallback((path: string): boolean => {
+    const targetPath = path.trim();
+    if (!targetPath) return false;
+
+    const allowedPaths: string[] = config?.userMountAllowedPaths || [];
+    if (allowedPaths.length === 0) return false;
+
+    return allowedPaths.some((pattern) => {
+      if (pattern.endsWith('*')) {
+        const prefix = pattern.slice(0, -1);
+        return targetPath.startsWith(prefix);
+      }
+      return targetPath === pattern || targetPath.startsWith(`${pattern}/`);
+    });
+  }, [config]);
+
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
@@ -284,7 +301,16 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
 
       // 处理用户自定义挂载
       if (userMounts.length > 0) {
-        payload.userMounts = userMounts.filter(m => m.hostPath && m.mountPath);
+        const validUserMounts = userMounts.filter((m) => m.hostPath && m.mountPath);
+
+        // 前端预校验：只读挂载不限目录；读写挂载必须命中白名单
+        const invalidReadWriteMount = validUserMounts.find((m) => !m.readOnly && !isPathAllowedForReadWrite(m.hostPath));
+        if (invalidReadWriteMount) {
+          message.error(`读写挂载路径不允许: ${invalidReadWriteMount.hostPath}。只读可挂载任意目录，读写仅允许白名单目录。`);
+          return;
+        }
+
+        payload.userMounts = validUserMounts;
       }
 
       await createPod(payload);
@@ -460,6 +486,8 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
   const hasGPUPanel = !isCPUOnly && effectiveGPUCount > 0 && gpuOverview && gpuOverview.acceleratorGroups.length > 0;
   const hasStorageVolumes = config?.storageVolumes && config.storageVolumes.length > 0;
   const hasStorageSection = hasStorageVolumes || config?.allowUserMounts;
+  const readWriteAllowedPaths: string[] = config?.userMountAllowedPaths || [];
+  const hasReadWriteAllowedPaths = readWriteAllowedPaths.length > 0;
   const showRightPanel = hasGPUPanel || hasStorageSection;
 
   return (
@@ -831,66 +859,81 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
                           type="link"
                           size="small"
                           icon={<PlusOutlined />}
-                          onClick={() => setUserMounts([...userMounts, { hostPath: '', mountPath: '', readOnly: false }])}
+                          onClick={() => setUserMounts([...userMounts, { hostPath: '', mountPath: '', readOnly: true }])}
                         >
                           添加
                         </Button>
                       </div>
-                      {config?.userMountAllowedPaths?.length > 0 && (
+                      <Alert
+                        message={hasReadWriteAllowedPaths
+                          ? '只读挂载可使用任意绝对路径；读写挂载仅允许白名单目录。'
+                          : '只读挂载可使用任意绝对路径；当前未配置读写白名单，仅可使用只读挂载。'}
+                        type={hasReadWriteAllowedPaths ? 'info' : 'warning'}
+                        showIcon
+                        style={{ marginBottom: 8 }}
+                      />
+                      {hasReadWriteAllowedPaths && (
                         <div className="user-mounts-allowed-paths">
-                          <Text type="secondary">允许挂载的路径: </Text>
-                          {config.userMountAllowedPaths.map((p: string, i: number) => (
+                          <Text type="secondary">读写白名单目录: </Text>
+                          {readWriteAllowedPaths.map((p: string, i: number) => (
                             <Text code key={i}>{p}</Text>
                           ))}
                         </div>
                       )}
                       {userMounts.length === 0 ? (
-                        <Text type="secondary" className="user-mounts-empty">可挂载宿主机目录到 Pod 中</Text>
+                        <Text type="secondary" className="user-mounts-empty">可将宿主机目录挂载到 Pod（默认只读）</Text>
                       ) : (
                         <Space direction="vertical" style={{ width: '100%' }} size={8}>
                           {userMounts.map((mount, index) => (
-                            <div key={index} className="user-mount-item">
-                              <Input
-                                placeholder="宿主机路径"
-                                value={mount.hostPath}
-                                onChange={(e) => {
-                                  const newMounts = [...userMounts];
-                                  newMounts[index].hostPath = e.target.value;
-                                  setUserMounts(newMounts);
-                                }}
-                                style={{ flex: 1 }}
-                              />
-                              <Input
-                                placeholder="挂载路径"
-                                value={mount.mountPath}
-                                onChange={(e) => {
-                                  const newMounts = [...userMounts];
-                                  newMounts[index].mountPath = e.target.value;
-                                  setUserMounts(newMounts);
-                                }}
-                                style={{ flex: 1 }}
-                              />
-                              <Tooltip title="只读">
-                                <Select
-                                  value={mount.readOnly ? 'ro' : 'rw'}
-                                  onChange={(v) => {
+                            <div key={index}>
+                              <div className="user-mount-item">
+                                <Input
+                                  placeholder="宿主机路径"
+                                  value={mount.hostPath}
+                                  onChange={(e) => {
                                     const newMounts = [...userMounts];
-                                    newMounts[index].readOnly = v === 'ro';
+                                    newMounts[index].hostPath = e.target.value;
                                     setUserMounts(newMounts);
                                   }}
-                                  style={{ width: 70 }}
-                                  size="small"
-                                >
-                                  <Select.Option value="rw">读写</Select.Option>
-                                  <Select.Option value="ro">只读</Select.Option>
-                                </Select>
-                              </Tooltip>
-                              <Button
-                                type="text"
-                                danger
-                                icon={<DeleteOutlined />}
-                                onClick={() => setUserMounts(userMounts.filter((_, i) => i !== index))}
-                              />
+                                  style={{ flex: 1 }}
+                                />
+                                <Input
+                                  placeholder="挂载路径"
+                                  value={mount.mountPath}
+                                  onChange={(e) => {
+                                    const newMounts = [...userMounts];
+                                    newMounts[index].mountPath = e.target.value;
+                                    setUserMounts(newMounts);
+                                  }}
+                                  style={{ flex: 1 }}
+                                />
+                                <Tooltip title="挂载权限">
+                                  <Select
+                                    value={mount.readOnly ? 'ro' : 'rw'}
+                                    onChange={(v) => {
+                                      const newMounts = [...userMounts];
+                                      newMounts[index].readOnly = v === 'ro';
+                                      setUserMounts(newMounts);
+                                    }}
+                                    style={{ width: 70 }}
+                                    size="small"
+                                  >
+                                    <Select.Option value="rw" disabled={!hasReadWriteAllowedPaths}>读写</Select.Option>
+                                    <Select.Option value="ro">只读</Select.Option>
+                                  </Select>
+                                </Tooltip>
+                                <Button
+                                  type="text"
+                                  danger
+                                  icon={<DeleteOutlined />}
+                                  onClick={() => setUserMounts(userMounts.filter((_, i) => i !== index))}
+                                />
+                              </div>
+                              {!mount.readOnly && mount.hostPath && !isPathAllowedForReadWrite(mount.hostPath) && (
+                                <Text type="danger" style={{ fontSize: 12 }}>
+                                  当前路径不在读写白名单中，请改为只读或使用白名单目录。
+                                </Text>
+                              )}
                             </div>
                           ))}
                         </Space>

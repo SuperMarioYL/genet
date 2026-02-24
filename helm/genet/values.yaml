@@ -199,11 +199,11 @@ backend:
       # 默认 false（出于安全考虑）
       allowUserMounts: false
 
-      # 用户自定义挂载的路径白名单
-      # 只有匹配白名单的 hostPath 才允许挂载
+      # 用户自定义挂载的读写路径白名单
+      # 只读挂载允许任意绝对路径；读写挂载仅允许命中白名单的 hostPath
       # 支持前缀匹配（以 * 结尾）或精确匹配
       # 例如: ["/data/*", "/mnt/datasets/*", "/home/shared"]
-      # 如果为空且 allowUserMounts=true，则允许任意路径（不推荐）
+      # 如果为空且 allowUserMounts=true，则仅允许只读挂载
       userMountAllowedPaths: []
       # userMountAllowedPaths:
       #   - "/data/*"

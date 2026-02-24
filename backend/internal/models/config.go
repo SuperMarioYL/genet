@@ -141,10 +141,10 @@ type StorageConfig struct {
 	// 启用后，用户可以在创建 Pod 时指定 hostPath 和 mountPath
 	AllowUserMounts bool `yaml:"allowUserMounts,omitempty" json:"allowUserMounts,omitempty"`
 
-	// 用户自定义挂载的路径白名单（正则表达式列表）
-	// 只有匹配白名单的 hostPath 才允许挂载
+	// 用户自定义挂载的读写路径白名单（正则表达式列表）
+	// 只有匹配白名单的 hostPath 才允许读写挂载；只读挂载不受此限制
 	// 例如: ["^/data/.*", "^/mnt/datasets/.*"]
-	// 如果为空且 AllowUserMounts=true，则允许任意路径（不推荐）
+	// 如果为空且 AllowUserMounts=true，则用户只能使用只读挂载
 	UserMountAllowedPaths []string `yaml:"userMountAllowedPaths,omitempty" json:"userMountAllowedPaths,omitempty"`
 }
 
