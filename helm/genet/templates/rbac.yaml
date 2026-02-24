@@ -25,6 +25,11 @@ rules:
   resources: ["pods/exec", "pods/attach", "pods/portforward"]
   verbs: ["get", "create"]
 
+# Workload permissions (needed to grant Deployment/StatefulSet permissions to users)
+- apiGroups: ["apps"]
+  resources: ["deployments", "statefulsets"]
+  verbs: ["get", "list", "watch", "create", "delete", "patch", "update"]
+
 # Events (for monitoring pod status)
 - apiGroups: ["events.k8s.io"]
   resources: ["events"]
@@ -70,4 +75,3 @@ subjects:
 - kind: ServiceAccount
   name: genet-backend
   namespace: {{ .Release.Namespace }}
-
