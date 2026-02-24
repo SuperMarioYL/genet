@@ -604,21 +604,57 @@ func (c *Client) PodExists(ctx context.Context, namespace, name string) bool {
 
 // ListPods 列出用户的所有 Pod
 func (c *Client) ListPods(ctx context.Context, namespace string) ([]corev1.Pod, error) {
-	list, err := c.clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+	// 兼容旧逻辑：优先查询 Genet 管理的 Pod
+	managedList, err := c.clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: "genet.io/managed=true",
 	})
 	if err != nil {
 		c.log.Debug("Failed to list pods",
 			zap.String("namespace", namespace),
+			zap.String("selector", "genet.io/managed=true"),
 			zap.Error(err))
 		return nil, err
 	}
 
-	c.log.Debug("Listed pods",
-		zap.String("namespace", namespace),
-		zap.Int("count", len(list.Items)))
+	// 新逻辑：同时纳管该 namespace 下的所有 Pod
+	allList, err := c.clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		c.log.Debug("Failed to list pods",
+			zap.String("namespace", namespace),
+			zap.String("selector", "<all>"),
+			zap.Error(err))
+		return nil, err
+	}
 
-	return list.Items, nil
+	pods := make([]corev1.Pod, 0, len(allList.Items))
+	seen := make(map[string]struct{}, len(allList.Items))
+
+	addPod := func(pod corev1.Pod) {
+		key := string(pod.UID)
+		if key == "" {
+			key = fmt.Sprintf("%s/%s", pod.Namespace, pod.Name)
+		}
+		if _, exists := seen[key]; exists {
+			return
+		}
+		seen[key] = struct{}{}
+		pods = append(pods, pod)
+	}
+
+	for _, pod := range managedList.Items {
+		addPod(pod)
+	}
+	for _, pod := range allList.Items {
+		addPod(pod)
+	}
+
+	c.log.Debug("Listed pods (merged managed and all namespace pods)",
+		zap.String("namespace", namespace),
+		zap.Int("managedCount", len(managedList.Items)),
+		zap.Int("allCount", len(allList.Items)),
+		zap.Int("mergedCount", len(pods)))
+
+	return pods, nil
 }
 
 // GetPodLogs 获取 Pod 日志
