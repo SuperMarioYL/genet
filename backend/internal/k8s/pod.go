@@ -32,9 +32,9 @@ type PodSpec struct {
 	HTTPSProxy string // HTTPS 代理
 	NoProxy    string // 不代理列表
 	// 高级配置
-	NodeName   string              // 指定调度节点（可选）
-	GPUDevices []int               // 指定 GPU 卡编号（可选），如 [0, 2, 5]
-	UserMounts []models.UserMount  // 用户自定义挂载（可选）
+	NodeName   string             // 指定调度节点（可选）
+	GPUDevices []int              // 指定 GPU 卡编号（可选），如 [0, 2, 5]
+	UserMounts []models.UserMount // 用户自定义挂载（可选）
 }
 
 // CreatePod 创建 Pod
@@ -192,6 +192,7 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 
 	// 如果需要加速卡（GPU/NPU）
 	var runtimeClassName *string
+	acceleratorType := ""
 	if spec.GPUCount > 0 {
 		c.log.Debug("Configuring accelerator resources",
 			zap.Int("count", spec.GPUCount),
@@ -200,13 +201,11 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 
 		// 从配置中查找对应的资源名称和类型
 		resourceName := "nvidia.com/gpu" // 默认 NVIDIA GPU
-		acceleratorType := "nvidia"
+		acceleratorType = "nvidia"
 		for _, gpuType := range c.config.GPU.AvailableTypes {
 			if gpuType.Name == spec.GPUType {
 				resourceName = gpuType.ResourceName
-				if gpuType.Type != "" {
-					acceleratorType = gpuType.Type
-				}
+				acceleratorType = inferAcceleratorType(gpuType.Type, resourceName)
 				break
 			}
 		}
@@ -241,6 +240,7 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 			case "ascend":
 				container.Env = append(container.Env,
 					corev1.EnvVar{Name: "ASCEND_RT_VISIBLE_DEVICES", Value: deviceStr},
+					corev1.EnvVar{Name: "ASCEND_VISIBLE_DEVICES", Value: deviceStr},
 					corev1.EnvVar{Name: "ASCEND_GLOBAL_LOG_LEVEL", Value: "3"},
 				)
 			}
@@ -282,13 +282,14 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 				container.Env = append(container.Env,
 					corev1.EnvVar{Name: "ASCEND_GLOBAL_LOG_LEVEL", Value: "3"}, // 日志级别: 0-DEBUG, 1-INFO, 2-WARNING, 3-ERROR
 				)
-				// 如果用户指定了具体的 NPU 卡，设置 ASCEND_VISIBLE_DEVICES
+				// 如果用户指定了具体的 NPU 卡，同时设置 ASCEND_RT_VISIBLE_DEVICES 和 ASCEND_VISIBLE_DEVICES
 				if len(spec.GPUDevices) > 0 {
 					deviceStr := intsToCommaString(spec.GPUDevices)
 					container.Env = append(container.Env,
 						corev1.EnvVar{Name: "ASCEND_RT_VISIBLE_DEVICES", Value: deviceStr},
+						corev1.EnvVar{Name: "ASCEND_VISIBLE_DEVICES", Value: deviceStr},
 					)
-					c.log.Debug("Set ASCEND_RT_VISIBLE_DEVICES for specific NPU selection",
+					c.log.Debug("Set ASCEND_RT_VISIBLE_DEVICES and ASCEND_VISIBLE_DEVICES for specific NPU selection",
 						zap.String("devices", deviceStr))
 				}
 			}
@@ -466,6 +467,11 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 	if len(c.config.Pod.ExtraVolumes) > 0 || len(c.config.Pod.ExtraVolumeMounts) > 0 {
 		pod.Spec.Containers[0].VolumeMounts = append(pod.Spec.Containers[0].VolumeMounts, c.config.Pod.ExtraVolumeMounts...)
 		pod.Spec.Volumes = append(pod.Spec.Volumes, c.config.Pod.ExtraVolumes...)
+	}
+
+	// Ascend 场景自动补充运行时工具目录挂载（不依赖 values 配置）
+	if acceleratorType == "ascend" {
+		ensureAscendHostMounts(&pod.Spec.Containers[0], &pod.Spec.Volumes, c.log)
 	}
 
 	// 合并 GPU/Platform 特定的 NodeSelector（配置优先）
@@ -758,6 +764,102 @@ func intsToCommaString(nums []int) string {
 		strs[i] = fmt.Sprintf("%d", n)
 	}
 	return strings.Join(strs, ",")
+}
+
+type autoHostMount struct {
+	BaseName string
+	Path     string
+}
+
+var ascendAutoHostMounts = []autoHostMount{
+	{BaseName: "ascend-sbin", Path: "/usr/local/sbin"},
+	{BaseName: "ascend-dcmi", Path: "/usr/local/dcmi"},
+}
+
+func inferAcceleratorType(configType, resourceName string) string {
+	if strings.TrimSpace(configType) != "" {
+		return strings.ToLower(strings.TrimSpace(configType))
+	}
+
+	lowerResource := strings.ToLower(strings.TrimSpace(resourceName))
+	switch {
+	case lowerResource == "nvidia.com/gpu":
+		return "nvidia"
+	case strings.Contains(lowerResource, "ascend"),
+		strings.Contains(lowerResource, "huawei"),
+		strings.Contains(lowerResource, "npu"):
+		return "ascend"
+	default:
+		return lowerResource
+	}
+}
+
+func ensureAscendHostMounts(container *corev1.Container, volumes *[]corev1.Volume, log *zap.Logger) {
+	for _, mount := range ascendAutoHostMounts {
+		if hasVolumeMountPath(container.VolumeMounts, mount.Path) {
+			continue
+		}
+
+		volumeName := findHostPathVolumeName(*volumes, mount.Path)
+		if volumeName == "" {
+			volumeName = uniqueVolumeName(*volumes, mount.BaseName)
+			hostPathType := corev1.HostPathDirectory
+			*volumes = append(*volumes, corev1.Volume{
+				Name: volumeName,
+				VolumeSource: corev1.VolumeSource{
+					HostPath: &corev1.HostPathVolumeSource{
+						Path: mount.Path,
+						Type: &hostPathType,
+					},
+				},
+			})
+		}
+
+		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
+			Name:      volumeName,
+			MountPath: mount.Path,
+			ReadOnly:  true,
+		})
+
+		log.Info("Auto-mounted Ascend host path",
+			zap.String("path", mount.Path),
+			zap.String("volumeName", volumeName))
+	}
+}
+
+func hasVolumeMountPath(volumeMounts []corev1.VolumeMount, mountPath string) bool {
+	for _, vm := range volumeMounts {
+		if vm.MountPath == mountPath {
+			return true
+		}
+	}
+	return false
+}
+
+func findHostPathVolumeName(volumes []corev1.Volume, hostPath string) string {
+	for _, v := range volumes {
+		if v.HostPath != nil && v.HostPath.Path == hostPath {
+			return v.Name
+		}
+	}
+	return ""
+}
+
+func uniqueVolumeName(volumes []corev1.Volume, base string) string {
+	name := base
+	for i := 0; ; i++ {
+		exists := false
+		for _, v := range volumes {
+			if v.Name == name {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			return name
+		}
+		name = fmt.Sprintf("%s-%d", base, i+1)
+	}
 }
 
 // GetPVCName 获取存储卷对应的 PVC 名称
