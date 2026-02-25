@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 
 	"github.com/gin-contrib/cors"
@@ -75,6 +76,13 @@ func main() {
 		log.Fatal("Failed to initialize K8s client", zap.Error(err))
 	}
 	log.Info("K8s client initialized successfully")
+
+	// 启动时全量同步用户命名空间配额，确保 values 变更后已存在命名空间也会更新
+	if err := k8sClient.SyncUserNamespaceQuotas(context.Background()); err != nil {
+		log.Warn("Failed to sync user namespace quotas on startup", zap.Error(err))
+	} else {
+		log.Info("User namespace quotas synced on startup")
+	}
 
 	// 初始化 Prometheus 客户端
 	var promClient *prometheus.Client

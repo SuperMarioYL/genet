@@ -77,16 +77,54 @@ func (c *Client) ensureUserRole(ctx context.Context, cfg UserRBACConfig) error {
 			},
 		},
 		Rules: []rbacv1.PolicyRule{
-			// Pod 完全权限
+			// Core 资源增删改查权限
 			{
 				APIGroups: []string{""},
-				Resources: []string{"pods"},
-				Verbs:     []string{"get", "list", "watch", "create", "delete", "patch", "update"},
+				Resources: []string{
+					"pods",
+					"configmaps",
+					"secrets",
+					"services",
+					"serviceaccounts",
+					"persistentvolumes",
+					"persistentvolumeclaims",
+				},
+				Verbs: []string{"get", "list", "watch", "create", "delete", "patch", "update"},
 			},
-			// Deployment / StatefulSet 增删改查权限
+			// Apps 资源增删改查权限
 			{
 				APIGroups: []string{"apps"},
 				Resources: []string{"deployments", "statefulsets"},
+				Verbs:     []string{"get", "list", "watch", "create", "delete", "patch", "update"},
+			},
+			// Autoscaling 资源增删改查权限
+			{
+				APIGroups: []string{"autoscaling"},
+				Resources: []string{"horizontalpodautoscalers"},
+				Verbs:     []string{"get", "list", "watch", "create", "delete", "patch", "update"},
+			},
+			// Ingress 资源增删改查权限
+			{
+				APIGroups: []string{"networking.k8s.io"},
+				Resources: []string{"ingresses"},
+				Verbs:     []string{"get", "list", "watch", "create", "delete", "patch", "update"},
+			},
+			// PDB 资源增删改查权限
+			{
+				APIGroups: []string{"policy"},
+				Resources: []string{"poddisruptionbudgets"},
+				Verbs:     []string{"get", "list", "watch", "create", "delete", "patch", "update"},
+			},
+			// RayCluster 资源增删改查权限
+			{
+				APIGroups: []string{"ray.io"},
+				Resources: []string{"rayclusters"},
+				Verbs:     []string{"get", "list", "watch", "create", "delete", "patch", "update"},
+			},
+			// Namespace 内 RBAC 资源增删改查权限
+			{
+				APIGroups: []string{"rbac.authorization.k8s.io"},
+				Resources: []string{"roles", "rolebindings"},
 				Verbs:     []string{"get", "list", "watch", "create", "delete", "patch", "update"},
 			},
 			// Pod 日志和 exec
@@ -94,24 +132,6 @@ func (c *Client) ensureUserRole(ctx context.Context, cfg UserRBACConfig) error {
 				APIGroups: []string{""},
 				Resources: []string{"pods/log", "pods/exec", "pods/attach", "pods/portforward"},
 				Verbs:     []string{"get", "create"},
-			},
-			// PVC 权限
-			{
-				APIGroups: []string{""},
-				Resources: []string{"persistentvolumeclaims"},
-				Verbs:     []string{"get", "list", "watch", "create", "delete"},
-			},
-			// ConfigMap 和 Secret 只读
-			{
-				APIGroups: []string{""},
-				Resources: []string{"configmaps", "secrets"},
-				Verbs:     []string{"get", "list", "watch"},
-			},
-			// Service 权限（用于暴露服务）
-			{
-				APIGroups: []string{""},
-				Resources: []string{"services"},
-				Verbs:     []string{"get", "list", "watch", "create", "delete"},
 			},
 			// Events 只读（用于调试）
 			{

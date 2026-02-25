@@ -12,7 +12,7 @@ metadata:
 rules:
 # Helm needs core permissions
 - apiGroups: [""]
-  resources: ["pods", "services", "namespaces", "persistentvolumeclaims", "configmaps", "secrets", "events"]
+  resources: ["pods", "services", "namespaces", "persistentvolumeclaims", "resourcequotas", "configmaps", "secrets", "events"]
   verbs: ["get", "list", "watch", "create", "delete", "patch", "update"]
 
 # Pod logs access
