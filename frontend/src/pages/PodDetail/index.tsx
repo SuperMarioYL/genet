@@ -46,6 +46,7 @@ const PodDetail: React.FC = () => {
       loadCommitStatus();
       loadSharedGPUPods();
       loadStorageVolumes();
+      loadDescribe();
     }
     return () => {
       if (commitPollRef.current) {
@@ -321,6 +322,14 @@ const PodDetail: React.FC = () => {
 
   const connections = pod.connections;
   const hasConnections = connections?.ssh?.host && connections?.ssh?.port;
+  const mountRows = (describe?.mounts && describe.mounts.length > 0)
+    ? describe.mounts
+    : storageVolumes.map((v) => ({
+        mountPath: v.mountPath,
+        source: v.description || '-',
+        type: v.type || 'unknown',
+        readOnly: v.readOnly,
+      }));
 
   const tabItems = [
     {
@@ -341,7 +350,7 @@ const PodDetail: React.FC = () => {
           </GlassCard>
 
           {/* 存储卷信息 */}
-          {storageVolumes.length > 0 && (
+          {mountRows.length > 0 && (
             <GlassCard
               hover={false}
               className="info-card"
@@ -354,8 +363,8 @@ const PodDetail: React.FC = () => {
               style={{ marginTop: 16 }}
             >
               <Table
-                dataSource={storageVolumes}
-                rowKey="name"
+                dataSource={mountRows}
+                rowKey={(record: any) => `${record.container || 'workspace'}-${record.mountPath}-${record.volumeName || record.source || ''}`}
                 pagination={false}
                 size="small"
                 columns={[
@@ -366,10 +375,10 @@ const PodDetail: React.FC = () => {
                     render: (path: string) => <Text code>{path}</Text>,
                   },
                   {
-                    title: '说明',
-                    dataIndex: 'description',
-                    key: 'description',
-                    render: (desc: string) => desc || '-',
+                    title: '来源',
+                    dataIndex: 'source',
+                    key: 'source',
+                    render: (source: string) => source || '-',
                   },
                   {
                     title: '存储类型',
@@ -377,8 +386,8 @@ const PodDetail: React.FC = () => {
                     key: 'type',
                     width: 100,
                     render: (type: string) => (
-                      <Tag color={type === 'pvc' ? 'blue' : 'green'}>
-                        {type === 'pvc' ? 'PVC' : 'HostPath'}
+                      <Tag color={String(type).toLowerCase() === 'pvc' ? 'blue' : 'green'}>
+                        {String(type).toLowerCase() === 'pvc' ? 'PVC' : String(type || 'unknown').toUpperCase()}
                       </Tag>
                     ),
                   },
@@ -746,5 +755,4 @@ const PodDetail: React.FC = () => {
 };
 
 export default PodDetail;
-
 

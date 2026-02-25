@@ -1044,6 +1044,7 @@ func (h *PodHandler) GetPodDescribe(c *gin.Context) {
 		containerStatuses = append(containerStatuses, status)
 	}
 	describe["containers"] = containerStatuses
+	describe["mounts"] = extractPodMounts(pod)
 
 	// 条件
 	var conditions []map[string]interface{}
@@ -1058,6 +1059,69 @@ func (h *PodHandler) GetPodDescribe(c *gin.Context) {
 	describe["conditions"] = conditions
 
 	c.JSON(http.StatusOK, describe)
+}
+
+func extractPodMounts(pod *corev1.Pod) []map[string]interface{} {
+	if pod == nil || len(pod.Spec.Containers) == 0 {
+		return []map[string]interface{}{}
+	}
+
+	volumeMap := make(map[string]corev1.Volume, len(pod.Spec.Volumes))
+	for _, vol := range pod.Spec.Volumes {
+		volumeMap[vol.Name] = vol
+	}
+
+	mounts := make([]map[string]interface{}, 0)
+	for _, container := range pod.Spec.Containers {
+		for _, vm := range container.VolumeMounts {
+			if strings.HasPrefix(vm.Name, "kube-api-access-") {
+				continue
+			}
+
+			sourceType := "unknown"
+			source := "-"
+
+			if vol, exists := volumeMap[vm.Name]; exists {
+				sourceType, source = getVolumeSourceInfo(vol)
+			}
+
+			mounts = append(mounts, map[string]interface{}{
+				"container":  container.Name,
+				"volumeName": vm.Name,
+				"mountPath":  vm.MountPath,
+				"readOnly":   vm.ReadOnly,
+				"type":       sourceType,
+				"source":     source,
+			})
+		}
+	}
+
+	return mounts
+}
+
+func getVolumeSourceInfo(vol corev1.Volume) (string, string) {
+	switch {
+	case vol.PersistentVolumeClaim != nil:
+		return "pvc", vol.PersistentVolumeClaim.ClaimName
+	case vol.HostPath != nil:
+		return "hostpath", vol.HostPath.Path
+	case vol.EmptyDir != nil:
+		return "emptydir", "-"
+	case vol.ConfigMap != nil:
+		return "configmap", vol.ConfigMap.Name
+	case vol.Secret != nil:
+		return "secret", vol.Secret.SecretName
+	case vol.Projected != nil:
+		return "projected", "-"
+	case vol.DownwardAPI != nil:
+		return "downwardapi", "-"
+	case vol.NFS != nil:
+		return "nfs", fmt.Sprintf("%s:%s", vol.NFS.Server, vol.NFS.Path)
+	case vol.CSI != nil:
+		return "csi", vol.CSI.Driver
+	default:
+		return "unknown", "-"
+	}
 }
 
 // checkQuota 检查用户配额

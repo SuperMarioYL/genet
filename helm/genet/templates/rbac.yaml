@@ -12,7 +12,7 @@ metadata:
 rules:
 # Helm needs core permissions
 - apiGroups: [""]
-  resources: ["pods", "services", "namespaces", "persistentvolumeclaims", "resourcequotas", "configmaps", "secrets", "events"]
+  resources: ["pods", "services", "serviceaccounts", "namespaces", "persistentvolumes", "persistentvolumeclaims", "resourcequotas", "configmaps", "secrets", "events"]
   verbs: ["get", "list", "watch", "create", "delete", "patch", "update"]
 
 # Pod logs access
@@ -28,6 +28,26 @@ rules:
 # Workload permissions (needed to grant Deployment/StatefulSet permissions to users)
 - apiGroups: ["apps"]
   resources: ["deployments", "statefulsets"]
+  verbs: ["get", "list", "watch", "create", "delete", "patch", "update"]
+
+# Autoscaling permissions (needed to grant HPA permissions to users)
+- apiGroups: ["autoscaling"]
+  resources: ["horizontalpodautoscalers"]
+  verbs: ["get", "list", "watch", "create", "delete", "patch", "update"]
+
+# Ingress permissions (needed to grant Ingress permissions to users)
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingresses"]
+  verbs: ["get", "list", "watch", "create", "delete", "patch", "update"]
+
+# PDB permissions (needed to grant PodDisruptionBudget permissions to users)
+- apiGroups: ["policy"]
+  resources: ["poddisruptionbudgets"]
+  verbs: ["get", "list", "watch", "create", "delete", "patch", "update"]
+
+# Ray permissions (needed to grant RayCluster permissions to users)
+- apiGroups: ["ray.io"]
+  resources: ["rayclusters"]
   verbs: ["get", "list", "watch", "create", "delete", "patch", "update"]
 
 # Events (for monitoring pod status)
