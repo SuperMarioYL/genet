@@ -774,6 +774,7 @@ type autoHostMount struct {
 var ascendAutoHostMounts = []autoHostMount{
 	{BaseName: "ascend-sbin", Path: "/usr/local/sbin"},
 	{BaseName: "ascend-dcmi", Path: "/usr/local/dcmi"},
+	{BaseName: "ascend-driver", Path: "/usr/local/Ascend/driver"},
 }
 
 func inferAcceleratorType(configType, resourceName string) string {
