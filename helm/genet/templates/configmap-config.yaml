@@ -30,6 +30,10 @@ data:
 {{ toYaml .Values.backend.config.kubeconfig | indent 6 }}
     userRBAC:
 {{ toYaml .Values.backend.config.userRBAC | indent 6 }}
+    adminUsers:
+{{ toYaml .Values.backend.config.adminUsers | indent 6 }}
+    openAPI:
+{{ toYaml .Values.backend.config.openAPI | indent 6 }}
     proxy:
 {{ toYaml .Values.backend.config.proxy | indent 6 }}
     registry:

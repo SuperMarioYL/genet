@@ -6,6 +6,7 @@ import { ThemeProvider, useTheme, lightAntdTheme, darkAntdTheme } from './theme'
 import ErrorBoundary from './components/ErrorBoundary';
 import ParticleBackground from './components/ParticleBackground';
 import Dashboard from './pages/Dashboard';
+import AdminAPIKeys from './pages/AdminAPIKeys';
 import PodDetail from './pages/PodDetail';
 import { getAuthStatus, AuthStatus } from './services/api';
 import './App.css';
@@ -76,6 +77,7 @@ const AppContent: React.FC = () => {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/pods/:id" element={<PodDetail />} />
+          <Route path="/admin/apikeys" element={<AdminAPIKeys />} />
         </Routes>
       </Router>
     </ConfigProvider>

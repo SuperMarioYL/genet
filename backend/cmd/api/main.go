@@ -84,6 +84,9 @@ func main() {
 		log.Info("User namespace quotas synced on startup")
 	}
 
+	// 启动节点池污点同步（共享池/非共享池）
+	k8sClient.StartNodePoolTaintReconciler(context.Background())
+
 	// 初始化 Prometheus 客户端
 	var promClient *prometheus.Client
 	if config.PrometheusURL != "" {
@@ -97,9 +100,10 @@ func main() {
 	}
 
 	// 初始化处理器
-	podHandler := handlers.NewPodHandler(k8sClient, config)
+	podHandler := handlers.NewPodHandler(k8sClient, promClient, config)
 	configHandler := handlers.NewConfigHandler(config, k8sClient)
 	authHandler := handlers.NewAuthHandler(config)
+	adminHandler := handlers.NewAdminHandler(config, k8sClient)
 	kubeconfigHandler := handlers.NewKubeconfigHandler(config, k8sClient)
 	clusterHandler := handlers.NewClusterHandler(k8sClient, promClient, config)
 	imageHandler := handlers.NewImageHandler(k8sClient, config)
@@ -215,27 +219,38 @@ func main() {
 		// Kubeconfig 端点（需要认证）
 		api.GET("/kubeconfig", auth.AuthMiddleware(config), kubeconfigHandler.GetKubeconfig)
 		api.GET("/kubeconfig/download", auth.AuthMiddleware(config), kubeconfigHandler.DownloadKubeconfig)
+
+		// 管理端点（需要管理员权限）
+		admin := api.Group("/admin")
+		admin.Use(auth.AuthMiddleware(config), auth.RequireAdmin(config))
+		{
+			admin.GET("/me", adminHandler.GetMe)
+			admin.GET("/apikeys", adminHandler.ListAPIKeys)
+			admin.POST("/apikeys", adminHandler.CreateAPIKey)
+			admin.PATCH("/apikeys/:id", adminHandler.UpdateAPIKey)
+			admin.DELETE("/apikeys/:id", adminHandler.DeleteAPIKey)
+		}
 	}
 
 	// Open API 路由（如果启用）
 	if config.OpenAPI.Enabled {
 		openAPIHandler := handlers.NewOpenAPIHandler(k8sClient, config)
 		openAPI := api.Group("/open")
-		openAPI.Use(auth.APIKeyAuthMiddleware(config))
+		openAPI.Use(auth.APIKeyAuthMiddleware(config, k8sClient))
 		{
 			// Pod CRUD
-			openAPI.POST("/pods", openAPIHandler.CreatePod)
-			openAPI.GET("/pods", openAPIHandler.ListPods)
-			openAPI.GET("/pods/:name", openAPIHandler.GetPod)
-			openAPI.PUT("/pods/:name", openAPIHandler.UpdatePod)
-			openAPI.DELETE("/pods/:name", openAPIHandler.DeletePod)
+			openAPI.POST("/pods", auth.RequireOpenAPIScope(models.APIKeyScopeWrite), openAPIHandler.CreatePod)
+			openAPI.GET("/pods", auth.RequireOpenAPIScope(models.APIKeyScopeRead), openAPIHandler.ListPods)
+			openAPI.GET("/pods/:id", auth.RequireOpenAPIScope(models.APIKeyScopeRead), openAPIHandler.GetPod)
+			openAPI.PUT("/pods/:id", auth.RequireOpenAPIScope(models.APIKeyScopeWrite), openAPIHandler.UpdatePod)
+			openAPI.DELETE("/pods/:id", auth.RequireOpenAPIScope(models.APIKeyScopeWrite), openAPIHandler.DeletePod)
 
 			// Job CRUD
-			openAPI.POST("/jobs", openAPIHandler.CreateJob)
-			openAPI.GET("/jobs", openAPIHandler.ListJobs)
-			openAPI.GET("/jobs/:name", openAPIHandler.GetJob)
-			openAPI.PUT("/jobs/:name", openAPIHandler.UpdateJob)
-			openAPI.DELETE("/jobs/:name", openAPIHandler.DeleteJob)
+			openAPI.POST("/jobs", auth.RequireOpenAPIScope(models.APIKeyScopeWrite), openAPIHandler.CreateJob)
+			openAPI.GET("/jobs", auth.RequireOpenAPIScope(models.APIKeyScopeRead), openAPIHandler.ListJobs)
+			openAPI.GET("/jobs/:name", auth.RequireOpenAPIScope(models.APIKeyScopeRead), openAPIHandler.GetJob)
+			openAPI.PUT("/jobs/:name", auth.RequireOpenAPIScope(models.APIKeyScopeWrite), openAPIHandler.UpdateJob)
+			openAPI.DELETE("/jobs/:name", auth.RequireOpenAPIScope(models.APIKeyScopeWrite), openAPIHandler.DeleteJob)
 		}
 		log.Info("Open API routes registered",
 			zap.String("namespace", config.OpenAPI.Namespace))

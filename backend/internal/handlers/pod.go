@@ -15,6 +15,7 @@ import (
 	"github.com/uc-package/genet/internal/k8s"
 	"github.com/uc-package/genet/internal/logger"
 	"github.com/uc-package/genet/internal/models"
+	"github.com/uc-package/genet/internal/prometheus"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -23,9 +24,10 @@ import (
 
 // PodHandler Pod 处理器
 type PodHandler struct {
-	k8sClient *k8s.Client
-	config    *models.Config
-	log       *zap.Logger
+	k8sClient  *k8s.Client
+	promClient *prometheus.Client
+	config     *models.Config
+	log        *zap.Logger
 }
 
 type podDisplayInfo struct {
@@ -39,11 +41,12 @@ type podDisplayInfo struct {
 }
 
 // NewPodHandler 创建 Pod 处理器
-func NewPodHandler(k8sClient *k8s.Client, config *models.Config) *PodHandler {
+func NewPodHandler(k8sClient *k8s.Client, promClient *prometheus.Client, config *models.Config) *PodHandler {
 	return &PodHandler{
-		k8sClient: k8sClient,
-		config:    config,
-		log:       logger.Named("pod"),
+		k8sClient:  k8sClient,
+		promClient: promClient,
+		config:     config,
+		log:        logger.Named("pod"),
 	}
 }
 
@@ -230,6 +233,11 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if err := ValidateMemory(req.ShmSize); err != nil {
+		h.log.Warn("Invalid shared memory value", zap.String("shmSize", req.ShmSize), zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{"error": "共享内存格式无效，应为数字+单位（如 1Gi, 512Mi）"})
+		return
+	}
 
 	username, _ := auth.GetUsername(c)
 	email, _ := auth.GetEmail(c)
@@ -249,6 +257,7 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 		zap.String("gpuType", req.GPUType),
 		zap.String("nodeName", req.NodeName),
 		zap.Ints("gpuDevices", req.GPUDevices),
+		zap.String("shmSize", req.ShmSize),
 		zap.String("customName", req.Name))
 
 	// 如果指定了 GPUDevices，自动设置 GPUCount
@@ -265,6 +274,18 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 		h.log.Debug("GPU count auto-set from gpuDevices",
 			zap.Int("gpuCount", req.GPUCount),
 			zap.Ints("gpuDevices", req.GPUDevices))
+	}
+
+	// 共享模式自动分配：当节点/卡未完整指定时，根据热力图口径自动选择
+	if err := h.autoAssignSharingPlacement(ctx, &req); err != nil {
+		h.log.Warn("Failed to auto-assign sharing placement",
+			zap.String("user", username),
+			zap.String("gpuType", req.GPUType),
+			zap.Int("gpuCount", req.GPUCount),
+			zap.String("nodeName", req.NodeName),
+			zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
 	// 检查配额
@@ -430,6 +451,7 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 	// 使用默认值（如果用户未指定）
 	cpu := req.CPU
 	memory := req.Memory
+	shmSize := req.ShmSize
 	if cpu == "" {
 		cpu = h.config.UI.DefaultCPU
 		if cpu == "" {
@@ -440,6 +462,12 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 		memory = h.config.UI.DefaultMemory
 		if memory == "" {
 			memory = "8Gi"
+		}
+	}
+	if shmSize == "" {
+		shmSize = h.config.UI.DefaultShmSize
+		if shmSize == "" {
+			shmSize = "1Gi"
 		}
 	}
 
@@ -454,6 +482,7 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 		GPUType:    req.GPUType,
 		CPU:        cpu,
 		Memory:     memory,
+		ShmSize:    shmSize,
 		HTTPProxy:  h.config.Proxy.HTTPProxy,
 		HTTPSProxy: h.config.Proxy.HTTPSProxy,
 		NoProxy:    h.config.Proxy.NoProxy,
@@ -1122,6 +1151,136 @@ func getVolumeSourceInfo(vol corev1.Volume) (string, string) {
 	default:
 		return "unknown", "-"
 	}
+}
+
+// autoAssignSharingPlacement 在共享模式下自动分配节点和设备。
+// 触发条件：
+// 1. 请求 GPUCount > 0
+// 2. 调度模式为 sharing
+// 3. 未同时提供 nodeName 和 gpuDevices
+func (h *PodHandler) autoAssignSharingPlacement(ctx context.Context, req *models.PodRequest) error {
+	if req.GPUCount <= 0 {
+		return nil
+	}
+	if h.config.GPU.SchedulingMode != "sharing" {
+		return nil
+	}
+	if req.NodeName != "" && len(req.GPUDevices) > 0 {
+		return nil
+	}
+
+	accType, err := h.resolveAcceleratorTypeForRequest(req.GPUType)
+	if err != nil {
+		return err
+	}
+
+	clientset := h.k8sClient.GetClientset()
+	nodes, err := clientset.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return fmt.Errorf("获取节点列表失败: %w", err)
+	}
+	pods, err := clientset.CoreV1().Pods("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return fmt.Errorf("获取 Pod 列表失败: %w", err)
+	}
+
+	metrics := h.queryAcceleratorMetricsForTypes(ctx, []models.AcceleratorType{accType})
+	clusterHelper := NewClusterHandler(h.k8sClient, h.promClient, h.config)
+	group := clusterHelper.buildAcceleratorGroup(accType, nodes.Items, pods.Items, metrics)
+
+	selectedNode, selectedDevices, err := selectNodeAndDevicesForSharing(group.Nodes, req.GPUCount, req.NodeName)
+	if err != nil {
+		return err
+	}
+
+	req.NodeName = selectedNode
+	req.GPUDevices = selectedDevices
+	req.GPUCount = len(selectedDevices)
+
+	h.log.Info("Auto-assigned sharing placement",
+		zap.String("nodeName", req.NodeName),
+		zap.Ints("gpuDevices", req.GPUDevices),
+		zap.Int("gpuCount", req.GPUCount),
+		zap.String("resourceName", accType.ResourceName))
+	return nil
+}
+
+func (h *PodHandler) resolveAcceleratorTypeForRequest(gpuType string) (models.AcceleratorType, error) {
+	resourceName := "nvidia.com/gpu"
+	if gpuType != "" {
+		found := false
+		for _, configured := range h.config.GPU.AvailableTypes {
+			if configured.Name == gpuType {
+				resourceName = configured.ResourceName
+				found = true
+				break
+			}
+		}
+		if !found {
+			return models.AcceleratorType{}, fmt.Errorf("无效的 GPU 类型")
+		}
+	}
+	if resourceName == "" {
+		return models.AcceleratorType{}, fmt.Errorf("CPU Only 类型不支持 GPU 调度")
+	}
+
+	for _, accType := range h.config.GetAcceleratorTypes() {
+		if accType.ResourceName == resourceName {
+			return accType, nil
+		}
+	}
+
+	switch resourceName {
+	case "nvidia.com/gpu":
+		return models.AcceleratorType{
+			Type:         "nvidia",
+			Label:        "NVIDIA GPU",
+			ResourceName: resourceName,
+			MetricName:   "DCGM_FI_DEV_GPU_UTIL",
+		}, nil
+	case "huawei.com/Ascend910":
+		return models.AcceleratorType{
+			Type:         "ascend",
+			Label:        "华为昇腾 NPU",
+			ResourceName: resourceName,
+			MetricName:   "npu_chip_info_utilization",
+		}, nil
+	default:
+		return models.AcceleratorType{
+			Type:         resourceName,
+			Label:        resourceName,
+			ResourceName: resourceName,
+		}, nil
+	}
+}
+
+func (h *PodHandler) queryAcceleratorMetricsForTypes(ctx context.Context, acceleratorTypes []models.AcceleratorType) *prometheus.AcceleratorMetrics {
+	if h.promClient == nil || !h.promClient.IsEnabled() || len(acceleratorTypes) == 0 {
+		return nil
+	}
+
+	promTypes := make([]prometheus.AcceleratorTypeConfig, len(acceleratorTypes))
+	for i, t := range acceleratorTypes {
+		promTypes[i] = prometheus.AcceleratorTypeConfig{
+			Type:         t.Type,
+			Label:        t.Label,
+			ResourceName: t.ResourceName,
+			MetricName:   t.MetricName,
+			MetricLabels: prometheus.MetricLabelConfig{
+				DeviceID:  t.MetricLabels.DeviceID,
+				Node:      t.MetricLabels.Node,
+				Pod:       t.MetricLabels.Pod,
+				Namespace: t.MetricLabels.Namespace,
+			},
+		}
+	}
+
+	metrics, err := h.promClient.QueryAcceleratorMetrics(ctx, promTypes)
+	if err != nil {
+		h.log.Warn("Failed to query accelerator metrics for auto-scheduling", zap.Error(err))
+		return nil
+	}
+	return metrics
 }
 
 // checkQuota 检查用户配额

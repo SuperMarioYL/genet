@@ -907,6 +907,9 @@ graph TB
 | `storage.volumes` | array | 存储卷配置 |
 | `oauth.enabled` | bool | 是否启用 OAuth |
 | `oauth.providerURL` | string | OIDC Provider URL |
+| `adminUsers` | array | 管理员白名单（username/email） |
+| `openAPI.enabled` | bool | 是否启用 OpenAPI |
+| `openAPI.namespace` | string | OpenAPI 资源固定命名空间 |
 | `lifecycle.autoDeleteTime` | string | 自动删除时间 |
 | `kubeconfig.mode` | string | cert 或 oidc |
 | `prometheusURL` | string | Prometheus 地址 |

@@ -166,10 +166,54 @@
 .device-type {
   color: var(--text-muted);
   font-size: 11px;
-  max-width: 70px;
+  max-width: 56px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.pool-badge {
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 16px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  flex-shrink: 0;
+}
+
+.pool-badge-shared {
+  color: #0f766e;
+  background: rgba(20, 184, 166, 0.12);
+  border-color: rgba(20, 184, 166, 0.35);
+}
+
+.pool-badge-exclusive {
+  color: #92400e;
+  background: rgba(245, 158, 11, 0.14);
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.pool-section {
+  margin-bottom: 8px;
+}
+
+.pool-section:last-child {
+  margin-bottom: 0;
+}
+
+.pool-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 4px 0;
+  padding-left: 2px;
+}
+
+.pool-section-stats {
+  font-size: 11px;
+  color: var(--text-muted);
 }
 
 /* 设备槽位 - 紧凑间距 */
@@ -377,6 +421,12 @@
 
   .device-type {
     max-width: 40px;
+  }
+
+  .pool-badge {
+    padding: 0 6px;
+    font-size: 9px;
+    line-height: 14px;
   }
 
   .device-cell {

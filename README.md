@@ -151,6 +151,28 @@ backend:
       noProxy: "localhost,127.0.0.1,.cluster.local"
 ```
 
+### 配置管理员与 OpenAPI Key 管理
+
+```yaml
+backend:
+  config:
+    # 仅这些用户可访问 /admin/apikeys 管理页
+    adminUsers:
+      - "alice"
+      - "ops@example.com"
+
+    openAPI:
+      enabled: true
+      namespace: "genet-open-api"
+      # 旧版静态 key（建议逐步迁移到管理页创建）
+      apiKeys:
+        - "legacy-api-key"
+```
+
+说明：
+- 管理页登录仍使用 OAuth，会话通过后再校验 `adminUsers`。
+- 管理页创建的 API Key 可绑定 `ownerUser`，后端鉴权时会解析该用户信息。
+
 ### 修改自动删除时间
 
 ```yaml

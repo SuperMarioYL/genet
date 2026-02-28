@@ -9,6 +9,14 @@ import './CreatePodModal.css';
 
 const { Text } = Typography;
 
+const normalizePoolType = (poolType?: 'shared' | 'exclusive'): 'shared' | 'exclusive' => {
+  return poolType === 'exclusive' ? 'exclusive' : 'shared';
+};
+
+const getPoolLabel = (poolType?: 'shared' | 'exclusive'): string => {
+  return normalizePoolType(poolType) === 'exclusive' ? '独占池' : '共享池';
+};
+
 interface CreatePodModalProps {
   visible: boolean;
   onCancel: () => void;
@@ -122,6 +130,7 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
         gpuCount: 1,
         cpu: data.ui?.defaultCPU || '4',
         memory: data.ui?.defaultMemory || '8Gi',
+        shmSize: data.ui?.defaultShmSize || '1Gi',
       });
     } catch (error: any) {
       message.error(`加载配置失败: ${error.message}`);
@@ -204,7 +213,7 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
     } finally {
       setTagsLoading(false);
     }
-  }, [config?.registryUrl, selectedPlatform]);
+  }, [config?.registryUrl, form, selectedPlatform]);
 
   // 获取过滤后的预设镜像（根据 platform 过滤）
   const getFilteredPresetImages = useCallback(() => {
@@ -239,18 +248,6 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
       // CPU Only 模式下不需要 GPU 相关验证
       const effectiveGPUCount = isCPUOnly ? 0 : (values.gpuCount || 0);
 
-      // 共享模式下必须选择节点和 GPU 卡（非 CPU Only 模式）
-      if (isSharing && effectiveGPUCount > 0) {
-        if (!selectedNode) {
-          message.error('共享模式下必须选择节点');
-          return;
-        }
-        if (selectedGPUDevices.length === 0) {
-          message.error('共享模式下必须选择 GPU 卡');
-          return;
-        }
-      }
-
       setLoading(true);
 
       // 拼接镜像和 Tag
@@ -275,6 +272,7 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
         gpuType: watchedGPUType, // 使用解析后的 GPU 类型名称
         cpu: values.cpu,
         memory: values.memory,
+        shmSize: values.shmSize,
       };
 
       // 处理自定义名称
@@ -341,7 +339,7 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
   const willExceedQuota = () => {
     const newPodCount = currentQuota.podUsed + 1;
     // 如果选择了具体 GPU 卡，使用卡数；否则使用输入的 GPU 数量
-    const gpuToAdd = selectedGPUDevices.length > 0 ? selectedGPUDevices.length : selectedGPUCount;
+    const gpuToAdd = isCPUOnly ? 0 : (selectedGPUDevices.length > 0 ? selectedGPUDevices.length : selectedGPUCount);
     const newGPUCount = currentQuota.gpuUsed + gpuToAdd;
     return {
       podExceeded: newPodCount > currentQuota.podLimit,
@@ -367,20 +365,28 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
 
     // 如果没有选中类型或为 CPU Only 模式，返回所有节点
     if (!selectedGPUConfig) {
-      const nodes: NodeGPUInfo[] = [];
+      const nodeMap = new Map<string, NodeGPUInfo>();
       for (const group of gpuOverview.acceleratorGroups) {
-        nodes.push(...group.nodes);
+        for (const node of group.nodes) {
+          if (!nodeMap.has(node.nodeName)) {
+            nodeMap.set(node.nodeName, node);
+          }
+        }
       }
-      return nodes;
+      return Array.from(nodeMap.values());
     }
 
     // CPU Only 模式：返回所有节点（K8s 会根据 NodeSelector 过滤）
     if (isCPUOnly) {
-      const nodes: NodeGPUInfo[] = [];
+      const nodeMap = new Map<string, NodeGPUInfo>();
       for (const group of gpuOverview.acceleratorGroups) {
-        nodes.push(...group.nodes);
+        for (const node of group.nodes) {
+          if (!nodeMap.has(node.nodeName)) {
+            nodeMap.set(node.nodeName, node);
+          }
+        }
       }
-      return nodes;
+      return Array.from(nodeMap.values());
     }
 
     // GPU 模式：只返回匹配 resourceName 的 AcceleratorGroup 中的节点
@@ -426,37 +432,80 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
   // 渲染节点选择器
   const renderNodeSelector = () => (
     <Form.Item
-      label={isSharing ? "选择节点 *" : "选择节点"}
+      label="选择节点（可选）"
       className="node-select-item"
-      validateStatus={isSharing && !selectedNode ? 'error' : undefined}
-      help={isSharing && !selectedNode ? '共享模式下必须选择节点' : undefined}
+      help={isSharing ? '不选择节点时，将自动选择负载更低的节点' : undefined}
     >
-      <Select
-        placeholder={isSharing ? "请选择节点" : "自动调度（推荐）"}
-        allowClear={!isSharing}
-        value={selectedNode}
-        onChange={handleNodeChange}
-        style={{ width: '100%' }}
-      >
-        {getAvailableNodes().map(node => {
+      {(() => {
+        const availableNodes = getAvailableNodes();
+        const sharedNodes = availableNodes.filter((node) => normalizePoolType(node.poolType) === 'shared');
+        const exclusiveNodes = availableNodes.filter((node) => normalizePoolType(node.poolType) === 'exclusive');
+
+        const renderNodeOption = (node: NodeGPUInfo) => {
           const freeDevices = node.totalDevices - node.usedDevices;
           const isDisabled = !isSharing && !node.timeSharingEnabled && freeDevices === 0;
+          const poolType = normalizePoolType(node.poolType);
+
           return (
             <Select.Option
               key={node.nodeName}
               value={node.nodeName}
+              label={node.nodeName}
               disabled={isDisabled}
             >
-              {node.nodeName}
-              <Text type="secondary" style={{ marginLeft: 8 }}>
-                ({freeDevices}/{node.totalDevices} 空闲)
-                {isSharing && maxPodsPerGPU > 0 && ` [每卡最多 ${maxPodsPerGPU} Pod]`}
-                {!isSharing && node.timeSharingEnabled && ' [时分复用]'}
-              </Text>
+              <div className="node-option-main">
+                <span className="node-option-name">{node.nodeName}</span>
+                <span className={`node-pool-badge node-pool-badge-${poolType}`}>{getPoolLabel(poolType)}</span>
+              </div>
+              <div className="node-option-meta">
+                {freeDevices}/{node.totalDevices} 空闲
+                {isSharing && maxPodsPerGPU > 0 && ` · 每卡最多 ${maxPodsPerGPU} Pod`}
+                {!isSharing && node.timeSharingEnabled && ' · 时分复用'}
+              </div>
             </Select.Option>
           );
-        })}
-      </Select>
+        };
+
+        return (
+          <>
+            <Select
+              placeholder="自动调度（推荐）"
+              allowClear
+              value={selectedNode}
+              onChange={handleNodeChange}
+              style={{ width: '100%' }}
+              optionLabelProp="label"
+            >
+              {sharedNodes.length > 0 && (
+                <Select.OptGroup
+                  key="shared-pool"
+                  label={<span className="node-pool-group-label">共享池</span>}
+                >
+                  {sharedNodes.map(renderNodeOption)}
+                </Select.OptGroup>
+              )}
+              {exclusiveNodes.length > 0 && (
+                <Select.OptGroup
+                  key="exclusive-pool"
+                  label={<span className="node-pool-group-label">独占池</span>}
+                >
+                  {exclusiveNodes.map(renderNodeOption)}
+                </Select.OptGroup>
+              )}
+            </Select>
+            <div className="node-pool-legend">
+              <span className="node-pool-legend-item">
+                <span className="node-pool-dot node-pool-dot-shared" />
+                共享池
+              </span>
+              <span className="node-pool-legend-item">
+                <span className="node-pool-dot node-pool-dot-exclusive" />
+                独占池
+              </span>
+            </div>
+          </>
+        );
+      })()}
     </Form.Item>
   );
 
@@ -466,9 +515,8 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
     if (!nodeInfo) return null;
     return (
       <Form.Item
-        label={isSharing ? "选择 GPU 卡 *" : "选择 GPU 卡"}
-        validateStatus={isSharing && selectedGPUDevices.length === 0 ? 'error' : undefined}
-        help={isSharing && selectedGPUDevices.length === 0 ? '共享模式下必须选择 GPU 卡' : undefined}
+        label="选择 GPU 卡（可选）"
+        help={isSharing ? '不选择 GPU 卡时，将按 GPU 数量自动选择热度更低的卡' : undefined}
       >
         <GPUSelector
           slots={nodeInfo.slots}
@@ -511,7 +559,7 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
       <Form
         form={form}
         layout="vertical"
-        initialValues={{ gpuCount: 1, cpu: '4', memory: '8Gi' }}
+        initialValues={{ gpuCount: 1, cpu: '4', memory: '8Gi', shmSize: '1Gi' }}
         className="create-pod-form"
       >
         <div className={showRightPanel ? 'create-pod-layout' : ''}>
@@ -583,13 +631,32 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
               </Form.Item>
             </div>
 
-            {/* GPU 数量选择（CPU Only 模式和共享模式下隐藏） */}
-            {!isCPUOnly && !isSharing && (
+            <Form.Item
+              label="共享内存 (/dev/shm)"
+              name="shmSize"
+              rules={[
+                { required: true, message: '请输入共享内存大小' },
+                { pattern: /^[0-9]+(\.[0-9]+)?(Mi|Gi|Ti)$/, message: '格式如 1Gi, 512Mi' },
+              ]}
+            >
+              <AutoComplete
+                placeholder="选择或输入"
+                options={(config?.ui?.shmSizeOptions || ['512Mi', '1Gi', '2Gi', '4Gi']).map((size: string) => ({
+                  value: size,
+                  label: size,
+                }))}
+              />
+            </Form.Item>
+
+            {/* GPU 数量选择（非 CPU Only） */}
+            {!isCPUOnly && (
               <Form.Item
                 label="GPU 数量"
                 name="gpuCount"
                 rules={[{ required: !isCPUOnly, message: '请选择 GPU 数量' }]}
-                help={selectedGPUDevices.length > 0 ? `已选择 ${selectedGPUDevices.length} 张卡` : undefined}
+                help={selectedGPUDevices.length > 0
+                  ? `已手动选择 ${selectedGPUDevices.length} 张卡`
+                  : (isSharing ? '共享模式下可仅填写数量，系统将自动选择节点和卡' : undefined)}
               >
                 <InputNumber
                   min={1}
@@ -607,12 +674,22 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
               </Form.Item>
             )}
 
-            {/* 共享模式显示已选 GPU 数量（非 CPU Only） */}
+            {/* 共享模式调度提示（非 CPU Only） */}
             {isSharing && !isCPUOnly && (
               <div className="sharing-gpu-count">
-                <Text>已选择 GPU: </Text>
-                <Text strong>{selectedGPUDevices.length}</Text>
-                <Text type="secondary"> 张</Text>
+                {selectedGPUDevices.length > 0 ? (
+                  <>
+                    <Text>当前模式: </Text>
+                    <Text strong>手动指定</Text>
+                    <Text type="secondary">（{selectedGPUDevices.length} 张）</Text>
+                  </>
+                ) : (
+                  <>
+                    <Text>当前模式: </Text>
+                    <Text strong>自动分配</Text>
+                    <Text type="secondary">（{selectedGPUCount} 张）</Text>
+                  </>
+                )}
               </div>
             )}
 
@@ -778,8 +855,14 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
                   <div className="gpu-selection-panel">
                     <div className="gpu-selection-panel-title">
                       <EnvironmentOutlined />
-                      <span>选择节点和 GPU 卡（必填）</span>
+                      <span>节点与 GPU 卡（选填）</span>
                     </div>
+                    <Alert
+                      message="可选手动指定；留空时将按热力图负载自动分配"
+                      type="info"
+                      showIcon
+                      style={{ marginBottom: 12 }}
+                    />
                     {renderNodeSelector()}
                     {selectedNode && (hasPrometheus || isSharing) && renderGPUSelector()}
                   </div>

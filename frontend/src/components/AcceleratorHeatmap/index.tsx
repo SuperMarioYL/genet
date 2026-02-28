@@ -7,6 +7,10 @@ import './AcceleratorHeatmap.css';
 
 const { Text } = Typography;
 
+const getPoolLabel = (poolType?: string): string => {
+  return poolType === 'exclusive' ? '独占池' : '共享池';
+};
+
 interface AcceleratorHeatmapProps {
   refreshInterval?: number;
   onError?: (error: Error) => void;
@@ -133,6 +137,8 @@ const NodeRow: React.FC<{
   maxDevices: number;
   onPodClick?: (podName: string, namespace: string) => void;
 }> = ({ node, maxDevices, onPodClick }) => {
+  const poolType = node.poolType === 'exclusive' ? 'exclusive' : 'shared';
+
   return (
     <div className="node-row">
       <div className="node-info-line">
@@ -141,6 +147,7 @@ const NodeRow: React.FC<{
         <span className="node-ip">{node.nodeIP || '-'}</span>
         <span className="node-separator">|</span>
         <span className="device-type">{node.deviceType || '-'}</span>
+        <span className={`pool-badge pool-badge-${poolType}`}>{getPoolLabel(poolType)}</span>
       </div>
       <div className="device-slots">
         {node.slots.map((slot) => (
@@ -167,6 +174,31 @@ const AcceleratorGroupView: React.FC<{
 }> = ({ group, onPodClick }) => {
   // 找出最大设备数用于对齐
   const maxDevices = Math.max(...group.nodes.map(n => n.totalDevices), 8);
+  const sharedNodes = group.nodes.filter((node) => node.poolType !== 'exclusive');
+  const exclusiveNodes = group.nodes.filter((node) => node.poolType === 'exclusive');
+
+  const renderPoolSection = (title: string, nodes: NodeGPUInfo[], poolType: 'shared' | 'exclusive') => {
+    if (nodes.length === 0) return null;
+    const total = nodes.reduce((sum, node) => sum + node.totalDevices, 0);
+    const used = nodes.reduce((sum, node) => sum + node.usedDevices, 0);
+
+    return (
+      <div className="pool-section">
+        <div className="pool-section-header">
+          <span className={`pool-badge pool-badge-${poolType}`}>{title}</span>
+          <span className="pool-section-stats">{used}/{total}</span>
+        </div>
+        {nodes.map((node) => (
+          <NodeRow
+            key={node.nodeName}
+            node={node}
+            maxDevices={maxDevices}
+            onPodClick={onPodClick}
+          />
+        ))}
+      </div>
+    );
+  };
 
   return (
     <div className="accelerator-group">
@@ -184,15 +216,8 @@ const AcceleratorGroupView: React.FC<{
             ))}
           </div>
         </div>
-        {/* 节点行 */}
-        {group.nodes.map((node) => (
-          <NodeRow
-            key={node.nodeName}
-            node={node}
-            maxDevices={maxDevices}
-            onPodClick={onPodClick}
-          />
-        ))}
+        {renderPoolSection('共享池', sharedNodes, 'shared')}
+        {renderPoolSection('独占池', exclusiveNodes, 'exclusive')}
       </div>
     </div>
   );

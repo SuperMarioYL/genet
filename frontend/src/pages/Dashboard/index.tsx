@@ -1,10 +1,11 @@
-import { CloudDownloadOutlined, HeatMapOutlined, PlusOutlined, ReloadOutlined, SwapOutlined } from '@ant-design/icons';
+import { CloudDownloadOutlined, HeatMapOutlined, KeyOutlined, PlusOutlined, ReloadOutlined, SwapOutlined } from '@ant-design/icons';
 import { Button, Col, Empty, Layout, message, Modal, Row, Space, Statistic, Tag, Typography } from 'antd';
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import AcceleratorHeatmap from '../../components/AcceleratorHeatmap';
 import GlassCard from '../../components/GlassCard';
 import ThemeToggle from '../../components/ThemeToggle';
-import { downloadKubeconfig, getClusterInfo, getConfig, getKubeconfig, listPods } from '../../services/api';
+import { downloadKubeconfig, getAdminMe, getClusterInfo, getConfig, getKubeconfig, listPods } from '../../services/api';
 import { getCleanupLabel } from '../../utils/cleanup';
 import CreatePodModal from './CreatePodModal';
 import './index.css';
@@ -14,6 +15,7 @@ const { Text, Paragraph } = Typography;
 const { Header, Content } = Layout;
 
 const Dashboard: React.FC = () => {
+  const navigate = useNavigate();
   const [pods, setPods] = useState<any[]>([]);
   const [quota, setQuota] = useState<any>({ podUsed: 0, podLimit: 5, gpuUsed: 0, gpuLimit: 8 });
   const [loading, setLoading] = useState(false);
@@ -27,6 +29,7 @@ const Dashboard: React.FC = () => {
   const [cleanupTimezone, setCleanupTimezone] = useState<string>('');
   const [imageTransferModalVisible, setImageTransferModalVisible] = useState(false);
   const [imageTransferConfig, setImageTransferConfig] = useState<any>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const initialLoadDone = React.useRef(false);
 
@@ -65,6 +68,11 @@ const Dashboard: React.FC = () => {
         setImageTransferConfig(config.ui.imageTransfer);
       }
     }).catch(() => {});
+    getAdminMe().then((me) => {
+      setIsAdmin(!!me?.isAdmin);
+    }).catch(() => {
+      setIsAdmin(false);
+    });
     // 每 10 秒轮询一次，提高响应速度
     const timer = setInterval(loadPods, 10000);
     return () => clearInterval(timer);
@@ -148,6 +156,15 @@ const Dashboard: React.FC = () => {
                 className="action-btn glass-button"
               >
                 镜像摆渡
+              </Button>
+            )}
+            {isAdmin && (
+              <Button
+                icon={<KeyOutlined />}
+                onClick={() => navigate('/admin/apikeys')}
+                className="action-btn glass-button"
+              >
+                API Keys
               </Button>
             )}
             <Button

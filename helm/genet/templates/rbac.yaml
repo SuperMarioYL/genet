@@ -58,7 +58,7 @@ rules:
 # Nodes (for getting node IPs)
 - apiGroups: [""]
   resources: ["nodes"]
-  verbs: ["get", "list"]
+  verbs: ["get", "list", "watch", "patch", "update"]
 
 # Kaniko Jobs (image building)
 - apiGroups: ["batch"]

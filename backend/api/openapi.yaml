@@ -2,10 +2,10 @@ openapi: "3.0.3"
 info:
   title: Genet Open API
   description: |
-    Kubernetes Pod/Job CRUD API with fixed namespace enforcement.
-    - Request body uses YAML format (Content-Type: application/yaml)
-    - Response uses JSON format
-    - Namespace field in request body will be ignored and overridden by server
+    Genet OpenAPI for Pod/Job operations.
+    - Pod APIs use JSON request/response and align with Create Pod UI capabilities.
+    - Job APIs keep YAML request format (K8s native Job spec).
+    - Pod APIs require API key bound with `ownerUser` in admin page.
   version: "1.0.0"
 
 servers:
@@ -20,41 +20,37 @@ paths:
     post:
       summary: Create Pod
       description: |
-        Create a Pod in the configured namespace.
-        Request body is YAML format (K8s native Pod spec).
-        Any namespace in request body will be overridden by server.
+        Create a Pod using JSON request fields consistent with the web UI "Create Pod" form.
+        The effective namespace is derived from API key bound `ownerUser` (user-{identifier}).
       operationId: createPod
       tags: [Pods]
       requestBody:
         required: true
         content:
-          application/yaml:
+          application/json:
             schema:
-              $ref: "#/components/schemas/Pod"
-            example: |
-              metadata:
-                name: my-pod
-                labels:
-                  app: my-app
-              spec:
-                containers:
-                  - name: main
-                    image: nginx:latest
-                    resources:
-                      requests:
-                        cpu: "1"
-                        memory: 2Gi
-                      limits:
-                        cpu: "2"
-                        memory: 4Gi
-                restartPolicy: Always
+              $ref: "#/components/schemas/OpenAPIPodCreateRequest"
+            example:
+              image: "nvidia/cuda:12.0.0-base-ubuntu22.04"
+              gpuType: "NVIDIA A100"
+              gpuCount: 1
+              cpu: "8"
+              memory: "32Gi"
+              shmSize: "1Gi"
+              nodeName: "gpu-node-01"
+              gpuDevices: [0]
+              name: "train"
+              userMounts:
+                - hostPath: "/mnt/datasets"
+                  mountPath: "/workspace/datasets"
+                  readOnly: true
       responses:
         "201":
           description: Pod created
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Pod"
+                $ref: "#/components/schemas/OpenAPIPodCreateResponse"
         "400":
           description: Invalid request body
           content:
@@ -63,8 +59,10 @@ paths:
                 $ref: "#/components/schemas/Error"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "409":
-          description: Pod already exists
+          description: Conflict (for example active commit job or name conflict)
           content:
             application/json:
               schema:
@@ -74,36 +72,31 @@ paths:
 
     get:
       summary: List Pods
-      description: List all Pods created via Open API in the configured namespace.
+      description: List Pods for API key bound `ownerUser`.
       operationId: listPods
       tags: [Pods]
-      parameters:
-        - name: labelSelector
-          in: query
-          description: "Additional K8s label selector (genet.io/open-api=true is always appended)"
-          schema:
-            type: string
-          example: app=my-app
       responses:
         "200":
           description: Pod list
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PodList"
+                $ref: "#/components/schemas/OpenAPIPodList"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "500":
           $ref: "#/components/responses/InternalError"
 
-  /api/open/pods/{name}:
+  /api/open/pods/{id}:
     parameters:
-      - name: name
+      - name: id
         in: path
         required: true
         schema:
           type: string
-        description: Pod name
+        description: Pod ID (same as Pod name)
 
     get:
       summary: Get Pod
@@ -115,9 +108,11 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Pod"
+                $ref: "#/components/schemas/OpenAPIPod"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -125,22 +120,25 @@ paths:
 
     put:
       summary: Update Pod
-      description: "Update an existing Pod. Request body is YAML. Namespace will be overridden."
+      description: |
+        Update Pod using JSON payload (same fields as create).
+        Current behavior is **recreate**: delete old pod, then create a new pod with request fields.
+        If `name` is omitted, server tries to infer custom suffix from path `id` and reuse it.
       operationId: updatePod
       tags: [Pods]
       requestBody:
         required: true
         content:
-          application/yaml:
+          application/json:
             schema:
-              $ref: "#/components/schemas/Pod"
+              $ref: "#/components/schemas/OpenAPIPodUpdateRequest"
       responses:
-        "200":
-          description: Pod updated
+        "201":
+          description: Pod recreated
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Pod"
+                $ref: "#/components/schemas/OpenAPIPodCreateResponse"
         "400":
           description: Invalid request body
           content:
@@ -149,8 +147,16 @@ paths:
                 $ref: "#/components/schemas/Error"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: Conflict (for example active commit job)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -167,6 +173,8 @@ paths:
                 $ref: "#/components/schemas/Message"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -327,42 +335,186 @@ components:
     BearerAuth:
       type: http
       scheme: bearer
-      description: "API Key configured in config.yaml openAPI.apiKeys"
+      description: "API Key from admin page (preferred) or legacy config.yaml openAPI.apiKeys"
 
   schemas:
-    Pod:
+    OpenAPIPodCreateRequest:
       type: object
-      description: "Kubernetes Pod (corev1.Pod). Namespace field will be ignored and overridden by server."
+      description: |
+        JSON request for creating a Pod.
+        Fields are aligned with the web UI "Create Pod" form.
+        All resource values keep Kubernetes quantity format (for example `32Gi`, `500m`).
       properties:
-        apiVersion:
+        image:
           type: string
-          example: v1
-        kind:
+          description: Container image (required). Supports full image reference with optional tag.
+          example: "nvidia/cuda:12.0.0-base-ubuntu22.04"
+        gpuType:
           type: string
-          example: Pod
-        metadata:
-          $ref: "#/components/schemas/ObjectMeta"
-        spec:
-          type: object
-          description: "K8s PodSpec - see https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#podspec-v1-core"
-        status:
-          type: object
-          description: "K8s PodStatus (read-only, returned by server)"
-
-    PodList:
-      type: object
-      properties:
-        apiVersion:
+          description: GPU type display name. Optional when `gpuCount` is 0.
+          example: "NVIDIA A100"
+        gpuCount:
+          type: integer
+          minimum: 0
+          maximum: 8
+          description: Requested GPU count. `0` means CPU-only pod.
+          example: 1
+        cpu:
           type: string
-        kind:
+          description: CPU request (UI option value, for example `8`).
+          example: "8"
+        memory:
           type: string
-          example: PodList
-        metadata:
-          type: object
-        items:
+          description: Memory request in Kubernetes quantity format.
+          example: "32Gi"
+        shmSize:
+          type: string
+          description: Shared memory size mounted to `/dev/shm`.
+          example: "1Gi"
+        nodeName:
+          type: string
+          description: Optional fixed scheduling node.
+          example: "gpu-node-01"
+        gpuDevices:
           type: array
+          description: |
+            Optional explicit GPU device indices on selected node.
+            When provided, effective GPU count equals `gpuDevices.length`.
           items:
-            $ref: "#/components/schemas/Pod"
+            type: integer
+          example: [0, 1]
+        name:
+          type: string
+          description: |
+            Optional custom Pod name suffix (for example `train`, `dev`).
+            Server generates full name as `pod-{userIdentifier}-{name|timestamp}`.
+          example: "train"
+        userMounts:
+          type: array
+          description: Optional custom hostPath mounts (requires admin enabling user mounts).
+          items:
+            $ref: "#/components/schemas/OpenAPIUserMount"
+      required:
+        - image
+        - gpuCount
+
+    OpenAPIPodUpdateRequest:
+      allOf:
+        - $ref: "#/components/schemas/OpenAPIPodCreateRequest"
+      description: |
+        JSON request for Pod update. Current implementation performs recreate.
+        Same fields as create request.
+
+    OpenAPIUserMount:
+      type: object
+      properties:
+        hostPath:
+          type: string
+          description: Host machine path to mount.
+          example: "/mnt/datasets"
+        mountPath:
+          type: string
+          description: Container mount path.
+          example: "/workspace/datasets"
+        readOnly:
+          type: boolean
+          description: Whether mount is read-only.
+          default: false
+      required:
+        - hostPath
+        - mountPath
+
+    OpenAPIPodCreateResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Creation result message.
+          example: "Pod 创建成功"
+        id:
+          type: string
+          description: Pod ID / name.
+          example: "pod-alice-train"
+        name:
+          type: string
+          description: Pod name (same as id).
+          example: "pod-alice-train"
+
+    OpenAPIPod:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Pod ID / name.
+        name:
+          type: string
+          description: Pod name.
+        namespace:
+          type: string
+          description: Namespace of this pod.
+        container:
+          type: string
+          description: Main container name.
+        status:
+          type: string
+          description: Normalized status used by UI.
+        phase:
+          type: string
+          description: Raw Kubernetes Pod phase.
+        image:
+          type: string
+          description: Container image.
+        gpuType:
+          type: string
+          description: GPU type label.
+        gpuCount:
+          type: integer
+          description: Requested GPU count.
+        cpu:
+          type: string
+          description: CPU request.
+        memory:
+          type: string
+          description: Memory request.
+        createdAt:
+          type: string
+          format: date-time
+          description: Pod creation timestamp.
+        nodeIP:
+          type: string
+          description: Node IP where pod is scheduled.
+        protectedUntil:
+          type: string
+          format: date-time
+          nullable: true
+          description: Protection deadline if set.
+
+    OpenAPIPodList:
+      type: object
+      properties:
+        pods:
+          type: array
+          description: Pod list for current owner user.
+          items:
+            $ref: "#/components/schemas/OpenAPIPod"
+        quota:
+          $ref: "#/components/schemas/OpenAPIQuota"
+
+    OpenAPIQuota:
+      type: object
+      properties:
+        podUsed:
+          type: integer
+          description: Used pod count.
+        podLimit:
+          type: integer
+          description: Pod quota limit.
+        gpuUsed:
+          type: integer
+          description: Used GPU count.
+        gpuLimit:
+          type: integer
+          description: GPU quota limit.
 
     Job:
       type: object
@@ -438,6 +590,14 @@ components:
             $ref: "#/components/schemas/Error"
           example:
             error: "Missing or invalid Authorization header"
+    Forbidden:
+      description: API key lacks required owner binding or scope
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: "forbidden: api key must bind ownerUser"
     NotFound:
       description: Resource not found
       content:

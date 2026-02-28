@@ -9,32 +9,33 @@ import (
 
 // Config 系统配置
 type Config struct {
-	PodLimitPerUser  int                 `yaml:"podLimitPerUser" json:"podLimitPerUser"`
-	GpuLimitPerUser  int                 `yaml:"gpuLimitPerUser" json:"gpuLimitPerUser"`
-	GPU              GPUConfig           `yaml:"gpu" json:"gpu"`
-	PresetImages     []PresetImage       `yaml:"presetImages" json:"presetImages"`
-	UI               UIConfig            `yaml:"ui" json:"ui"`
-	Cleanup          CleanupConfig       `yaml:"cleanup" json:"cleanup"`
-	Storage          StorageConfig       `yaml:"storage" json:"storage"`
-	Pod              PodConfig           `yaml:"pod" json:"pod"`
-	OAuth            OAuthConfig         `yaml:"oauth" json:"oauth"`
-	OIDCProvider     OIDCProviderConfig  `yaml:"oidcProvider" json:"oidcProvider"`
-	Cluster          ClusterConfig       `yaml:"cluster" json:"cluster"`
-	UserRBAC         UserRBACConfig      `yaml:"userRBAC" json:"userRBAC"`
-	Proxy            ProxyConfig         `yaml:"proxy" json:"proxy"`
-	Registry         RegistryConfig      `yaml:"registry" json:"registry"`
-	Images           ImagesConfig        `yaml:"images" json:"images"`
-	Kubernetes       KubernetesConfig    `yaml:"kubernetes" json:"kubernetes"`
-	Kubeconfig    KubeconfigConfig `yaml:"kubeconfig" json:"kubeconfig"`
-	PrometheusURL string           `yaml:"prometheusURL" json:"prometheusURL"` // Prometheus 地址，如 http://prometheus.monitoring:9090
-	OpenAPI       OpenAPIConfig    `yaml:"openAPI" json:"openAPI"`
+	PodLimitPerUser int                `yaml:"podLimitPerUser" json:"podLimitPerUser"`
+	GpuLimitPerUser int                `yaml:"gpuLimitPerUser" json:"gpuLimitPerUser"`
+	AdminUsers      []string           `yaml:"adminUsers" json:"adminUsers"`
+	GPU             GPUConfig          `yaml:"gpu" json:"gpu"`
+	PresetImages    []PresetImage      `yaml:"presetImages" json:"presetImages"`
+	UI              UIConfig           `yaml:"ui" json:"ui"`
+	Cleanup         CleanupConfig      `yaml:"cleanup" json:"cleanup"`
+	Storage         StorageConfig      `yaml:"storage" json:"storage"`
+	Pod             PodConfig          `yaml:"pod" json:"pod"`
+	OAuth           OAuthConfig        `yaml:"oauth" json:"oauth"`
+	OIDCProvider    OIDCProviderConfig `yaml:"oidcProvider" json:"oidcProvider"`
+	Cluster         ClusterConfig      `yaml:"cluster" json:"cluster"`
+	UserRBAC        UserRBACConfig     `yaml:"userRBAC" json:"userRBAC"`
+	Proxy           ProxyConfig        `yaml:"proxy" json:"proxy"`
+	Registry        RegistryConfig     `yaml:"registry" json:"registry"`
+	Images          ImagesConfig       `yaml:"images" json:"images"`
+	Kubernetes      KubernetesConfig   `yaml:"kubernetes" json:"kubernetes"`
+	Kubeconfig      KubeconfigConfig   `yaml:"kubeconfig" json:"kubeconfig"`
+	PrometheusURL   string             `yaml:"prometheusURL" json:"prometheusURL"` // Prometheus 地址，如 http://prometheus.monitoring:9090
+	OpenAPI         OpenAPIConfig      `yaml:"openAPI" json:"openAPI"`
 }
 
 // OpenAPIConfig Open API 配置
 type OpenAPIConfig struct {
-	Enabled   bool     `yaml:"enabled" json:"enabled"`     // 是否启用 Open API
-	Namespace string   `yaml:"namespace" json:"namespace"` // 固定命名空间，所有 Open API 资源在此命名空间下
-	APIKeys   []string `yaml:"apiKeys" json:"-"`           // API Key 列表，json:"-" 防止暴露
+	Enabled   bool     `yaml:"enabled" json:"enabled"`           // 是否启用 Open API
+	Namespace string   `yaml:"namespace" json:"namespace"`       // 固定命名空间，所有 Open API 资源在此命名空间下
+	APIKeys   []string `yaml:"apiKeys" json:"apiKeys,omitempty"` // 静态 API Key 列表（兼容旧版）
 }
 
 // ImagesConfig 系统依赖镜像配置
@@ -155,9 +156,9 @@ type StorageConfig struct {
 //   - {volumeName} : 存储卷名称，即 Name 字段的值
 type StorageVolume struct {
 	// 基础配置
-	Name        string `yaml:"name" json:"name"`                                  // 卷名称（必填）
-	MountPath   string `yaml:"mountPath" json:"mountPath"`                        // 挂载路径（必填）
-	ReadOnly    bool   `yaml:"readOnly" json:"readOnly"`                          // 是否只读，默认 false
+	Name        string `yaml:"name" json:"name"`                                   // 卷名称（必填）
+	MountPath   string `yaml:"mountPath" json:"mountPath"`                         // 挂载路径（必填）
+	ReadOnly    bool   `yaml:"readOnly" json:"readOnly"`                           // 是否只读，默认 false
 	Description string `yaml:"description,omitempty" json:"description,omitempty"` // 描述信息，用于前端展示
 
 	// 存储类型: "pvc" 或 "hostpath"
@@ -247,7 +248,30 @@ type GPUConfig struct {
 	// 默认值 0 表示不限制
 	MaxPodsPerGPU int `yaml:"maxPodsPerGPU,omitempty" json:"maxPodsPerGPU,omitempty"`
 
+	// 节点池配置（共享池/非共享池）
+	NodePool NodePoolConfig `yaml:"nodePool,omitempty" json:"nodePool,omitempty"`
+
 	AvailableTypes []GPUType `yaml:"availableTypes"`
+}
+
+// NodePoolConfig 节点池配置
+type NodePoolConfig struct {
+	// 是否启用节点池污点同步
+	Enabled bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+
+	// 非共享池标签：当节点满足该标签时，后端自动为节点打污点
+	// 例如 key=genet.io/node-pool, value=non-shared
+	NonSharedLabelKey   string `yaml:"nonSharedLabelKey,omitempty" json:"nonSharedLabelKey,omitempty"`
+	NonSharedLabelValue string `yaml:"nonSharedLabelValue,omitempty" json:"nonSharedLabelValue,omitempty"`
+
+	// 非共享池污点配置
+	// 例如 key=genet.io/non-shared-pool, value=true, effect=NoSchedule
+	NonSharedTaintKey    string `yaml:"nonSharedTaintKey,omitempty" json:"nonSharedTaintKey,omitempty"`
+	NonSharedTaintValue  string `yaml:"nonSharedTaintValue,omitempty" json:"nonSharedTaintValue,omitempty"`
+	NonSharedTaintEffect string `yaml:"nonSharedTaintEffect,omitempty" json:"nonSharedTaintEffect,omitempty"`
+
+	// 同步间隔（秒），默认 60
+	SyncIntervalSeconds int `yaml:"syncIntervalSeconds,omitempty" json:"syncIntervalSeconds,omitempty"`
 }
 
 // GPUType GPU 类型（也支持 CPU Only 模式）
@@ -358,11 +382,13 @@ type ImageTransferConfig struct {
 type UIConfig struct {
 	EnableJupyter     bool                 `yaml:"enableJupyter" json:"enableJupyter"`
 	EnableCustomImage bool                 `yaml:"enableCustomImage" json:"enableCustomImage"`
-	CPUOptions        []string             `yaml:"cpuOptions" json:"cpuOptions"`                           // CPU 选项，如 ["2", "4", "8"]
-	MemoryOptions     []string             `yaml:"memoryOptions" json:"memoryOptions"`                     // 内存选项，如 ["4Gi", "8Gi", "16Gi"]
-	DefaultCPU        string               `yaml:"defaultCPU" json:"defaultCPU"`                           // 默认 CPU
-	DefaultMemory     string               `yaml:"defaultMemory" json:"defaultMemory"`                     // 默认内存
-	ImageTransfer     *ImageTransferConfig `yaml:"imageTransfer,omitempty" json:"imageTransfer,omitempty"` // 镜像摆渡配置（可选）
+	CPUOptions        []string             `yaml:"cpuOptions" json:"cpuOptions"`                             // CPU 选项，如 ["2", "4", "8"]
+	MemoryOptions     []string             `yaml:"memoryOptions" json:"memoryOptions"`                       // 内存选项，如 ["4Gi", "8Gi", "16Gi"]
+	ShmSizeOptions    []string             `yaml:"shmSizeOptions,omitempty" json:"shmSizeOptions,omitempty"` // 共享内存选项，如 ["512Mi", "1Gi", "2Gi"]
+	DefaultCPU        string               `yaml:"defaultCPU" json:"defaultCPU"`                             // 默认 CPU
+	DefaultMemory     string               `yaml:"defaultMemory" json:"defaultMemory"`                       // 默认内存
+	DefaultShmSize    string               `yaml:"defaultShmSize,omitempty" json:"defaultShmSize,omitempty"` // 默认共享内存大小
+	ImageTransfer     *ImageTransferConfig `yaml:"imageTransfer,omitempty" json:"imageTransfer,omitempty"`   // 镜像摆渡配置（可选）
 }
 
 // CleanupConfig Pod 清理配置
@@ -391,7 +417,17 @@ func DefaultConfig() *Config {
 	return &Config{
 		PodLimitPerUser: 5,
 		GpuLimitPerUser: 8,
+		AdminUsers:      []string{},
 		GPU: GPUConfig{
+			NodePool: NodePoolConfig{
+				Enabled:              true,
+				NonSharedLabelKey:    "genet.io/node-pool",
+				NonSharedLabelValue:  "non-shared",
+				NonSharedTaintKey:    "genet.io/non-shared-pool",
+				NonSharedTaintValue:  "true",
+				NonSharedTaintEffect: "NoSchedule",
+				SyncIntervalSeconds:  60,
+			},
 			AvailableTypes: []GPUType{
 				{
 					Name:         "NVIDIA A100",
@@ -410,8 +446,10 @@ func DefaultConfig() *Config {
 			EnableCustomImage: true,
 			CPUOptions:        []string{"2", "4", "8", "16"},
 			MemoryOptions:     []string{"4Gi", "8Gi", "16Gi", "32Gi"},
+			ShmSizeOptions:    []string{"512Mi", "1Gi", "2Gi", "4Gi"},
 			DefaultCPU:        "4",
 			DefaultMemory:     "8Gi",
+			DefaultShmSize:    "1Gi",
 		},
 		Cleanup: CleanupConfig{
 			Schedule: "0 23 * * *",

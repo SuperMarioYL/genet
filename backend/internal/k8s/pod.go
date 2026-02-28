@@ -28,6 +28,7 @@ type PodSpec struct {
 	GPUType    string
 	CPU        string // CPU 核数，如 "4"
 	Memory     string // 内存大小，如 "8Gi"
+	ShmSize    string // 共享内存大小（挂载到 /dev/shm），如 "1Gi"
 	HTTPProxy  string // HTTP 代理
 	HTTPSProxy string // HTTPS 代理
 	NoProxy    string // 不代理列表
@@ -158,7 +159,9 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 		container.SecurityContext = c.config.Pod.SecurityContext
 	} else {
 		// 默认安全上下文
+		privileged := true
 		container.SecurityContext = &corev1.SecurityContext{
+			Privileged: &privileged,
 			Capabilities: &corev1.Capabilities{
 				Add: []corev1.Capability{"SYS_ADMIN"},
 			},
@@ -302,11 +305,21 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 	}
 
 	// 构建存储卷（支持多存储卷配置）
-	storageVolumes := c.config.Storage.GetEffectiveVolumes()
 	var volumes []corev1.Volume
 	var volumeMounts []corev1.VolumeMount
 	var storageTypeAnnotation string
 
+	// 配置共享内存卷（/dev/shm）
+	if spec.ShmSize != "" {
+		shmVolume, shmMount, err := buildShmVolume(spec.ShmSize)
+		if err != nil {
+			return nil, err
+		}
+		volumes = append(volumes, shmVolume)
+		volumeMounts = append(volumeMounts, shmMount)
+	}
+
+	storageVolumes := c.config.Storage.GetEffectiveVolumes()
 	for _, storageVol := range storageVolumes {
 		volume, volumeMount := c.buildStorageVolume(storageVol, spec.Username, spec.Name)
 		volumes = append(volumes, volume)
@@ -372,6 +385,7 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 				"genet.io/gpu-count":    fmt.Sprintf("%d", spec.GPUCount),
 				"genet.io/cpu":          cpuRequest,
 				"genet.io/memory":       memoryRequest,
+				"genet.io/shm-size":     spec.ShmSize,
 				"genet.io/image":        spec.Image,
 				"genet.io/storage-type": storageTypeAnnotation,
 				"genet.io/gpu-devices":  intsToCommaString(spec.GPUDevices), // 记录指定的 GPU 卡编号
@@ -684,6 +698,31 @@ func (c *Client) GetPodLogs(ctx context.Context, namespace, name string, tailLin
 	}
 
 	return string(logs), nil
+}
+
+// buildShmVolume 构建 /dev/shm 共享内存卷
+func buildShmVolume(shmSize string) (corev1.Volume, corev1.VolumeMount, error) {
+	qty, err := resource.ParseQuantity(shmSize)
+	if err != nil {
+		return corev1.Volume{}, corev1.VolumeMount{}, fmt.Errorf("无效共享内存大小 %q: %w", shmSize, err)
+	}
+
+	volume := corev1.Volume{
+		Name: "genet-shm",
+		VolumeSource: corev1.VolumeSource{
+			EmptyDir: &corev1.EmptyDirVolumeSource{
+				Medium:    corev1.StorageMediumMemory,
+				SizeLimit: &qty,
+			},
+		},
+	}
+
+	volumeMount := corev1.VolumeMount{
+		Name:      "genet-shm",
+		MountPath: "/dev/shm",
+	}
+
+	return volume, volumeMount, nil
 }
 
 // buildStorageVolume 根据存储卷配置构建 K8s Volume 和 VolumeMount

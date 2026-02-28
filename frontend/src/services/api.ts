@@ -63,6 +63,69 @@ export const logout = () => {
   return api.get('/auth/logout');
 };
 
+export interface AdminMeResponse {
+  username: string;
+  email: string;
+  isAdmin: boolean;
+}
+
+export interface AdminAPIKeyItem {
+  id: string;
+  name: string;
+  ownerUser: string;
+  scope: 'read' | 'write';
+  enabled: boolean;
+  keyPreview?: string;
+  expiresAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+}
+
+export interface AdminAPIKeyListResponse {
+  items: AdminAPIKeyItem[];
+}
+
+export interface CreateAdminAPIKeyRequest {
+  name: string;
+  ownerUser: string;
+  scope: 'read' | 'write';
+  expiresAt?: string;
+}
+
+export interface CreateAdminAPIKeyResponse {
+  item: AdminAPIKeyItem;
+  plaintextKey: string;
+}
+
+export interface UpdateAdminAPIKeyRequest {
+  name?: string;
+  ownerUser?: string;
+  scope?: 'read' | 'write';
+  enabled?: boolean;
+  expiresAt?: string;
+}
+
+export const getAdminMe = (): Promise<AdminMeResponse> => {
+  return api.get('/admin/me');
+};
+
+export const listAdminAPIKeys = (): Promise<AdminAPIKeyListResponse> => {
+  return api.get('/admin/apikeys');
+};
+
+export const createAdminAPIKey = (data: CreateAdminAPIKeyRequest): Promise<CreateAdminAPIKeyResponse> => {
+  return api.post('/admin/apikeys', data);
+};
+
+export const updateAdminAPIKey = (id: string, data: UpdateAdminAPIKeyRequest): Promise<{ item: AdminAPIKeyItem }> => {
+  return api.patch(`/admin/apikeys/${encodeURIComponent(id)}`, data);
+};
+
+export const deleteAdminAPIKey = (id: string): Promise<{ message: string }> => {
+  return api.delete(`/admin/apikeys/${encodeURIComponent(id)}`);
+};
+
 // 配置相关
 export const getConfig = () => {
   return api.get('/config');
@@ -92,6 +155,7 @@ export interface CreatePodRequest {
   gpuCount: number;
   cpu?: string;
   memory?: string;
+  shmSize?: string;
   // 高级配置
   nodeName?: string;      // 指定调度节点（可选）
   gpuDevices?: number[];  // 指定 GPU 卡编号（可选）
@@ -233,6 +297,7 @@ export interface DeviceSlot {
 export interface NodeGPUInfo {
   nodeName: string;
   nodeIP: string;
+  poolType?: 'shared' | 'exclusive';
   deviceType: string;
   totalDevices: number;
   usedDevices: number;

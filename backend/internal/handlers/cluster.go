@@ -50,6 +50,7 @@ type AcceleratorGroup struct {
 type NodeInfo struct {
 	NodeName            string       `json:"nodeName"`            // 节点名
 	NodeIP              string       `json:"nodeIP"`              // 节点 IP
+	PoolType            string       `json:"poolType"`            // 节点池类型: "shared" | "exclusive"
 	DeviceType          string       `json:"deviceType"`          // 设备型号
 	TotalDevices        int          `json:"totalDevices"`        // 总设备数
 	UsedDevices         int          `json:"usedDevices"`         // 已用设备数
@@ -94,9 +95,9 @@ type GPUOverviewResponse struct {
 
 // Summary 汇总信息
 type Summary struct {
-	TotalDevices int               `json:"totalDevices"` // 总设备数
-	UsedDevices  int               `json:"usedDevices"`  // 已用设备数
-	ByType       map[string]TypeSummary `json:"byType"`  // 按类型汇总
+	TotalDevices int                    `json:"totalDevices"` // 总设备数
+	UsedDevices  int                    `json:"usedDevices"`  // 已用设备数
+	ByType       map[string]TypeSummary `json:"byType"`       // 按类型汇总
 }
 
 // TypeSummary 类型汇总
@@ -104,6 +105,11 @@ type TypeSummary struct {
 	Total int `json:"total"` // 总数
 	Used  int `json:"used"`  // 已用
 }
+
+const (
+	defaultNonSharedLabelKey   = "genet.io/node-pool"
+	defaultNonSharedLabelValue = "non-shared"
+)
 
 // GetGPUOverview 获取 GPU 概览
 func (h *ClusterHandler) GetGPUOverview(c *gin.Context) {
@@ -290,6 +296,7 @@ func (h *ClusterHandler) buildAcceleratorGroup(
 		nodeInfo := NodeInfo{
 			NodeName:            node.Name,
 			NodeIP:              getNodeIP(node),
+			PoolType:            getNodePoolType(node, h.config),
 			DeviceType:          getDeviceType(node, accType.Type),
 			TotalDevices:        totalDevices,
 			UsedDevices:         0,
@@ -426,6 +433,33 @@ func getDeviceType(node corev1.Node, accType string) string {
 		return "Ascend 910B"
 	}
 	return ""
+}
+
+func getNodePoolType(node corev1.Node, config *models.Config) string {
+	labelKey := defaultNonSharedLabelKey
+	labelValue := defaultNonSharedLabelValue
+
+	if config != nil {
+		if v := strings.TrimSpace(config.GPU.NodePool.NonSharedLabelKey); v != "" {
+			labelKey = v
+		}
+		if v := strings.TrimSpace(config.GPU.NodePool.NonSharedLabelValue); v != "" {
+			labelValue = v
+		}
+	}
+
+	if len(node.Labels) == 0 || labelKey == "" {
+		return "shared"
+	}
+
+	value, ok := node.Labels[labelKey]
+	if !ok {
+		return "shared"
+	}
+	if labelValue == "" || strings.TrimSpace(value) == labelValue {
+		return "exclusive"
+	}
+	return "shared"
 }
 
 // getPodGPUCount 获取 Pod 的 GPU 数量
