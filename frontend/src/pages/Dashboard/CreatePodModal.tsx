@@ -812,7 +812,7 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
               rules={[
                 {
                   pattern: /^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/,
-                  message: '只能包含小写字母、数字和连字符，不能以连字符开头或结尾',
+                  message: '仅支持a~z、0～9 和"-"，且不能以"-"开头或结尾',
                 },
                 { max: 20, message: '最多 20 个字符' },
               ]}

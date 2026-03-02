@@ -415,31 +415,6 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 		pod.Spec.DNSConfig = c.config.Pod.DNSConfig
 	}
 
-	// 如果指定了节点名称，使用 nodeAffinity 调度（而非直接设置 NodeName）
-	// 直接设置 NodeName 会绕过调度器，导致 WaitForFirstConsumer 类型的 PVC 无法获得 selected-node annotation
-	if spec.NodeName != "" {
-		if pod.Spec.Affinity == nil {
-			pod.Spec.Affinity = &corev1.Affinity{}
-		}
-		pod.Spec.Affinity.NodeAffinity = &corev1.NodeAffinity{
-			RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
-				NodeSelectorTerms: []corev1.NodeSelectorTerm{
-					{
-						MatchExpressions: []corev1.NodeSelectorRequirement{
-							{
-								Key:      "kubernetes.io/hostname",
-								Operator: corev1.NodeSelectorOpIn,
-								Values:   []string{spec.NodeName},
-							},
-						},
-					},
-				},
-			},
-		}
-		c.log.Debug("Pod scheduled to specific node via nodeAffinity",
-			zap.String("nodeName", spec.NodeName))
-	}
-
 	// 应用 NodeSelector（合并全局配置和 GPU 特定配置）
 	if c.config.Pod.NodeSelector != nil {
 		pod.Spec.NodeSelector = make(map[string]string)
@@ -449,32 +424,15 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 		}
 	}
 
-	// 应用全局 Affinity（与已设置的 nodeAffinity 合并，而非覆盖）
-	if c.config.Pod.Affinity != nil {
-		if pod.Spec.Affinity == nil {
-			pod.Spec.Affinity = c.config.Pod.Affinity
-		} else {
-			// 保留已设置的 NodeAffinity（指定节点），合并其他 Affinity 配置
-			existingNodeAffinity := pod.Spec.Affinity.NodeAffinity
-			*pod.Spec.Affinity = *c.config.Pod.Affinity
-			if existingNodeAffinity != nil {
-				if pod.Spec.Affinity.NodeAffinity == nil {
-					pod.Spec.Affinity.NodeAffinity = existingNodeAffinity
-				} else {
-					// 合并 RequiredDuringScheduling 的 NodeSelectorTerms
-					if existingNodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution != nil {
-						if pod.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution == nil {
-							pod.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution = existingNodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution
-						} else {
-							pod.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms = append(
-								existingNodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms,
-								pod.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms...,
-							)
-						}
-					}
-				}
-			}
-		}
+	// 构建 Affinity：
+	// 1. 深拷贝全局配置，避免跨请求污染
+	// 2. 当指定节点时，将 hostname 约束按 AND 合并到每个 required term，避免 term 追加导致 OR 放宽
+	pod.Spec.Affinity = buildPodAffinity(c.config.Pod.Affinity, spec.NodeName)
+	// 使用 nodeAffinity（而非 PodSpec.NodeName）可保留调度器参与，
+	// WaitForFirstConsumer 的 PVC 仍可获得 selected-node annotation。
+	if spec.NodeName != "" {
+		c.log.Debug("Pod scheduled to specific node via nodeAffinity",
+			zap.String("nodeName", spec.NodeName))
 	}
 
 	// 添加额外的通用存储（K8s 原生格式）
@@ -900,6 +858,60 @@ func uniqueVolumeName(volumes []corev1.Volume, base string) string {
 		}
 		name = fmt.Sprintf("%s-%d", base, i+1)
 	}
+}
+
+func buildPodAffinity(base *corev1.Affinity, nodeName string) *corev1.Affinity {
+	if base == nil && nodeName == "" {
+		return nil
+	}
+
+	var affinity *corev1.Affinity
+	if base != nil {
+		affinity = base.DeepCopy()
+	} else {
+		affinity = &corev1.Affinity{}
+	}
+
+	if nodeName != "" {
+		enforceNodeNameAffinity(affinity, nodeName)
+	}
+
+	return affinity
+}
+
+func enforceNodeNameAffinity(affinity *corev1.Affinity, nodeName string) {
+	if affinity.NodeAffinity == nil {
+		affinity.NodeAffinity = &corev1.NodeAffinity{}
+	}
+
+	required := affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution
+	hostnameRequirement := corev1.NodeSelectorRequirement{
+		Key:      "kubernetes.io/hostname",
+		Operator: corev1.NodeSelectorOpIn,
+		Values:   []string{nodeName},
+	}
+
+	if required == nil || len(required.NodeSelectorTerms) == 0 {
+		affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution = &corev1.NodeSelector{
+			NodeSelectorTerms: []corev1.NodeSelectorTerm{
+				{
+					MatchExpressions: []corev1.NodeSelectorRequirement{hostnameRequirement},
+				},
+			},
+		}
+		return
+	}
+
+	mergedTerms := make([]corev1.NodeSelectorTerm, 0, len(required.NodeSelectorTerms))
+	for _, term := range required.NodeSelectorTerms {
+		termCopy := corev1.NodeSelectorTerm{
+			MatchExpressions: append([]corev1.NodeSelectorRequirement{}, term.MatchExpressions...),
+			MatchFields:      append([]corev1.NodeSelectorRequirement{}, term.MatchFields...),
+		}
+		termCopy.MatchExpressions = append(termCopy.MatchExpressions, hostnameRequirement)
+		mergedTerms = append(mergedTerms, termCopy)
+	}
+	required.NodeSelectorTerms = mergedTerms
 }
 
 // GetPVCName 获取存储卷对应的 PVC 名称
