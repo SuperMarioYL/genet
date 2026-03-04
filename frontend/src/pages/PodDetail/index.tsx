@@ -322,6 +322,7 @@ const PodDetail: React.FC = () => {
 
   const connections = pod.connections;
   const hasConnections = connections?.ssh?.host && connections?.ssh?.port;
+  const injectedEnvVars = Array.isArray(describe?.injectedEnvVars) ? describe.injectedEnvVars : [];
   const mountRows = (describe?.mounts && describe.mounts.length > 0)
     ? describe.mounts
     : storageVolumes.map((v) => ({
@@ -528,6 +529,26 @@ const PodDetail: React.FC = () => {
                     { title: '重启', dataIndex: 'restartCount', key: 'restartCount' },
                   ]}
                 />
+              </GlassCard>
+              <GlassCard hover={false} title="自动注入环境变量" size="small">
+                {injectedEnvVars.length > 0 ? (
+                  <Table
+                    dataSource={injectedEnvVars.map((name: string) => ({ name }))}
+                    rowKey="name"
+                    pagination={false}
+                    size="small"
+                    columns={[
+                      {
+                        title: '变量名',
+                        dataIndex: 'name',
+                        key: 'name',
+                        render: (name: string) => <Text code className="mono">{name}</Text>,
+                      },
+                    ]}
+                  />
+                ) : (
+                  <Text type="secondary">当前 Pod 未检测到自动注入环境变量</Text>
+                )}
               </GlassCard>
             </Space>
           ) : (
@@ -755,4 +776,3 @@ const PodDetail: React.FC = () => {
 };
 
 export default PodDetail;
-

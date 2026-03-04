@@ -30,6 +30,29 @@ type PodHandler struct {
 	log        *zap.Logger
 }
 
+var autoInjectedEnvVarOrder = []string{
+	"NODE_IP",
+	"HOST_IP",
+	"NODE_NAME",
+	"POD_IP",
+	"POD_NAME",
+	"POD_NAMESPACE",
+	"POD_SERVICE_ACCOUNT",
+	"POD_UID",
+	"CPU_REQUEST",
+	"CPU_LIMIT",
+	"MEMORY_REQUEST",
+	"MEMORY_LIMIT",
+}
+
+var autoInjectedEnvVarSet = func() map[string]struct{} {
+	set := make(map[string]struct{}, len(autoInjectedEnvVarOrder))
+	for _, name := range autoInjectedEnvVarOrder {
+		set[name] = struct{}{}
+	}
+	return set
+}()
+
 type podDisplayInfo struct {
 	ContainerName string
 	Image         string
@@ -1074,6 +1097,7 @@ func (h *PodHandler) GetPodDescribe(c *gin.Context) {
 	}
 	describe["containers"] = containerStatuses
 	describe["mounts"] = extractPodMounts(pod)
+	describe["injectedEnvVars"] = extractAutoInjectedEnvVarNames(pod)
 
 	// 条件
 	var conditions []map[string]interface{}
@@ -1126,6 +1150,29 @@ func extractPodMounts(pod *corev1.Pod) []map[string]interface{} {
 	}
 
 	return mounts
+}
+
+func extractAutoInjectedEnvVarNames(pod *corev1.Pod) []string {
+	if pod == nil {
+		return []string{}
+	}
+
+	seen := make(map[string]struct{}, len(autoInjectedEnvVarOrder))
+	for _, container := range pod.Spec.Containers {
+		for _, env := range container.Env {
+			if _, ok := autoInjectedEnvVarSet[env.Name]; ok {
+				seen[env.Name] = struct{}{}
+			}
+		}
+	}
+
+	result := make([]string, 0, len(autoInjectedEnvVarOrder))
+	for _, name := range autoInjectedEnvVarOrder {
+		if _, ok := seen[name]; ok {
+			result = append(result, name)
+		}
+	}
+	return result
 }
 
 func getVolumeSourceInfo(vol corev1.Volume) (string, string) {

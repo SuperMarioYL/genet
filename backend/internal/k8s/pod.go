@@ -38,6 +38,95 @@ type PodSpec struct {
 	UserMounts []models.UserMount // 用户自定义挂载（可选）
 }
 
+func buildAutoInjectedDownwardEnvVars(containerName string) []corev1.EnvVar {
+	return []corev1.EnvVar{
+		{
+			Name: "NODE_IP",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{FieldPath: "status.hostIP"},
+			},
+		},
+		{
+			Name: "HOST_IP",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{FieldPath: "status.hostIP"},
+			},
+		},
+		{
+			Name: "NODE_NAME",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{FieldPath: "spec.nodeName"},
+			},
+		},
+		{
+			Name: "POD_IP",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{FieldPath: "status.podIP"},
+			},
+		},
+		{
+			Name: "POD_NAME",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.name"},
+			},
+		},
+		{
+			Name: "POD_NAMESPACE",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.namespace"},
+			},
+		},
+		{
+			Name: "POD_SERVICE_ACCOUNT",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{FieldPath: "spec.serviceAccountName"},
+			},
+		},
+		{
+			Name: "POD_UID",
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.uid"},
+			},
+		},
+		{
+			Name: "CPU_REQUEST",
+			ValueFrom: &corev1.EnvVarSource{
+				ResourceFieldRef: &corev1.ResourceFieldSelector{
+					ContainerName: containerName,
+					Resource:      "requests.cpu",
+				},
+			},
+		},
+		{
+			Name: "CPU_LIMIT",
+			ValueFrom: &corev1.EnvVarSource{
+				ResourceFieldRef: &corev1.ResourceFieldSelector{
+					ContainerName: containerName,
+					Resource:      "limits.cpu",
+				},
+			},
+		},
+		{
+			Name: "MEMORY_REQUEST",
+			ValueFrom: &corev1.EnvVarSource{
+				ResourceFieldRef: &corev1.ResourceFieldSelector{
+					ContainerName: containerName,
+					Resource:      "requests.memory",
+				},
+			},
+		},
+		{
+			Name: "MEMORY_LIMIT",
+			ValueFrom: &corev1.EnvVarSource{
+				ResourceFieldRef: &corev1.ResourceFieldSelector{
+					ContainerName: containerName,
+					Resource:      "limits.memory",
+				},
+			},
+		},
+	}
+}
+
 // CreatePod 创建 Pod
 func (c *Client) CreatePod(ctx context.Context, spec *PodSpec) (*corev1.Pod, error) {
 	c.log.Info("Creating pod",
@@ -192,6 +281,9 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 			corev1.EnvVar{Name: "no_proxy", Value: spec.NoProxy},
 		)
 	}
+
+	// 注入 Downward API 元数据与资源配额环境变量
+	container.Env = append(container.Env, buildAutoInjectedDownwardEnvVars(container.Name)...)
 
 	// 如果需要加速卡（GPU/NPU）
 	var runtimeClassName *string
