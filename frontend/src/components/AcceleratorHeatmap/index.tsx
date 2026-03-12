@@ -284,9 +284,6 @@ const AcceleratorHeatmap: React.FC<AcceleratorHeatmapProps> = ({
   return (
     <div className="accelerator-heatmap">
       <div className="heatmap-header">
-        <div className="heatmap-title">
-          <span>Accelerator Heatmap</span>
-        </div>
         <div className="heatmap-actions">
           <span className="summary-stat">
             <span className="summary-value">{data.summary.usedDevices}</span>

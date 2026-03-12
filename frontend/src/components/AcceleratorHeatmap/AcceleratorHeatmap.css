@@ -17,20 +17,11 @@
 /* 头部 */
 .heatmap-header {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   margin-bottom: 16px;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--border-color);
-}
-
-.heatmap-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-primary);
 }
 
 .heatmap-actions {
@@ -102,8 +93,8 @@
 }
 
 .node-info-placeholder {
-  width: 340px;
-  min-width: 340px;
+  width: 420px;
+  min-width: 420px;
   flex-shrink: 0;
 }
 
@@ -135,8 +126,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 340px;
-  min-width: 340px;
+  width: 420px;
+  min-width: 420px;
   flex-shrink: 0;
   font-size: 12px;
   padding-right: 12px;
@@ -150,7 +141,7 @@
 .node-name {
   font-weight: 500;
   color: var(--text-primary);
-  max-width: 140px;
+  max-width: 110px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -166,10 +157,9 @@
 .device-type {
   color: var(--text-muted);
   font-size: 11px;
-  max-width: 56px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-width: 140px;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .pool-badge {
@@ -400,18 +390,18 @@
   }
 
   .node-info-line {
-    width: 200px;
-    min-width: 200px;
+    width: 280px;
+    min-width: 280px;
     font-size: 11px;
   }
 
   .node-info-placeholder {
-    width: 200px;
-    min-width: 200px;
+    width: 280px;
+    min-width: 280px;
   }
 
   .node-name {
-    max-width: 70px;
+    max-width: 52px;
   }
 
   .node-ip {
@@ -420,7 +410,8 @@
   }
 
   .device-type {
-    max-width: 40px;
+    min-width: 96px;
+    font-size: 10px;
   }
 
   .pool-badge {

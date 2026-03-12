@@ -138,7 +138,7 @@ const Dashboard: React.FC = () => {
               onClick={() => setHeatmapModalVisible(true)}
               className="action-btn glass-button"
             >
-              GPU Heatmap
+              GPU 热力图
             </Button>
             {showKubeconfigButton && (
               <Button
@@ -407,12 +407,12 @@ const Dashboard: React.FC = () => {
         )}
       </Modal>
 
-      {/* GPU Heatmap 对话框 */}
+      {/* GPU 热力图对话框 */}
       <Modal
         title={
           <div className="modal-title-custom">
             <HeatMapOutlined />
-            <span>GPU Heatmap</span>
+            <span>GPU 热力图</span>
           </div>
         }
         open={heatmapModalVisible}
