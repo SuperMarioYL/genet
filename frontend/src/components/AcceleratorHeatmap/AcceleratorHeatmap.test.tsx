@@ -9,6 +9,7 @@ import { getGPUOverview } from '../../services/api';
 declare const jest: typeof import('@jest/globals').jest;
 
 const mockNavigate = require('jest-mock').fn();
+let tooltipRenderCount = 0;
 
 jest.mock('antd', () => {
   const React = require('react');
@@ -45,12 +46,16 @@ jest.mock('antd', () => {
     Empty: ({ description }: any) => <div>{description}</div>,
     Spin: () => <div>loading</div>,
     Tabs,
-    Tooltip: ({ children, title }: any) => (
-      <div className="tooltip-mock">
-        {children}
-        <div className="tooltip-mock-content">{title}</div>
-      </div>
-    ),
+    Tooltip: ({ children, title }: any) => {
+      tooltipRenderCount += 1;
+
+      return (
+        <div className="tooltip-mock">
+          {children}
+          <div className="tooltip-mock-content">{title}</div>
+        </div>
+      );
+    },
     Typography: {
       Text: ({ children, className }: any) => <span className={className}>{children}</span>,
     },
@@ -139,6 +144,7 @@ describe('AcceleratorHeatmap', () => {
     (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
     mockedGetGPUOverview.mockResolvedValue(buildOverview());
     mockNavigate.mockReset();
+    tooltipRenderCount = 0;
 
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -167,6 +173,8 @@ describe('AcceleratorHeatmap', () => {
     expect(container.textContent).toContain('NVIDIA');
     expect(container.textContent).not.toContain('Accelerator Heatmap');
     expect(container.textContent).not.toContain('GPU 热力图');
+    expect(container.textContent).toContain('总卡数量');
+    expect(container.textContent).toContain('占用量');
   });
 
   it('keeps single-pod tooltip details and click navigation', async () => {
@@ -249,5 +257,70 @@ describe('AcceleratorHeatmap', () => {
     });
 
     expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('does not rerender device tooltips when refresh returns unchanged data', async () => {
+    mockedGetGPUOverview
+      .mockResolvedValueOnce(buildOverview())
+      .mockResolvedValueOnce(buildOverview());
+
+    await act(async () => {
+      root.render(
+        <MemoryRouter>
+          <AcceleratorHeatmap refreshInterval={60000} />
+        </MemoryRouter>,
+      );
+    });
+
+    await flushEffects();
+
+    expect(tooltipRenderCount).toBe(2);
+
+    const refreshButton = container.querySelector('.refresh-btn') as HTMLButtonElement;
+    expect(refreshButton).toBeTruthy();
+
+    await act(async () => {
+      refreshButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    await flushEffects();
+
+    expect(tooltipRenderCount).toBe(2);
+  });
+
+  it('does not refetch immediately when callback props get a new identity', async () => {
+    mockedGetGPUOverview.mockResolvedValue(buildOverview());
+
+    await act(async () => {
+      root.render(
+        <MemoryRouter>
+          <AcceleratorHeatmap
+            refreshInterval={60000}
+            onError={() => undefined}
+            onSummaryChange={() => undefined}
+          />
+        </MemoryRouter>,
+      );
+    });
+
+    await flushEffects();
+
+    expect(mockedGetGPUOverview).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      root.render(
+        <MemoryRouter>
+          <AcceleratorHeatmap
+            refreshInterval={60000}
+            onError={() => undefined}
+            onSummaryChange={() => undefined}
+          />
+        </MemoryRouter>,
+      );
+    });
+
+    await flushEffects();
+
+    expect(mockedGetGPUOverview).toHaveBeenCalledTimes(1);
   });
 });

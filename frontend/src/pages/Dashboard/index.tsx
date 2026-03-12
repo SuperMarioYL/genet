@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import AcceleratorHeatmap from '../../components/AcceleratorHeatmap';
 import GlassCard from '../../components/GlassCard';
 import ThemeToggle from '../../components/ThemeToggle';
-import { downloadKubeconfig, getAdminMe, getClusterInfo, getConfig, getKubeconfig, listPods, type GPUOverviewResponse } from '../../services/api';
+import { downloadKubeconfig, getAdminMe, getClusterInfo, getConfig, getKubeconfig, listPods } from '../../services/api';
 import { getCleanupLabel } from '../../utils/cleanup';
 import CreatePodModal from './CreatePodModal';
 import './index.css';
@@ -13,24 +13,6 @@ import PodCard from './PodCard';
 
 const { Text, Paragraph } = Typography;
 const { Header, Content } = Layout;
-type HeatmapSummary = GPUOverviewResponse['summary'];
-
-const HeatmapTitleSummary: React.FC<{ summary: HeatmapSummary | null }> = ({ summary }) => {
-  if (!summary) return null;
-
-  return (
-    <div className="heatmap-title-summary">
-      <span className="heatmap-summary-stat">
-        <span className="heatmap-summary-label">总卡数量</span>
-        <span className="heatmap-summary-value">{summary.totalDevices}</span>
-      </span>
-      <span className="heatmap-summary-stat">
-        <span className="heatmap-summary-label">占用量</span>
-        <span className="heatmap-summary-value">{summary.usedDevices}/{summary.totalDevices}</span>
-      </span>
-    </div>
-  );
-};
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -48,7 +30,6 @@ const Dashboard: React.FC = () => {
   const [imageTransferModalVisible, setImageTransferModalVisible] = useState(false);
   const [imageTransferConfig, setImageTransferConfig] = useState<any>(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [heatmapSummary, setHeatmapSummary] = useState<HeatmapSummary | null>(null);
 
   const initialLoadDone = React.useRef(false);
 
@@ -129,13 +110,11 @@ const Dashboard: React.FC = () => {
   };
 
   const handleOpenHeatmap = () => {
-    setHeatmapSummary(null);
     setHeatmapModalVisible(true);
   };
 
   const handleCloseHeatmap = () => {
     setHeatmapModalVisible(false);
-    setHeatmapSummary(null);
   };
 
   return (
@@ -439,12 +418,9 @@ const Dashboard: React.FC = () => {
       {/* GPU 热力图对话框 */}
       <Modal
         title={
-          <div className="modal-title-custom heatmap-modal-title">
-            <div className="heatmap-modal-title-main">
-              <HeatMapOutlined />
-              <span>GPU 热力图</span>
-            </div>
-            <HeatmapTitleSummary summary={heatmapSummary} />
+          <div className="modal-title-custom">
+            <HeatMapOutlined />
+            <span>GPU 热力图</span>
           </div>
         }
         open={heatmapModalVisible}
@@ -456,7 +432,6 @@ const Dashboard: React.FC = () => {
       >
         <AcceleratorHeatmap
           refreshInterval={30000}
-          onSummaryChange={setHeatmapSummary}
           onError={(error) => message.error(`加载加速卡数据失败: ${error.message}`)}
         />
       </Modal>

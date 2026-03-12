@@ -1,6 +1,6 @@
 import { ReloadOutlined } from '@ant-design/icons';
 import { Button, Empty, Spin, Tabs, Tooltip, Typography } from 'antd';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AcceleratorGroup, DeviceSlot, getGPUOverview, GPUOverviewResponse, NodeGPUInfo, PodInfo } from '../../services/api';
 import './AcceleratorHeatmap.css';
@@ -10,6 +10,11 @@ const { Text } = Typography;
 const getPoolLabel = (poolType?: string): string => {
   return poolType === 'exclusive' ? '独占池' : '共享池';
 };
+
+const getDisplaySignature = (response: GPUOverviewResponse): string => JSON.stringify({
+  summary: response.summary,
+  acceleratorGroups: response.acceleratorGroups,
+});
 
 interface AcceleratorHeatmapProps {
   refreshInterval?: number;
@@ -58,7 +63,7 @@ const DeviceCell: React.FC<{
   slot: DeviceSlot;
   nodeName: string;
   onPodClick?: (podName: string, namespace: string) => void;
-}> = ({ slot, nodeName, onPodClick }) => {
+}> = memo(({ slot, nodeName, onPodClick }) => {
   // 计算显存利用率
   const memoryUtilization = (slot.memoryTotal && slot.memoryTotal > 0)
     ? (slot.memoryUsed || 0) / slot.memoryTotal * 100
@@ -154,14 +159,15 @@ const DeviceCell: React.FC<{
       />
     </Tooltip>
   );
-};
+});
+DeviceCell.displayName = 'DeviceCell';
 
 // 节点行组件
 const NodeRow: React.FC<{
   node: NodeGPUInfo;
   maxDevices: number;
   onPodClick?: (podName: string, namespace: string) => void;
-}> = ({ node, maxDevices, onPodClick }) => {
+}> = memo(({ node, maxDevices, onPodClick }) => {
   const poolType = node.poolType === 'exclusive' ? 'exclusive' : 'shared';
 
   return (
@@ -190,13 +196,14 @@ const NodeRow: React.FC<{
       </div>
     </div>
   );
-};
+});
+NodeRow.displayName = 'NodeRow';
 
 // 加速卡分组组件
 const AcceleratorGroupView: React.FC<{
   group: AcceleratorGroup;
   onPodClick?: (podName: string, namespace: string) => void;
-}> = ({ group, onPodClick }) => {
+}> = memo(({ group, onPodClick }) => {
   // 找出最大设备数用于对齐
   const maxDevices = Math.max(...group.nodes.map(n => n.totalDevices), 8);
   const sharedNodes = group.nodes.filter((node) => node.poolType !== 'exclusive');
@@ -246,7 +253,8 @@ const AcceleratorGroupView: React.FC<{
       </div>
     </div>
   );
-};
+});
+AcceleratorGroupView.displayName = 'AcceleratorGroupView';
 
 // 主组件
 const AcceleratorHeatmap: React.FC<AcceleratorHeatmapProps> = ({
@@ -258,12 +266,19 @@ const AcceleratorHeatmap: React.FC<AcceleratorHeatmapProps> = ({
   const [data, setData] = useState<GPUOverviewResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const displaySignatureRef = useRef<string | null>(null);
 
   const loadData = useCallback(async () => {
     try {
       const response = await getGPUOverview();
-      setData(response);
-      onSummaryChange?.(response.summary);
+      const nextSignature = getDisplaySignature(response);
+
+      if (displaySignatureRef.current !== nextSignature) {
+        displaySignatureRef.current = nextSignature;
+        setData(response);
+        onSummaryChange?.(response.summary);
+      }
+
       setLastUpdate(new Date());
     } catch (error: any) {
       onError?.(error);
@@ -278,10 +293,10 @@ const AcceleratorHeatmap: React.FC<AcceleratorHeatmapProps> = ({
     return () => clearInterval(timer);
   }, [loadData, refreshInterval]);
 
-  const handlePodClick = (podName: string, namespace: string) => {
+  const handlePodClick = useCallback((podName: string, namespace: string) => {
     // 导航到 Pod 详情页
     navigate(`/pod/${namespace}/${podName}`);
-  };
+  }, [navigate]);
 
   const handleRefresh = () => {
     setLoading(true);
@@ -311,6 +326,16 @@ const AcceleratorHeatmap: React.FC<AcceleratorHeatmapProps> = ({
   return (
     <div className="accelerator-heatmap">
       <div className="heatmap-header">
+        <div className="heatmap-header-summary">
+          <span className="heatmap-summary-stat">
+            <span className="heatmap-summary-label">总卡数量</span>
+            <span className="heatmap-summary-value">{data.summary.totalDevices}</span>
+          </span>
+          <span className="heatmap-summary-stat">
+            <span className="heatmap-summary-label">占用量</span>
+            <span className="heatmap-summary-value">{data.summary.usedDevices}/{data.summary.totalDevices}</span>
+          </span>
+        </div>
         <Button
           type="text"
           icon={<ReloadOutlined spin={loading} />}
