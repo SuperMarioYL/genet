@@ -1,8 +1,8 @@
 import { ReloadOutlined } from '@ant-design/icons';
-import { Button, Empty, Spin, Tooltip, Typography } from 'antd';
+import { Button, Empty, Spin, Tabs, Tooltip, Typography } from 'antd';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AcceleratorGroup, DeviceSlot, getGPUOverview, GPUOverviewResponse, NodeGPUInfo } from '../../services/api';
+import { AcceleratorGroup, DeviceSlot, getGPUOverview, GPUOverviewResponse, NodeGPUInfo, PodInfo } from '../../services/api';
 import './AcceleratorHeatmap.css';
 
 const { Text } = Typography;
@@ -14,6 +14,7 @@ const getPoolLabel = (poolType?: string): string => {
 interface AcceleratorHeatmapProps {
   refreshInterval?: number;
   onError?: (error: Error) => void;
+  onSummaryChange?: (summary: GPUOverviewResponse['summary']) => void;
 }
 
 // 根据利用率计算颜色
@@ -62,10 +63,40 @@ const DeviceCell: React.FC<{
   const memoryUtilization = (slot.memoryTotal && slot.memoryTotal > 0)
     ? (slot.memoryUsed || 0) / slot.memoryTotal * 100
     : 0;
+  const podDetails = slot.sharedPods && slot.sharedPods.length > 0
+    ? slot.sharedPods
+    : (slot.pod ? [slot.pod] : []);
+  const hasMultiplePods = podDetails.length > 1;
+  const primaryPod = podDetails[0];
 
   // 取最大值决定颜色（利用率和显存利用率取大）
   const maxUtil = Math.max(slot.utilization, memoryUtilization);
   const color = getUtilizationColor(maxUtil);
+
+  const renderPodDetails = (pod: PodInfo) => (
+    <div className="device-tooltip-pod-detail">
+      <div className="tooltip-row">
+        <span className="tooltip-label">Pod:</span>
+        <span className="tooltip-value">{pod.name}</span>
+      </div>
+      <div className="tooltip-row">
+        <span className="tooltip-label">User:</span>
+        <span className="tooltip-value">{pod.user || '-'}</span>
+      </div>
+      {pod.email && (
+        <div className="tooltip-row">
+          <span className="tooltip-label">Email:</span>
+          <span className="tooltip-value">{pod.email}</span>
+        </div>
+      )}
+      {pod.startTime && (
+        <div className="tooltip-row">
+          <span className="tooltip-label">Duration:</span>
+          <span className="tooltip-value">{formatDuration(pod.startTime)}</span>
+        </div>
+      )}
+    </div>
+  );
 
   const tooltipContent = (
     <div className="device-tooltip">
@@ -86,28 +117,22 @@ const DeviceCell: React.FC<{
           </span>
         </div>
       )}
-      {slot.pod && (
+      {primaryPod && (
         <>
           <div className="tooltip-divider" />
-          <div className="tooltip-row">
-            <span className="tooltip-label">Pod:</span>
-            <span className="tooltip-value">{slot.pod.name}</span>
-          </div>
-          <div className="tooltip-row">
-            <span className="tooltip-label">User:</span>
-            <span className="tooltip-value">{slot.pod.user || '-'}</span>
-          </div>
-          {slot.pod.email && (
-            <div className="tooltip-row">
-              <span className="tooltip-label">Email:</span>
-              <span className="tooltip-value">{slot.pod.email}</span>
-            </div>
-          )}
-          {slot.pod.startTime && (
-            <div className="tooltip-row">
-              <span className="tooltip-label">Duration:</span>
-              <span className="tooltip-value">{formatDuration(slot.pod.startTime)}</span>
-            </div>
+          {hasMultiplePods ? (
+            <Tabs
+              defaultActiveKey="pod-0"
+              size="small"
+              className="device-tooltip-tabs"
+              items={podDetails.map((pod, index) => ({
+                key: `pod-${index}`,
+                label: <span className="device-tooltip-tab-label">{pod.name}</span>,
+                children: renderPodDetails(pod),
+              }))}
+            />
+          ) : (
+            renderPodDetails(primaryPod)
           )}
         </>
       )}
@@ -115,15 +140,15 @@ const DeviceCell: React.FC<{
   );
 
   const handleClick = () => {
-    if (slot.pod && onPodClick) {
-      onPodClick(slot.pod.name, slot.pod.namespace);
+    if (!hasMultiplePods && primaryPod && onPodClick) {
+      onPodClick(primaryPod.name, primaryPod.namespace);
     }
   };
 
   return (
-    <Tooltip title={tooltipContent} placement="top" overlayClassName="heatmap-tooltip">
+    <Tooltip title={tooltipContent} placement="top" classNames={{ root: 'heatmap-tooltip' }}>
       <div
-        className={`device-cell ${slot.status === 'used' ? 'device-cell-used' : 'device-cell-free'}`}
+        className={`device-cell ${slot.status === 'free' ? 'device-cell-free' : 'device-cell-used'}`}
         style={{ backgroundColor: color }}
         onClick={handleClick}
       />
@@ -227,6 +252,7 @@ const AcceleratorGroupView: React.FC<{
 const AcceleratorHeatmap: React.FC<AcceleratorHeatmapProps> = ({
   refreshInterval = 30000,
   onError,
+  onSummaryChange,
 }) => {
   const navigate = useNavigate();
   const [data, setData] = useState<GPUOverviewResponse | null>(null);
@@ -237,13 +263,14 @@ const AcceleratorHeatmap: React.FC<AcceleratorHeatmapProps> = ({
     try {
       const response = await getGPUOverview();
       setData(response);
+      onSummaryChange?.(response.summary);
       setLastUpdate(new Date());
     } catch (error: any) {
       onError?.(error);
     } finally {
       setLoading(false);
     }
-  }, [onError]);
+  }, [onError, onSummaryChange]);
 
   useEffect(() => {
     loadData();
@@ -284,18 +311,12 @@ const AcceleratorHeatmap: React.FC<AcceleratorHeatmapProps> = ({
   return (
     <div className="accelerator-heatmap">
       <div className="heatmap-header">
-        <div className="heatmap-actions">
-          <span className="summary-stat">
-            <span className="summary-value">{data.summary.usedDevices}</span>
-            <span className="summary-label">/ {data.summary.totalDevices}</span>
-          </span>
-          <Button
-            type="text"
-            icon={<ReloadOutlined spin={loading} />}
-            onClick={handleRefresh}
-            className="refresh-btn"
-          />
-        </div>
+        <Button
+          type="text"
+          icon={<ReloadOutlined spin={loading} />}
+          onClick={handleRefresh}
+          className="refresh-btn"
+        />
       </div>
 
       <div className="heatmap-body">

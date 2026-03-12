@@ -46,6 +46,12 @@
 
 .modal-title-custom { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 600; }
 .modal-title-custom .anticon { color: var(--accent-primary); }
+.heatmap-modal-title { width: 100%; justify-content: space-between; gap: 24px; }
+.heatmap-modal-title-main { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.heatmap-title-summary { display: flex; align-items: center; gap: 18px; white-space: nowrap; font-size: 13px; font-weight: 500; }
+.heatmap-summary-stat { display: inline-flex; align-items: center; gap: 8px; }
+.heatmap-summary-label { color: var(--text-muted); font-size: 12px; }
+.heatmap-summary-value { color: var(--text-primary); font-size: 14px; font-weight: 600; }
 
 .kubeconfig-content { display: flex; flex-direction: column; gap: 16px; }
 .kubeconfig-card { margin: 0 !important; }
@@ -75,4 +81,6 @@
   .dashboard-content { padding: 16px; }
   .quota-item { flex-direction: column; text-align: center; gap: 8px; }
   .quota-info { margin-top: 16px; }
+  .heatmap-modal-title { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .heatmap-title-summary { gap: 12px; flex-wrap: wrap; white-space: normal; }
 }

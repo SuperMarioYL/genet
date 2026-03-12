@@ -14,7 +14,20 @@ import {
 
 declare const jest: typeof import('@jest/globals').jest;
 
-jest.mock('../../components/AcceleratorHeatmap', () => () => <div>mock heatmap</div>);
+jest.mock('../../components/AcceleratorHeatmap', () => {
+  const React = require('react');
+
+  return ({ onSummaryChange }: any) => {
+    React.useEffect(() => {
+      onSummaryChange?.({
+        totalDevices: 2,
+        usedDevices: 1,
+      });
+    }, [onSummaryChange]);
+
+    return <div>mock heatmap</div>;
+  };
+});
 jest.mock('../../components/GlassCard', () => ({ children, title }: any) => (
   <div>
     {title ? <div>{title}</div> : null}
@@ -116,5 +129,33 @@ describe('Dashboard heatmap entry', () => {
 
     expect(document.body.textContent).toContain('GPU 热力图');
     expect(document.body.textContent).not.toContain('GPU Heatmap');
+  });
+
+  it('shows total devices and utilization in the heatmap modal title row', async () => {
+    await act(async () => {
+      root.render(
+        <MemoryRouter>
+          <Dashboard />
+        </MemoryRouter>,
+      );
+    });
+
+    await flushEffects();
+
+    const heatmapButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.includes('GPU 热力图'),
+    );
+
+    await act(async () => {
+      heatmapButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    await flushEffects();
+
+    expect(document.body.querySelector('.heatmap-modal-title')).toBeTruthy();
+    expect(document.body.textContent).toContain('总卡数量');
+    expect(document.body.textContent).toContain('2');
+    expect(document.body.textContent).toContain('占用量');
+    expect(document.body.textContent).toContain('1/2');
   });
 });

@@ -24,29 +24,6 @@
   border-bottom: 1px solid var(--border-color);
 }
 
-.heatmap-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.summary-stat {
-  display: flex;
-  align-items: baseline;
-  gap: 2px;
-}
-
-.summary-value {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.summary-label {
-  font-size: 14px;
-  color: var(--text-muted);
-}
-
 .refresh-btn {
   color: var(--text-muted);
 }
@@ -257,7 +234,8 @@
 
 .device-tooltip {
   padding: 12px;
-  min-width: 200px;
+  min-width: 240px;
+  max-width: 320px;
   color: #ffffff;
 }
 
@@ -294,10 +272,51 @@
 .tooltip-value {
   color: #ffffff;
   font-weight: 500;
-  max-width: 140px;
+  max-width: 180px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.device-tooltip-pod-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.device-tooltip-tabs .ant-tabs-nav {
+  margin-bottom: 10px !important;
+}
+
+.device-tooltip-tabs .ant-tabs-nav::before {
+  border-bottom-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+.device-tooltip-tabs .ant-tabs-tab {
+  padding: 4px 0 8px !important;
+  color: rgba(255, 255, 255, 0.65) !important;
+}
+
+.device-tooltip-tabs .ant-tabs-tab + .ant-tabs-tab {
+  margin-left: 12px !important;
+}
+
+.device-tooltip-tabs .ant-tabs-tab-active .ant-tabs-tab-btn,
+.device-tooltip-tabs .ant-tabs-tab:hover .ant-tabs-tab-btn {
+  color: #ffffff !important;
+}
+
+.device-tooltip-tabs .ant-tabs-ink-bar {
+  background: #7dd3fc !important;
+}
+
+.device-tooltip-tab-label {
+  display: inline-block;
+  max-width: 88px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
 }
 
 /* 底部 */
