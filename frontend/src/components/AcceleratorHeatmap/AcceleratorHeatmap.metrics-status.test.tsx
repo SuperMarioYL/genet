@@ -9,7 +9,6 @@ import { getGPUOverview } from '../../services/api';
 declare const jest: typeof import('@jest/globals').jest;
 
 const mockNavigate = require('jest-mock').fn();
-let tooltipRenderCount = 0;
 
 jest.mock('antd', () => {
   const React = require('react');
@@ -46,16 +45,12 @@ jest.mock('antd', () => {
     Empty: ({ description }: any) => <div>{description}</div>,
     Spin: () => <div>loading</div>,
     Tabs,
-    Tooltip: ({ children, title }: any) => {
-      tooltipRenderCount += 1;
-
-      return (
-        <div className="tooltip-mock">
-          {children}
-          <div className="tooltip-mock-content">{title}</div>
-        </div>
-      );
-    },
+    Tooltip: ({ children, title }: any) => (
+      <div className="tooltip-mock">
+        {children}
+        <div className="tooltip-mock-content">{title}</div>
+      </div>
+    ),
     Typography: {
       Text: ({ children, className }: any) => <span className={className}>{children}</span>,
     },
@@ -103,9 +98,13 @@ const buildOverview = (slotOverride: Record<string, unknown> = {}) => ({
             {
               index: 0,
               status: 'used',
-              utilization: 45,
-              memoryUsed: 1024,
+              utilization: 0,
+              memoryUsed: 0,
               memoryTotal: 2048,
+              metricsStatus: 'fresh',
+              metricsUpdatedAt: '2026-03-13T10:00:00Z',
+              currentShare: 1,
+              maxShare: 1,
               pod: {
                 name: 'pod-a',
                 namespace: 'default',
@@ -121,6 +120,10 @@ const buildOverview = (slotOverride: Record<string, unknown> = {}) => ({
               utilization: 0,
               memoryUsed: 0,
               memoryTotal: 2048,
+              metricsStatus: 'fresh',
+              metricsUpdatedAt: '2026-03-13T10:00:00Z',
+              currentShare: 0,
+              maxShare: 0,
             },
           ],
         },
@@ -136,7 +139,7 @@ const flushEffects = async () => {
   });
 };
 
-describe('AcceleratorHeatmap', () => {
+describe('AcceleratorHeatmap metrics status', () => {
   let container: HTMLDivElement;
   let root: Root;
 
@@ -145,7 +148,6 @@ describe('AcceleratorHeatmap', () => {
     mockedGetGPUOverview.mockReset();
     mockedGetGPUOverview.mockResolvedValue(buildOverview());
     mockNavigate.mockReset();
-    tooltipRenderCount = 0;
 
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -160,7 +162,12 @@ describe('AcceleratorHeatmap', () => {
     jest.clearAllMocks();
   });
 
-  it('renders heatmap content without an internal duplicate title', async () => {
+  it('renders missing metrics slots in grey and shows missing tooltip copy', async () => {
+    mockedGetGPUOverview.mockResolvedValueOnce(buildOverview({
+      metricsStatus: 'missing',
+      metricsUpdatedAt: undefined,
+    }));
+
     await act(async () => {
       root.render(
         <MemoryRouter>
@@ -170,59 +177,54 @@ describe('AcceleratorHeatmap', () => {
     });
 
     await flushEffects();
-
-    expect(container.textContent).toContain('NVIDIA');
-    expect(container.textContent).not.toContain('Accelerator Heatmap');
-    expect(container.textContent).not.toContain('GPU 热力图');
-    expect(container.textContent).toContain('总卡数量');
-    expect(container.textContent).toContain('占用量');
-  });
-
-  it('keeps single-pod tooltip details and click navigation', async () => {
-    await act(async () => {
-      root.render(
-        <MemoryRouter>
-          <AcceleratorHeatmap refreshInterval={60000} />
-        </MemoryRouter>,
-      );
-    });
-
-    await flushEffects();
-
-    expect(container.textContent).toContain('Pod:');
-    expect(container.textContent).toContain('pod-a');
-    expect(container.textContent).toContain('User:');
-    expect(container.textContent).toContain('alice');
-    expect(container.textContent).not.toContain('tabs-mock-nav');
 
     const usedCell = container.querySelector('.device-cell-used') as HTMLDivElement;
-    expect(usedCell).toBeTruthy();
-
-    await act(async () => {
-      usedCell.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-
-    expect(mockNavigate).toHaveBeenCalledWith('/pod/default/pod-a');
+    expect(usedCell.className).toContain('device-cell-metrics-unavailable');
+    expect(container.textContent).toContain('指标状态');
+    expect(container.textContent).toContain('未采集');
   });
 
-  it('renders pod tabs for shared slots and disables whole-cell navigation', async () => {
+  it('renders stale metrics slots in grey and shows last metrics update time', async () => {
     mockedGetGPUOverview.mockResolvedValueOnce(buildOverview({
-      sharedPods: [
-        {
-          name: 'pod-a',
-          namespace: 'default',
-          user: 'alice',
-          email: 'alice@example.com',
-          startTime: '2026-03-12T08:00:00Z',
-        },
-        {
-          name: 'pod-b',
-          namespace: 'default',
-          user: 'bob',
-          email: 'bob@example.com',
-          startTime: '2026-03-12T09:30:00Z',
-        },
-      ],
+      metricsStatus: 'stale',
+      metricsUpdatedAt: '2026-03-13T09:45:00Z',
+    }));
+
+    await act(async () => {
+      root.render(
+        <MemoryRouter>
+          <AcceleratorHeatmap refreshInterval={60000} />
+        </MemoryRouter>,
+      );
+    });
+
+    await flushEffects();
+
+    const usedCell = container.querySelector('.device-cell-used') as HTMLDivElement;
+    expect(usedCell.className).toContain('device-cell-metrics-unavailable');
+    expect(container.textContent).toContain('长时间未更新');
+    expect(container.textContent).toContain('最后采集时间');
+  });
+
+  it('keeps fresh zero-utilization slots green instead of grey', async () => {
+    await act(async () => {
+      root.render(
+        <MemoryRouter>
+          <AcceleratorHeatmap refreshInterval={60000} />
+        </MemoryRouter>,
+      );
+    });
+
+    await flushEffects();
+
+    const usedCell = container.querySelector('.device-cell-used') as HTMLDivElement;
+    expect(usedCell.className).not.toContain('device-cell-metrics-unavailable');
+  });
+
+  it('keeps pod tooltip and navigation when metrics are stale', async () => {
+    mockedGetGPUOverview.mockResolvedValueOnce(buildOverview({
+      metricsStatus: 'stale',
+      metricsUpdatedAt: '2026-03-13T09:45:00Z',
     }));
 
     await act(async () => {
@@ -236,92 +238,13 @@ describe('AcceleratorHeatmap', () => {
     await flushEffects();
 
     expect(container.textContent).toContain('pod-a');
-    expect(container.textContent).toContain('pod-b');
-    expect(container.textContent).toContain('alice@example.com');
-    expect(container.textContent).not.toContain('bob@example.com');
-
-    const secondTab = Array.from(container.querySelectorAll('.tabs-mock-nav button')).find(
-      (button) => button.textContent === 'pod-b',
-    ) as HTMLButtonElement | undefined;
-    expect(secondTab).toBeTruthy();
-
-    await act(async () => {
-      secondTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-
-    expect(container.textContent).toContain('bob@example.com');
-    expect(container.textContent).not.toContain('alice@example.com');
+    expect(container.textContent).toContain('alice');
 
     const usedCell = container.querySelector('.device-cell-used') as HTMLDivElement;
     await act(async () => {
       usedCell.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
-    expect(mockNavigate).not.toHaveBeenCalled();
-  });
-
-  it('does not rerender device tooltips when refresh returns unchanged data', async () => {
-    mockedGetGPUOverview
-      .mockResolvedValueOnce(buildOverview())
-      .mockResolvedValueOnce(buildOverview());
-
-    await act(async () => {
-      root.render(
-        <MemoryRouter>
-          <AcceleratorHeatmap refreshInterval={60000} />
-        </MemoryRouter>,
-      );
-    });
-
-    await flushEffects();
-
-    expect(tooltipRenderCount).toBe(2);
-
-    const refreshButton = container.querySelector('.refresh-btn') as HTMLButtonElement;
-    expect(refreshButton).toBeTruthy();
-
-    await act(async () => {
-      refreshButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    });
-
-    await flushEffects();
-
-    expect(tooltipRenderCount).toBe(2);
-  });
-
-  it('does not refetch immediately when callback props get a new identity', async () => {
-    mockedGetGPUOverview.mockResolvedValue(buildOverview());
-
-    await act(async () => {
-      root.render(
-        <MemoryRouter>
-          <AcceleratorHeatmap
-            refreshInterval={60000}
-            onError={() => undefined}
-            onSummaryChange={() => undefined}
-          />
-        </MemoryRouter>,
-      );
-    });
-
-    await flushEffects();
-
-    expect(mockedGetGPUOverview).toHaveBeenCalledTimes(1);
-
-    await act(async () => {
-      root.render(
-        <MemoryRouter>
-          <AcceleratorHeatmap
-            refreshInterval={60000}
-            onError={() => undefined}
-            onSummaryChange={() => undefined}
-          />
-        </MemoryRouter>,
-      );
-    });
-
-    await flushEffects();
-
-    expect(mockedGetGPUOverview).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).toHaveBeenCalledWith('/pod/default/pod-a');
   });
 });

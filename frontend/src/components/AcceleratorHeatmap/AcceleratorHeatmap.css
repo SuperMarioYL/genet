@@ -1,11 +1,13 @@
 /* 热力图颜色变量 */
 :root {
   --heatmap-free: #e0e0e0;
+  --heatmap-stale: #8f96a3;
   --heatmap-border: rgba(0, 0, 0, 0.1);
 }
 
 [data-theme="dark"] {
   --heatmap-free: #3a3a3a;
+  --heatmap-stale: #575d68;
   --heatmap-border: rgba(255, 255, 255, 0.1);
 }
 
@@ -238,6 +240,10 @@
   cursor: pointer;
 }
 
+.device-cell-metrics-unavailable {
+  background-color: var(--heatmap-stale);
+}
+
 .device-cell-empty {
   visibility: hidden;
 }
@@ -370,6 +376,10 @@
   width: 14px;
   height: 10px;
   border-radius: 2px;
+}
+
+.legend-color-stale {
+  background: var(--heatmap-stale);
 }
 
 /* 渐变图例条 */

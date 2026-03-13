@@ -61,12 +61,14 @@ type NodeInfo struct {
 
 // DeviceSlot 设备槽位
 type DeviceSlot struct {
-	Index       int      `json:"index"`       // 设备编号
-	Status      string   `json:"status"`      // "free" | "used" | "full"（共享模式已满）
-	Utilization float64  `json:"utilization"` // 利用率 0-100
-	MemoryUsed  float64  `json:"memoryUsed"`  // 已用显存 (MiB)
-	MemoryTotal float64  `json:"memoryTotal"` // 总显存 (MiB)
-	Pod         *PodInfo `json:"pod"`         // 占用的 Pod 信息（独占模式）
+	Index            int      `json:"index"`                      // 设备编号
+	Status           string   `json:"status"`                     // "free" | "used" | "full"（共享模式已满）
+	Utilization      float64  `json:"utilization"`                // 利用率 0-100
+	MemoryUsed       float64  `json:"memoryUsed"`                 // 已用显存 (MiB)
+	MemoryTotal      float64  `json:"memoryTotal"`                // 总显存 (MiB)
+	MetricsStatus    string   `json:"metricsStatus"`              // "fresh" | "stale" | "missing"
+	MetricsUpdatedAt string   `json:"metricsUpdatedAt,omitempty"` // 指标更新时间
+	Pod              *PodInfo `json:"pod"`                        // 占用的 Pod 信息（独占模式）
 	// 共享模式字段
 	SharedPods   []PodInfo `json:"sharedPods,omitempty"` // 共享该卡的所有 Pod
 	CurrentShare int       `json:"currentShare"`         // 当前共享数
@@ -109,6 +111,7 @@ type TypeSummary struct {
 const (
 	defaultNonSharedLabelKey   = "genet.io/node-pool"
 	defaultNonSharedLabelValue = "non-shared"
+	staleMetricThreshold       = 5 * time.Minute
 )
 
 // GetGPUOverview 获取 GPU 概览
@@ -308,10 +311,11 @@ func (h *ClusterHandler) buildAcceleratorGroup(
 		// 初始化所有槽位
 		for i := 0; i < totalDevices; i++ {
 			nodeInfo.Slots[i] = DeviceSlot{
-				Index:       i,
-				Status:      "free",
-				Utilization: 0,
-				Pod:         nil,
+				Index:         i,
+				Status:        "free",
+				Utilization:   0,
+				MetricsStatus: "missing",
+				Pod:           nil,
 			}
 		}
 
@@ -335,6 +339,10 @@ func (h *ClusterHandler) buildAcceleratorGroup(
 					nodeInfo.Slots[idx].Utilization = metric.Utilization
 					nodeInfo.Slots[idx].MemoryUsed = metric.MemoryUsed
 					nodeInfo.Slots[idx].MemoryTotal = metric.MemoryTotal
+					nodeInfo.Slots[idx].MetricsStatus = getMetricsStatus(metric.Timestamp, time.Now())
+					if !metric.Timestamp.IsZero() {
+						nodeInfo.Slots[idx].MetricsUpdatedAt = metric.Timestamp.Format(time.RFC3339)
+					}
 				}
 			}
 		} else {
@@ -396,6 +404,16 @@ func (h *ClusterHandler) buildAcceleratorGroup(
 	})
 
 	return group
+}
+
+func getMetricsStatus(metricTimestamp time.Time, now time.Time) string {
+	if metricTimestamp.IsZero() {
+		return "missing"
+	}
+	if now.Sub(metricTimestamp) > staleMetricThreshold {
+		return "stale"
+	}
+	return "fresh"
 }
 
 // getNodeIP 获取节点 IP

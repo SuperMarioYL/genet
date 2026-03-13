@@ -287,6 +287,8 @@ export interface DeviceSlot {
   utilization: number;
   memoryUsed?: number;   // 已用显存 (MiB)
   memoryTotal?: number;  // 总显存 (MiB)
+  metricsStatus: 'fresh' | 'stale' | 'missing';
+  metricsUpdatedAt?: string;
   pod?: PodInfo;         // 主 Pod 信息（兼容独占模式）
   // 共享模式字段
   sharedPods?: PodInfo[];  // 共享该卡的所有 Pod

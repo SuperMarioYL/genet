@@ -6,6 +6,7 @@ import { AcceleratorGroup, DeviceSlot, getGPUOverview, GPUOverviewResponse, Node
 import './AcceleratorHeatmap.css';
 
 const { Text } = Typography;
+type MetricsStatus = DeviceSlot['metricsStatus'];
 
 const getPoolLabel = (poolType?: string): string => {
   return poolType === 'exclusive' ? '独占池' : '共享池';
@@ -32,6 +33,23 @@ const getUtilizationColor = (utilization: number): string => {
   const normalized = Math.sqrt(utilization / 100);
   const hue = 120 - (normalized * 120);
   return `hsl(${Math.max(0, hue)}, 70%, 45%)`;
+};
+
+const getMetricsStatusLabel = (metricsStatus: MetricsStatus | undefined): string => {
+  switch (metricsStatus) {
+    case 'stale':
+      return '长时间未更新';
+    case 'missing':
+      return '未采集';
+    case 'fresh':
+    default:
+      return '正常';
+  }
+};
+
+const formatMetricsUpdateTime = (metricsUpdatedAt?: string): string => {
+  if (!metricsUpdatedAt) return '-';
+  return new Date(metricsUpdatedAt).toLocaleString();
 };
 
 // 格式化显存 (MiB -> GB/MB)
@@ -64,6 +82,8 @@ const DeviceCell: React.FC<{
   nodeName: string;
   onPodClick?: (podName: string, namespace: string) => void;
 }> = memo(({ slot, nodeName, onPodClick }) => {
+  const metricsStatus = slot.metricsStatus ?? 'fresh';
+  const metricsUnavailable = metricsStatus === 'stale' || metricsStatus === 'missing';
   // 计算显存利用率
   const memoryUtilization = (slot.memoryTotal && slot.memoryTotal > 0)
     ? (slot.memoryUsed || 0) / slot.memoryTotal * 100
@@ -76,7 +96,7 @@ const DeviceCell: React.FC<{
 
   // 取最大值决定颜色（利用率和显存利用率取大）
   const maxUtil = Math.max(slot.utilization, memoryUtilization);
-  const color = getUtilizationColor(maxUtil);
+  const color = metricsUnavailable ? undefined : getUtilizationColor(maxUtil);
 
   const renderPodDetails = (pod: PodInfo) => (
     <div className="device-tooltip-pod-detail">
@@ -113,6 +133,16 @@ const DeviceCell: React.FC<{
         <span className="tooltip-label">Utilization:</span>
         <span className="tooltip-value">{slot.utilization.toFixed(0)}%</span>
       </div>
+      <div className="tooltip-row">
+        <span className="tooltip-label">指标状态:</span>
+        <span className="tooltip-value">{getMetricsStatusLabel(metricsStatus)}</span>
+      </div>
+      {metricsUnavailable && (
+        <div className="tooltip-row">
+          <span className="tooltip-label">最后采集时间:</span>
+          <span className="tooltip-value">{formatMetricsUpdateTime(slot.metricsUpdatedAt)}</span>
+        </div>
+      )}
       {slot.memoryTotal && slot.memoryTotal > 0 && (
         <div className="tooltip-row">
           <span className="tooltip-label">Memory:</span>
@@ -153,7 +183,11 @@ const DeviceCell: React.FC<{
   return (
     <Tooltip title={tooltipContent} placement="top" classNames={{ root: 'heatmap-tooltip' }}>
       <div
-        className={`device-cell ${slot.status === 'free' ? 'device-cell-free' : 'device-cell-used'}`}
+        className={[
+          'device-cell',
+          slot.status === 'free' ? 'device-cell-free' : 'device-cell-used',
+          metricsUnavailable ? 'device-cell-metrics-unavailable' : '',
+        ].filter(Boolean).join(' ')}
         style={{ backgroundColor: color }}
         onClick={handleClick}
       />
@@ -267,6 +301,16 @@ const AcceleratorHeatmap: React.FC<AcceleratorHeatmapProps> = ({
   const [loading, setLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const displaySignatureRef = useRef<string | null>(null);
+  const onErrorRef = useRef(onError);
+  const onSummaryChangeRef = useRef(onSummaryChange);
+
+  useEffect(() => {
+    onErrorRef.current = onError;
+  }, [onError]);
+
+  useEffect(() => {
+    onSummaryChangeRef.current = onSummaryChange;
+  }, [onSummaryChange]);
 
   const loadData = useCallback(async () => {
     try {
@@ -276,16 +320,16 @@ const AcceleratorHeatmap: React.FC<AcceleratorHeatmapProps> = ({
       if (displaySignatureRef.current !== nextSignature) {
         displaySignatureRef.current = nextSignature;
         setData(response);
-        onSummaryChange?.(response.summary);
+        onSummaryChangeRef.current?.(response.summary);
       }
 
       setLastUpdate(new Date());
     } catch (error: any) {
-      onError?.(error);
+      onErrorRef.current?.(error);
     } finally {
       setLoading(false);
     }
-  }, [onError, onSummaryChange]);
+  }, []);
 
   useEffect(() => {
     loadData();
@@ -356,6 +400,10 @@ const AcceleratorHeatmap: React.FC<AcceleratorHeatmapProps> = ({
 
       <div className="heatmap-footer">
         <div className="heatmap-legend">
+          <div className="legend-item">
+            <span className="legend-color legend-color-stale" />
+            <span>指标缺失/长时间未更新</span>
+          </div>
           <div className="legend-gradient-section">
             <span className="legend-gradient-label">0%</span>
             <div className="legend-gradient-bar" />

@@ -22,13 +22,14 @@ type Client struct {
 
 // DeviceMetric 设备指标
 type DeviceMetric struct {
-	DeviceID    string  `json:"deviceId"`    // 设备编号 "0", "1", "2"...
-	Node        string  `json:"node"`        // 节点名
-	Pod         string  `json:"pod"`         // Pod 名称
-	Namespace   string  `json:"namespace"`   // 命名空间
-	Utilization float64 `json:"utilization"` // 利用率 0-100
-	MemoryUsed  float64 `json:"memoryUsed"`  // 已用显存 (MiB)
-	MemoryTotal float64 `json:"memoryTotal"` // 总显存 (MiB)
+	DeviceID    string    `json:"deviceId"`    // 设备编号 "0", "1", "2"...
+	Node        string    `json:"node"`        // 节点名
+	Pod         string    `json:"pod"`         // Pod 名称
+	Namespace   string    `json:"namespace"`   // 命名空间
+	Utilization float64   `json:"utilization"` // 利用率 0-100
+	MemoryUsed  float64   `json:"memoryUsed"`  // 已用显存 (MiB)
+	MemoryTotal float64   `json:"memoryTotal"` // 总显存 (MiB)
+	Timestamp   time.Time `json:"timestamp"`   // 指标采集时间
 }
 
 // AcceleratorMetrics 加速卡指标
@@ -230,6 +231,7 @@ func (c *Client) queryMetricWithLabels(ctx context.Context, metricName string, l
 	for _, sample := range vector {
 		metric := DeviceMetric{
 			Utilization: float64(sample.Value),
+			Timestamp:   sample.Timestamp.Time(),
 		}
 
 		// 提取标签 - 优先使用自定义标签名，然后是默认标签名
