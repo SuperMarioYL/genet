@@ -4,13 +4,17 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 	"github.com/uc-package/genet/internal/auth"
 	"github.com/uc-package/genet/internal/k8s"
 	"github.com/uc-package/genet/internal/logger"
@@ -24,10 +28,16 @@ import (
 
 // PodHandler Pod 处理器
 type PodHandler struct {
-	k8sClient  *k8s.Client
-	promClient *prometheus.Client
-	config     *models.Config
-	log        *zap.Logger
+	k8sClient           *k8s.Client
+	promClient          *prometheus.Client
+	config              *models.Config
+	log                 *zap.Logger
+	getPodFn            func(ctx context.Context, namespace, name string) (*corev1.Pod, error)
+	codeServerProbe     func(ctx context.Context, host string, port int32) bool
+	codeServerTargetURL func(pod *corev1.Pod) (*url.URL, error)
+	sessions            *WebShellSessionManager
+	webShellUpgrader    websocket.Upgrader
+	webShellStreamFn    func(ctx context.Context, session WebShellSession, conn *websocket.Conn) error
 }
 
 var autoInjectedEnvVarOrder = []string{
@@ -65,11 +75,144 @@ type podDisplayInfo struct {
 
 // NewPodHandler 创建 Pod 处理器
 func NewPodHandler(k8sClient *k8s.Client, promClient *prometheus.Client, config *models.Config) *PodHandler {
-	return &PodHandler{
+	handler := &PodHandler{
 		k8sClient:  k8sClient,
 		promClient: promClient,
 		config:     config,
 		log:        logger.Named("pod"),
+	}
+	if k8sClient != nil {
+		handler.getPodFn = k8sClient.GetPod
+	}
+	handler.codeServerProbe = probeCodeServer
+	handler.codeServerTargetURL = handler.defaultCodeServerTargetURL
+	handler.sessions = NewWebShellSessionManager(5 * time.Minute)
+	handler.webShellUpgrader = websocket.Upgrader{
+		CheckOrigin: func(_ *http.Request) bool {
+			return true
+		},
+	}
+	handler.webShellStreamFn = handler.streamWebShell
+	return handler
+}
+
+func (h *PodHandler) getPod(ctx context.Context, namespace, name string) (*corev1.Pod, error) {
+	if h.getPodFn != nil {
+		return h.getPodFn(ctx, namespace, name)
+	}
+	return h.k8sClient.GetPod(ctx, namespace, name)
+}
+
+func (h *PodHandler) buildPodResponse(ctx context.Context, pod *corev1.Pod) models.PodResponse {
+	display := h.getPodDisplayInfo(pod)
+
+	var protectedUntil *time.Time
+	if protectedStr := pod.Annotations["genet.io/protected-until"]; protectedStr != "" {
+		if t, err := time.Parse(time.RFC3339, protectedStr); err == nil {
+			protectedUntil = &t
+		}
+	}
+
+	nodeIP := h.getNodeIP(ctx, pod.Spec.NodeName)
+
+	return models.PodResponse{
+		ID:             pod.Name,
+		Name:           pod.Name,
+		Namespace:      pod.Namespace,
+		Container:      display.ContainerName,
+		Status:         h.getPodStatus(pod),
+		Phase:          string(pod.Status.Phase),
+		Image:          display.Image,
+		GPUType:        display.GPUType,
+		GPUCount:       display.GPUCount,
+		CPU:            display.CPU,
+		Memory:         display.Memory,
+		CreatedAt:      display.CreatedAt,
+		NodeIP:         nodeIP,
+		Connections:    h.buildPodConnections(ctx, pod),
+		ProtectedUntil: protectedUntil,
+	}
+}
+
+func (h *PodHandler) buildPodConnections(ctx context.Context, pod *corev1.Pod) *models.PodConnections {
+	connections := &models.PodConnections{
+		SSH: models.PodSSHConnections{},
+		Apps: models.PodAppConnections{
+			CodeServerStatus: "unavailable",
+			WebShellStatus:   "unavailable",
+		},
+	}
+
+	if pod.Status.Phase == corev1.PodRunning {
+		connections.Apps.WebShellURL = fmt.Sprintf("/pods/%s/webshell", url.PathEscape(pod.Name))
+		connections.Apps.WebShellReady = true
+		connections.Apps.WebShellStatus = "enabled"
+	}
+
+	codeServerCfg := h.config.Pod.CodeServer
+	if !codeServerCfg.Enabled {
+		return connections
+	}
+
+	connections.Apps.CodeServerURL = fmt.Sprintf("/api/pods/%s/apps/code-server", url.PathEscape(pod.Name))
+	if pod.Status.Phase != corev1.PodRunning || strings.TrimSpace(pod.Status.PodIP) == "" {
+		return connections
+	}
+
+	if h.codeServerProbe != nil && h.codeServerProbe(ctx, pod.Status.PodIP, int32(codeServerCfg.Port)) {
+		connections.Apps.CodeServerReady = true
+		connections.Apps.CodeServerStatus = "enabled"
+	} else {
+		connections.Apps.CodeServerStatus = "starting"
+	}
+	return connections
+}
+
+func (h *PodHandler) defaultCodeServerTargetURL(pod *corev1.Pod) (*url.URL, error) {
+	if pod == nil || strings.TrimSpace(pod.Status.PodIP) == "" {
+		return nil, fmt.Errorf("pod IP unavailable")
+	}
+	port := h.config.Pod.CodeServer.Port
+	if port <= 0 {
+		port = 13337
+	}
+	return url.Parse(fmt.Sprintf("http://%s:%d", pod.Status.PodIP, port))
+}
+
+func probeCodeServer(ctx context.Context, host string, port int32) bool {
+	if strings.TrimSpace(host) == "" || port <= 0 {
+		return false
+	}
+
+	dialer := &net.Dialer{Timeout: time.Second}
+	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(host, strconv.Itoa(int(port))))
+	if err != nil {
+		return false
+	}
+	_ = conn.Close()
+	return true
+}
+
+func buildCodeServerProxy(target *url.URL, forwardedPath string) *httputil.ReverseProxy {
+	return &httputil.ReverseProxy{
+		Director: func(req *http.Request) {
+			originalHost := req.Host
+			req.URL.Scheme = target.Scheme
+			req.URL.Host = target.Host
+			if forwardedPath == "" {
+				forwardedPath = "/"
+			}
+			req.URL.Path = forwardedPath
+			req.URL.RawPath = forwardedPath
+			req.Host = target.Host
+			req.Header.Set("X-Forwarded-Host", originalHost)
+			req.Header.Set("X-Forwarded-Proto", "https")
+		},
+		ErrorHandler: func(rw http.ResponseWriter, _ *http.Request, err error) {
+			rw.Header().Set("Content-Type", "application/json")
+			rw.WriteHeader(http.StatusBadGateway)
+			_, _ = rw.Write([]byte(fmt.Sprintf(`{"error":"代理 code-server 失败: %s"}`, err.Error())))
+		},
 	}
 }
 
@@ -112,36 +255,9 @@ func (h *PodHandler) ListPods(c *gin.Context) {
 	totalGPU := 0
 
 	for _, pod := range pods {
-		display := h.getPodDisplayInfo(&pod)
-		totalGPU += display.GPUCount
-
-		// 解析保护截止时间
-		var protectedUntil *time.Time
-		if protectedStr := pod.Annotations["genet.io/protected-until"]; protectedStr != "" {
-			if t, err := time.Parse(time.RFC3339, protectedStr); err == nil {
-				protectedUntil = &t
-			}
-		}
-
-		// 获取节点 IP
-		nodeIP := h.getNodeIP(ctx, pod.Spec.NodeName)
-
-		podResponses = append(podResponses, models.PodResponse{
-			ID:             pod.Name,
-			Name:           pod.Name,
-			Namespace:      pod.Namespace,
-			Container:      display.ContainerName,
-			Status:         h.getPodStatus(&pod),
-			Phase:          string(pod.Status.Phase),
-			Image:          display.Image,
-			GPUType:        display.GPUType,
-			GPUCount:       display.GPUCount,
-			CPU:            display.CPU,
-			Memory:         display.Memory,
-			CreatedAt:      display.CreatedAt,
-			NodeIP:         nodeIP,
-			ProtectedUntil: protectedUntil,
-		})
+		response := h.buildPodResponse(ctx, &pod)
+		totalGPU += response.GPUCount
+		podResponses = append(podResponses, response)
 	}
 
 	response := models.PodListResponse{
@@ -555,7 +671,7 @@ func (h *PodHandler) GetPod(c *gin.Context) {
 		zap.String("podID", podID))
 
 	// 获取 Pod
-	pod, err := h.k8sClient.GetPod(ctx, namespace, podID)
+	pod, err := h.getPod(ctx, namespace, podID)
 	if err != nil {
 		h.log.Warn("Pod not found",
 			zap.String("user", username),
@@ -565,37 +681,54 @@ func (h *PodHandler) GetPod(c *gin.Context) {
 		return
 	}
 
-	display := h.getPodDisplayInfo(pod)
+	c.JSON(http.StatusOK, h.buildPodResponse(ctx, pod))
+}
 
-	// 解析保护截止时间
-	var protectedUntil *time.Time
-	if protectedStr := pod.Annotations["genet.io/protected-until"]; protectedStr != "" {
-		if t, err := time.Parse(time.RFC3339, protectedStr); err == nil {
-			protectedUntil = &t
-		}
+// ProxyCodeServer 代理 code-server Web IDE 流量
+func (h *PodHandler) ProxyCodeServer(c *gin.Context) {
+	if !h.config.Pod.CodeServer.Enabled {
+		c.JSON(http.StatusNotFound, gin.H{"error": "code-server 未启用"})
+		return
 	}
 
-	// 获取节点 IP
-	nodeIP := h.getNodeIP(ctx, pod.Spec.NodeName)
+	username, _ := auth.GetUsername(c)
+	email, _ := auth.GetEmail(c)
+	podID := c.Param("id")
+	userIdentifier := k8s.GetUserIdentifier(username, email)
+	namespace := k8s.GetNamespaceForUserIdentifier(userIdentifier)
+	ctx := c.Request.Context()
 
-	response := models.PodResponse{
-		ID:             pod.Name,
-		Name:           pod.Name,
-		Namespace:      pod.Namespace,
-		Container:      display.ContainerName,
-		Status:         h.getPodStatus(pod),
-		Phase:          string(pod.Status.Phase),
-		Image:          display.Image,
-		GPUType:        display.GPUType,
-		GPUCount:       display.GPUCount,
-		CPU:            display.CPU,
-		Memory:         display.Memory,
-		CreatedAt:      display.CreatedAt,
-		NodeIP:         nodeIP,
-		ProtectedUntil: protectedUntil,
+	pod, err := h.getPod(ctx, namespace, podID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Pod 不存在"})
+		return
 	}
 
-	c.JSON(http.StatusOK, response)
+	if pod.Status.Phase != corev1.PodRunning {
+		c.JSON(http.StatusConflict, gin.H{"error": "Pod 未处于运行状态，暂时无法打开 code-server"})
+		return
+	}
+	if strings.TrimSpace(pod.Status.PodIP) == "" {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Pod IP 不可用，暂时无法打开 code-server"})
+		return
+	}
+
+	targetURLFn := h.codeServerTargetURL
+	if targetURLFn == nil {
+		targetURLFn = h.defaultCodeServerTargetURL
+	}
+	targetURL, err := targetURLFn(pod)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+		return
+	}
+
+	forwardedPath := c.Param("path")
+	if forwardedPath == "" {
+		forwardedPath = "/"
+	}
+
+	buildCodeServerProxy(targetURL, forwardedPath).ServeHTTP(c.Writer, c.Request)
 }
 
 // DownloadPodYAML 下载 Pod 的 portable YAML

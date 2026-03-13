@@ -222,7 +222,7 @@ type PodConfig struct {
 	ExtraVolumeMounts []corev1.VolumeMount `yaml:"extraVolumeMounts,omitempty" json:"extraVolumeMounts,omitempty"`
 
 	// StartupScript 容器启动脚本模板
-	// 可用变量: {{.ProxyScript}}
+	// 可用变量: {{.ProxyScript}}, {{.CodeServerScript}}
 	// 如果为空，使用默认脚本
 	StartupScript string `yaml:"startupScript,omitempty" json:"startupScript,omitempty"`
 
@@ -230,6 +230,20 @@ type PodConfig struct {
 	// 用于在容器启动后或停止前执行自定义命令
 	// 文档: https://kubernetes.io/docs/concepts/containers/container-lifecycle-hooks/
 	Lifecycle *corev1.Lifecycle `yaml:"lifecycle,omitempty" json:"lifecycle,omitempty"`
+
+	// CodeServer Web IDE 配置
+	CodeServer CodeServerConfig `yaml:"codeServer,omitempty" json:"codeServer,omitempty"`
+}
+
+// CodeServerConfig code-server 配置
+type CodeServerConfig struct {
+	Enabled             bool   `yaml:"enabled" json:"enabled"`
+	Port                int    `yaml:"port" json:"port"`
+	WorkspaceDir        string `yaml:"workspaceDir" json:"workspaceDir"`
+	UserDataDir         string `yaml:"userDataDir" json:"userDataDir"`
+	ExtensionsDir       string `yaml:"extensionsDir" json:"extensionsDir"`
+	InstallScript       string `yaml:"installScript,omitempty" json:"installScript,omitempty"`
+	StartTimeoutSeconds int    `yaml:"startTimeoutSeconds" json:"startTimeoutSeconds"`
 }
 
 // GPUConfig GPU 相关配置
@@ -486,6 +500,8 @@ echo "VS Code Server directory linked to /workspace/.vscode-server"
 
 {{.ProxyScript}}
 
+{{.CodeServerScript}}
+
 # 显示 GPU 信息（如果有）
 if command -v nvidia-smi > /dev/null 2>&1; then
     echo "===== GPU Information ====="
@@ -502,6 +518,53 @@ echo "============================================"
 # 保持容器运行
 tail -f /dev/null
 `,
+			CodeServer: CodeServerConfig{
+				Enabled:       false,
+				Port:          13337,
+				WorkspaceDir:  "/workspace",
+				UserDataDir:   "/workspace/.code-server",
+				ExtensionsDir: "/workspace/.code-server/extensions",
+				InstallScript: `CODE_SERVER_VERSION="${CODE_SERVER_VERSION:-4.103.2}"
+ARCH="$(uname -m)"
+case "$ARCH" in
+  x86_64|amd64) ARCH="amd64" ;;
+  aarch64|arm64) ARCH="arm64" ;;
+  *)
+    echo "Unsupported code-server architecture: $ARCH"
+    exit 1
+    ;;
+esac
+
+if command -v code-server >/dev/null 2>&1; then
+  exit 0
+fi
+
+if command -v curl >/dev/null 2>&1; then
+  FETCH_CMD="curl -fsSL"
+elif command -v wget >/dev/null 2>&1; then
+  FETCH_CMD="wget -qO-"
+else
+  echo "code-server install skipped: curl/wget not found"
+  exit 1
+fi
+
+INSTALL_DIR="/tmp/code-server-install"
+ARCHIVE_URL="https://github.com/coder/code-server/releases/download/v${CODE_SERVER_VERSION}/code-server-${CODE_SERVER_VERSION}-linux-${ARCH}.tar.gz"
+rm -rf "$INSTALL_DIR"
+mkdir -p "$INSTALL_DIR"
+
+sh -c "$FETCH_CMD \"$ARCHIVE_URL\"" | tar -xz -C "$INSTALL_DIR"
+CODE_SERVER_BIN="$(find "$INSTALL_DIR" -type f -name code-server | head -n 1)"
+if [ -z "$CODE_SERVER_BIN" ]; then
+  echo "code-server install failed: binary not found"
+  exit 1
+fi
+
+cp "$CODE_SERVER_BIN" /usr/local/bin/code-server
+chmod +x /usr/local/bin/code-server
+echo "code-server installed to /usr/local/bin/code-server"`,
+				StartTimeoutSeconds: 20,
+			},
 		},
 		OAuth: OAuthConfig{
 			Enabled:               false,

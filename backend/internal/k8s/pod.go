@@ -200,7 +200,8 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 
 	var scriptBuf bytes.Buffer
 	err = tmpl.Execute(&scriptBuf, map[string]interface{}{
-		"ProxyScript": proxySetupScript,
+		"ProxyScript":      proxySetupScript,
+		"CodeServerScript": buildCodeServerStartupScript(c.config.Pod.CodeServer),
 	})
 	if err != nil {
 		c.log.Error("Failed to render startup script", zap.Error(err))

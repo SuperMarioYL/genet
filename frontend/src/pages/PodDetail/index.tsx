@@ -1,4 +1,4 @@
-import { ArrowLeftOutlined, CodeOutlined, CopyOutlined, DatabaseOutlined, DeleteOutlined, DesktopOutlined, DownloadOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, CloudServerOutlined, CodeOutlined, CopyOutlined, DatabaseOutlined, DeleteOutlined, DesktopOutlined, DownloadOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
 import { Alert, Button, Descriptions, Input, Layout, message, Modal, Popconfirm, Progress, Skeleton, Space, Switch, Table, Tabs, Tag, Tooltip, Typography } from 'antd';
 import dayjs from 'dayjs';
 import React, { useEffect, useRef, useState } from 'react';
@@ -193,6 +193,10 @@ const PodDetail: React.FC = () => {
     message.info('正在打开 VSCode...', 5);
   };
 
+  const openInNewTab = (uri: string) => {
+    window.open(uri, '_blank', 'noopener,noreferrer');
+  };
+
   const openSSHClient = (sshURI: string, sshCmd: string) => {
     const link = document.createElement('a');
     link.href = sshURI;
@@ -321,7 +325,10 @@ const PodDetail: React.FC = () => {
   }
 
   const connections = pod.connections;
-  const hasConnections = connections?.ssh?.host && connections?.ssh?.port;
+  const hasSSHConnection = Boolean(connections?.ssh?.host && connections?.ssh?.port);
+  const hasCodeServer = Boolean(connections?.apps?.codeServerURL);
+  const hasWebShell = Boolean(connections?.apps?.webShellURL);
+  const hasConnections = hasSSHConnection || hasCodeServer || hasWebShell;
   const injectedEnvVars = Array.isArray(describe?.injectedEnvVars) ? describe.injectedEnvVars : [];
   const mountRows = (describe?.mounts && describe.mounts.length > 0)
     ? describe.mounts
@@ -683,32 +690,80 @@ const PodDetail: React.FC = () => {
             </div>
           ) : (
             <Space direction="vertical" size="middle" style={{ width: '100%', maxWidth: 800 }}>
-              <GlassCard hover={false} title="SSH 连接信息">
-                <Descriptions bordered column={2} size="small">
-                  <Descriptions.Item label="主机">{connections.ssh.host}</Descriptions.Item>
-                  <Descriptions.Item label="端口">{connections.ssh.port}</Descriptions.Item>
-                  <Descriptions.Item label="用户">{connections.ssh.user}</Descriptions.Item>
-                  <Descriptions.Item label="密码">
-                    <Space>
-                      <Input.Password value={connections.ssh.password} visibilityToggle={{ visible: showPassword, onVisibleChange: setShowPassword }} style={{ width: 150 }} readOnly />
-                      <Button icon={<CopyOutlined />} size="small" onClick={() => copyToClipboard(connections.ssh.password, '密码')}>复制</Button>
-                    </Space>
-                  </Descriptions.Item>
-                </Descriptions>
-              </GlassCard>
-              <GlassCard hover={false} title="SSH 命令">
-                <div className="command-box">
-                  <code className="mono">{connections.apps.sshCommand}</code>
-                  <Button icon={<CopyOutlined />} onClick={() => copyToClipboard(connections.apps.sshCommand, 'SSH 命令')}>复制</Button>
-                </div>
-              </GlassCard>
+              {hasSSHConnection && (
+                <GlassCard hover={false} title="SSH 连接信息">
+                  <Descriptions bordered column={2} size="small">
+                    <Descriptions.Item label="主机">{connections.ssh.host}</Descriptions.Item>
+                    <Descriptions.Item label="端口">{connections.ssh.port}</Descriptions.Item>
+                    <Descriptions.Item label="用户">{connections.ssh.user}</Descriptions.Item>
+                    <Descriptions.Item label="密码">
+                      <Space>
+                        <Input.Password value={connections.ssh.password} visibilityToggle={{ visible: showPassword, onVisibleChange: setShowPassword }} style={{ width: 150 }} readOnly />
+                        <Button icon={<CopyOutlined />} size="small" onClick={() => copyToClipboard(connections.ssh.password, '密码')}>复制</Button>
+                      </Space>
+                    </Descriptions.Item>
+                  </Descriptions>
+                </GlassCard>
+              )}
+              {hasSSHConnection && connections?.apps?.sshCommand && (
+                <GlassCard hover={false} title="SSH 命令">
+                  <div className="command-box">
+                    <code className="mono">{connections.apps.sshCommand}</code>
+                    <Button icon={<CopyOutlined />} onClick={() => copyToClipboard(connections.apps.sshCommand, 'SSH 命令')}>复制</Button>
+                  </div>
+                </GlassCard>
+              )}
               <GlassCard hover={false} title="快捷打开">
-                <Alert message="提示：如果 VSCode 覆盖了当前项目，请在设置中将 window.openFoldersInNewWindow 设为 on" type="info" showIcon style={{ marginBottom: 16 }} />
+                {(hasSSHConnection || hasCodeServer || hasWebShell) && (
+                  <Alert message="提示：如果 VSCode 覆盖了当前项目，请在设置中将 window.openFoldersInNewWindow 设为 on" type="info" showIcon style={{ marginBottom: 16 }} />
+                )}
                 <Space size="large" wrap>
-                  <Tooltip title="VSCode Remote SSH"><Button type="primary" icon={<CodeOutlined />} size="large" onClick={() => openVSCode(connections.apps.vscodeURI)}>VSCode</Button></Tooltip>
-                  <Tooltip title="下载 Xshell 会话文件"><Button icon={<DownloadOutlined />} size="large" onClick={downloadXshellFile}>Xshell</Button></Tooltip>
-                  <Tooltip title="打开 SSH 客户端"><Button icon={<DesktopOutlined />} size="large" onClick={() => openSSHClient(connections.apps.xshellURI, connections.apps.sshCommand)}>SSH 客户端</Button></Tooltip>
+                  {hasCodeServer && (
+                    <Tooltip title={connections.apps.codeServerReady ? '在浏览器中打开 code-server' : 'code-server 启动中，请稍后重试'}>
+                      <Button
+                        type="primary"
+                        icon={<CloudServerOutlined />}
+                        size="large"
+                        onClick={() => openInNewTab(connections.apps.codeServerURL)}
+                        disabled={!connections.apps.codeServerReady}
+                      >
+                        code-server
+                      </Button>
+                    </Tooltip>
+                  )}
+                  {hasWebShell && (
+                    <Tooltip title={connections.apps.webShellReady ? '在浏览器中打开终端' : 'Web Shell 当前不可用'}>
+                      <Button
+                        type="primary"
+                        icon={<CodeOutlined />}
+                        size="large"
+                        onClick={() => openInNewTab(connections.apps.webShellURL)}
+                        disabled={!connections.apps.webShellReady}
+                      >
+                        Web Shell
+                      </Button>
+                    </Tooltip>
+                  )}
+                  {hasSSHConnection && connections?.apps?.vscodeURI && (
+                    <Tooltip title="VSCode Remote SSH"><Button type="primary" icon={<CodeOutlined />} size="large" onClick={() => openVSCode(connections.apps.vscodeURI)}>VSCode</Button></Tooltip>
+                  )}
+                  {hasSSHConnection && (
+                    <Tooltip title="下载 Xshell 会话文件"><Button icon={<DownloadOutlined />} size="large" onClick={downloadXshellFile}>Xshell</Button></Tooltip>
+                  )}
+                  {hasSSHConnection && connections?.apps?.xshellURI && connections?.apps?.sshCommand && (
+                    <Tooltip title="打开 SSH 客户端"><Button icon={<DesktopOutlined />} size="large" onClick={() => openSSHClient(connections.apps.xshellURI, connections.apps.sshCommand)}>SSH 客户端</Button></Tooltip>
+                  )}
                 </Space>
+                {hasCodeServer && !connections.apps.codeServerReady && (
+                  <Text type="secondary">
+                    {connections.apps.codeServerStatus === 'starting' ? 'code-server 启动中，请稍后刷新重试。' : 'code-server 当前不可用。'}
+                  </Text>
+                )}
+                {hasWebShell && !connections.apps.webShellReady && (
+                  <Text type="secondary">
+                    {connections.apps.webShellStatus === 'enabled' ? 'Web Shell 启动中，请稍后刷新重试。' : 'Web Shell 当前不可用。'}
+                  </Text>
+                )}
               </GlassCard>
             </Space>
           )}
