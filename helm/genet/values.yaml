@@ -1,7 +1,7 @@
 # Backend configuration
 backend:
   image:
-    repository: genet-backend
+    repository: registry.dev.huawei.com/flash_stor/genet-backend
     # tag: 留空则使用 Chart appVersion
     tag: ""
   imagePullPolicy: IfNotPresent
@@ -9,36 +9,32 @@ backend:
 
   # 节点选择器（K8s 原生格式）
   # 用于将 Genet 后端调度到特定节点
-  nodeSelector: {}
+  nodeSelector: { }
   # 示例:
   #   kubernetes.io/os: linux
   #   node-role: management
 
   # 亲和性调度（K8s 原生格式）
-  affinity: {}
-  # 示例 - 节点亲和性（优先调度到特定节点）:
-  #   nodeAffinity:
-  #     preferredDuringSchedulingIgnoredDuringExecution:
-  #       - weight: 100
-  #         preference:
-  #           matchExpressions:
-  #             - key: node-role
-  #               operator: In
-  #               values:
-  #                 - management
-  # 示例 - Pod 反亲和性（分散部署到不同节点）:
-  #   podAntiAffinity:
-  #     preferredDuringSchedulingIgnoredDuringExecution:
-  #       - weight: 100
-  #         podAffinityTerm:
-  #           labelSelector:
-  #             matchLabels:
-  #               app: genet-backend
-  #           topologyKey: kubernetes.io/hostname
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              # 架构必须是 amd64
+              - key: kubernetes.io/arch
+                operator: In
+                values: [ "amd64" ]
 
+              # 只要是 NVIDIA GPU 节点（不关心 true/false），直接排除
+              - key: nvidia.com/gpu.present
+                operator: DoesNotExist
+
+              # 只要是加速卡节点（Ascend / 未来其他），直接排除
+              - key: accelerator
+                operator: DoesNotExist
   # 容忍度（K8s 原生格式）
   # 用于调度到带有 taint 的节点
-  tolerations: []
+  tolerations: [ ]
   # 示例:
   #   - key: "node-role"
   #     operator: "Equal"
@@ -48,13 +44,13 @@ backend:
   # Backend configuration (injected via ConfigMap)
   config:
     podLimitPerUser: 5
-    gpuLimitPerUser: 8
+    gpuLimitPerUser: 20
 
     gpu:
       # GPU 调度模式
       # - "exclusive": 独占模式，使用 K8s 原生 GPU 资源调度（默认）
       # - "sharing": 共享模式，通过环境变量控制 GPU 卡分配，不请求 K8s GPU 资源
-      schedulingMode: "exclusive"
+      schedulingMode: "sharing"
 
       # 共享模式下的 RuntimeClass（可选）
       # NVIDIA: 通常为 "nvidia"
@@ -63,7 +59,7 @@ backend:
 
       # 每张 GPU 卡最多可被多少个 Pod 共享（共享模式生效）
       # 设置为 0 表示不限制
-      maxPodsPerGPU: 0
+      maxPodsPerGPU: 4
 
       # 节点池配置（共享池/非共享池）
       # 所有节点默认属于共享池；
@@ -91,20 +87,17 @@ backend:
       #   - namespace: Namespace标签名（默认自动识别 namespace/exported_namespace）
       # - nodeSelector: 节点选择器（可选）
       availableTypes:
-        # CPU Only - amd64（纯 CPU 模式）
         - name: "CPU Only"
           platform: "amd64"
           resourceName: ""  # 空字符串表示 CPU Only
           nodeSelector:
             kubernetes.io/arch: "amd64"
-        # CPU Only - arm64（纯 CPU 模式）
-        # - name: "CPU Only"
-        #   platform: "arm64"
-        #   resourceName: ""
-        #   nodeSelector:
-        #     kubernetes.io/arch: "arm64"
-        # GPU 类型 - amd64
-        - name: "NVIDIA A100"
+        - name: "CPU Only"
+          platform: "arm64"
+          resourceName: ""  # 空字符串表示 CPU Only
+          nodeSelector:
+            kubernetes.io/arch: "arm64"
+        - name: "NVIDIA H100"
           platform: "amd64"
           resourceName: "nvidia.com/gpu"
           type: "nvidia"
@@ -112,46 +105,17 @@ backend:
           #   deviceId: "gpu"
           #   node: "Hostname"
           nodeSelector:
-            kubernetes.io/arch: "amd64"
-            gpu-type: "a100"
-        - name: "NVIDIA V100"
-          platform: "amd64"
-          resourceName: "nvidia.com/gpu"
-          type: "nvidia"
-          nodeSelector:
-            kubernetes.io/arch: "amd64"
-            gpu-type: "v100"
-        - name: "NVIDIA T4"
-          platform: "amd64"
-          resourceName: "nvidia.com/gpu"
-          type: "nvidia"
-          nodeSelector:
-            kubernetes.io/arch: "amd64"
-            gpu-type: "t4"
+            "nvidia.com/gpu.present": true
         # 华为昇腾 NPU 示例（按需启用）
-        # - name: "华为昇腾 910B"
-        #   platform: "arm64"
-        #   resourceName: "huawei.com/Ascend910"
-        #   type: "ascend"
-        #   nodeSelector:
-        #     kubernetes.io/arch: "arm64"
-        #     npu-type: "910b"
-
-    # 预设镜像配置
-    # - image: 镜像完整名称
-    # - platform: CPU 架构（可选），空表示通用，根据选择的 platform 过滤显示
+        - name: "HUAWEI Ascend 910B"
+          platform: "arm64"
+          resourceName: "huawei.com/Ascend910"
+          type: "ascend"
+          nodeSelector:
+            "accelerator": "huawei-Ascend910"
     presetImages:
-      - image: "nvidia/cuda:12.0.0-base-ubuntu22.04"
+      - image: "registry.dev.huawei.com/flash_stor/vllm-openai:v0.9.2"
         platform: "amd64"
-      - image: "pytorch/pytorch:2.0.1-cuda11.7-cudnn8-runtime"
-        platform: "amd64"
-      - image: "tensorflow/tensorflow:2.13.0-gpu"
-        platform: "amd64"
-      - image: "ubuntu:22.04"
-        platform: ""  # 空表示支持所有平台
-      # ARM64 镜像示例
-      # - image: "armswdev/pytorch-arm-neoverse:r24.07-torch-2.3.0-openblas"
-      #   platform: "arm64"
 
     ui:
       enableJupyter: false
@@ -168,20 +132,20 @@ backend:
         - "128Gi"
         - "256Gi"
       shmSizeOptions:
-        - "512Mi"
-        - "1Gi"
-        - "2Gi"
         - "4Gi"
-        - "8Gi"
+        - "16Gi"
+        - "32Gi"
+        - "64Gi"
+        - "128Gi"
       defaultCPU: "16"
       defaultMemory: "64Gi"
-      defaultShmSize: "1Gi"
+      defaultShmSize: "4Gi"
       # 镜像摆渡配置（可选，配置后 Dashboard 显示"镜像摆渡"按钮）
       # 流程: DockerHub -> GitHub Action -> Huawei SWR -> Internal Harbor
-      # imageTransfer:
-      #   issueURL: "https://github.com/org/repo/issues/new?template=image-ferry.yml"   # 提交摆渡请求（GitHub Issue）
-      #   actionURL: "https://github.com/org/repo/actions"                               # 查看摆渡状态（GitHub Action）
-      #   triggerURL: "https://internal-ci.example.com/trigger-sync"                     # 手动强制触发内网同步
+      imageTransfer:
+        issueURL: "https://github.com/SuperMarioYL/registry-mirror/issues"   # 提交摆渡请求（GitHub Issue）
+        actionURL: "https://github.com/SuperMarioYL/registry-mirror/actions/workflows/mirror.yml"                               # 查看摆渡状态（GitHub Action）
+        triggerURL: "https://registry.dev.huawei.com/harbor/replications"                     # 手动强制触发内网同步
 
     storage:
       # ============================================
@@ -217,56 +181,47 @@ backend:
 
       # 是否允许用户在创建 Pod 时自定义挂载宿主机目录
       # 默认 false（出于安全考虑）
-      allowUserMounts: false
+      allowUserMounts: true
 
       # 用户自定义挂载的读写路径白名单
       # 只读挂载允许任意绝对路径；读写挂载仅允许命中白名单的 hostPath
       # 支持前缀匹配（以 * 结尾）或精确匹配
       # 例如: ["/data/*", "/mnt/datasets/*", "/home/shared"]
       # 如果为空且 allowUserMounts=true，则仅允许只读挂载
-      userMountAllowedPaths: []
+      userMountAllowedPaths:
+        - "/mnt/*"
       # userMountAllowedPaths:
       #   - "/data/*"
       #   - "/mnt/datasets/*"
       #   - "/mnt/models/*"
 
       volumes:
-        # 用户工作空间（用户级 PVC，同一用户的所有 Pod 共享）
-        - name: "workspace"
-          mountPath: "/workspace"
-          type: "pvc"
-          storageClass: "standard"
-          size: "50Gi"
-          accessMode: "ReadWriteOnce"  # 注意：如需跨节点共享，改为 ReadWriteMany（需支持的存储类）
-          scope: "user"  # user=用户级（默认，多 Pod 共享）, pod=Pod 级（每 Pod 独立，随 Pod 删除）
-          description: "用户工作空间，代码和数据持久化存储，同一用户的所有 Pod 共享"
-          # pvcNameTemplate: "genet-{username}-{volumeName}"  # 可选，自定义 PVC 名称
-
-        # 示例：Pod 级存储（每个 Pod 独立 PVC，Pod 删除时自动清理）
-        # - name: "scratch"
-        #   mountPath: "/scratch"
-        #   type: "pvc"
-        #   storageClass: "standard"
-        #   size: "100Gi"
-        #   accessMode: "ReadWriteOnce"
-        #   scope: "pod"  # Pod 级作用域
-        #   description: "临时存储，Pod 删除后自动清理"
-        #   pvcNameTemplate: "genet-{username}-{podName}-{volumeName}"
-
-        # 示例：共享数据目录（HostPath，所有用户共享，只读）
-        # - name: "shared-data"
-        #   mountPath: "/data"
-        #   type: "hostpath"
-        #   hostPath: "/mnt/shared-data"
-        #   readOnly: true
-        #   description: "公共数据集，所有用户共享（只读）"
 
         # 示例：用户独立的 HostPath 目录
-        # - name: "user-cache"
-        #   mountPath: "/cache"
-        #   type: "hostpath"
-        #   hostPath: "/data/cache/{username}"
-        #   description: "用户缓存目录，用于存放模型缓存等"
+        - name: "workspace"
+          mountPath: "/workspace-genet"
+          type: "hostpath"
+          hostPath: "/mnt/private/{username}"
+          description: "用户工作空间，可写，持久化目录，用于开发"
+
+        # 用户工作空间（每用户独立 PVC）
+        - name: "local-tmp"
+          mountPath: "/home/local_tmp_disk"
+          type: "pvc"
+          storageClass: "local-path"
+          size: "30Gi"
+          accessMode: "ReadWriteOnce"
+          scope: "pod"  # user=用户级（默认，多 Pod 共享）, pod=Pod 级（每 Pod 独立，随 Pod 删除）
+          description: "用户本地盘临时工作空间，代码和数据随pod 存储和删除"
+          # pvcNameTemplate: "genet-{username}-workspace"  # 可选，自定义 PVC 名称
+
+        # 示例：共享数据目录（HostPath，所有用户共享，只读）
+        - name: "models"
+          mountPath: "/models"
+          type: "hostpath"
+          hostPath: "/mnt/model"
+          readOnly: true
+          description: "用户模型目录，只读，用于存放模型等"
 
     # Pod 配置（Kubernetes 原生格式）
     # 使用 K8s 标准 YAML，直接参考 K8s 官方文档配置
@@ -307,34 +262,27 @@ backend:
       #   env: production
 
       # 亲和性调度（高级规则，K8s 原生格式，可选）
-      # 文档: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#affinity-and-anti-affinity
-      # affinity:
-      #   nodeAffinity:
-      #     # 必须满足的规则（硬约束）
-      #     requiredDuringSchedulingIgnoredDuringExecution:
-      #       nodeSelectorTerms:
-      #         - matchExpressions:
-      #             - key: nvidia.com/gpu
-      #               operator: Exists
-      #     # 优先满足的规则（软约束）
-      #     preferredDuringSchedulingIgnoredDuringExecution:
-      #       - weight: 80  # 权重 1-100
-      #         preference:
-      #           matchExpressions:
-      #             - key: disk
-      #               operator: In
-      #               values:
-      #                 - ssd
-      #                 - nvme
-      #       - weight: 50
-      #         preference:
-      #           matchExpressions:
-      #             - key: topology.kubernetes.io/region
-      #               operator: In
-      #               values:
-      #                 - us-west-1
-      #                 - us-west-2
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              # 条件组1：NVIDIA GPU + amd64（OR 关系）
+              - matchExpressions:
+                  - key: kubernetes.io/arch
+                    operator: In
+                    values: [ "amd64" ]
+                  - key: nvidia.com/gpu.present
+                    operator: In
+                    values: [ "true" ]
 
+              # 条件组2：华为 Ascend + arm64
+              - matchExpressions:
+                  - key: kubernetes.io/arch
+                    operator: In
+                    values: [ "arm64" ]
+                  - key: accelerator
+                    operator: In
+                    values: [ "huawei-Ascend910" ]
       # 额外的存储配置（K8s 原生格式，可选）
       # 注意：用户的 workspace PVC 会自动添加，这里配置额外的存储卷
       # 文档: https://kubernetes.io/docs/concepts/storage/volumes/
@@ -385,13 +333,22 @@ backend:
       # 容器生命周期 Hook（K8s 原生格式，可选）
       # 用于在容器启动后或停止前执行自定义命令
       # 文档: https://kubernetes.io/docs/concepts/containers/container-lifecycle-hooks/
-      # lifecycle:
-      #   preStop:
-      #     exec:
-      #       command:
-      #         - /bin/sh
-      #         - -c
-      #         - "mv /workspace/output/* /data/archive/ || true"
+      lifecycle:
+        preStop:
+          exec:
+            command:
+              - /bin/sh
+              - -c
+              - |
+                SRC_DIR="/home/local_tmp_disk"
+                ARCHIVE_ROOT="/workspace-genet"
+                BASE="$(basename "$SRC_DIR")"
+
+                if [ -d "$SRC_DIR" ] && [ "$(ls -A "$SRC_DIR" 2>/dev/null)" ]; then
+                  ts="$(date +%Y%m%d-%H%M%S)"
+                  mkdir -p "$ARCHIVE_ROOT"
+                  mv "$SRC_DIR" "$ARCHIVE_ROOT/${BASE}-${ts}"
+                fi
       #   postStart:
       #     exec:
       #       command:
@@ -409,13 +366,13 @@ backend:
         echo "=== Starting Genet Pod ==="
 
         # 创建必要目录
-        mkdir -p /workspace
+        mkdir -p /workspace-genet
 
         # 持久化 VS Code Server 目录（避免每次连接重新下载）
-        mkdir -p /workspace/.vscode-server
+        mkdir -p /workspace-genet/.vscode-server
         rm -rf /root/.vscode-server 2>/dev/null || true
-        ln -sf /workspace/.vscode-server /root/.vscode-server
-        echo "VS Code Server directory linked to /workspace/.vscode-server"
+        ln -sf /workspace-genet/.vscode-server /root/.vscode-server
+        echo "VS Code Server directory linked to /workspace-genet/.vscode-server"
 
         {{.ProxyScript}}
 
@@ -437,47 +394,64 @@ backend:
         tail -f /dev/null
 
     oauth:
-      enabled: false
-      # 认证模式: "oidc" 或 "oauth"
-      # - oidc: 自动发现端点（需配置 providerURL）
-      # - oauth: 手动配置端点（需配置 authorizationEndpoint, tokenEndpoint）
-      mode: "oidc"
+      # OAuth 配置说明：
+      # enabled: false - 使用默认用户 dev-user（不需要启动 Mock OAuth）
+      # enabled: true  - 启用 OAuth 认证
 
-      # OIDC 模式配置
-      providerURL: "" # OIDC Issuer URL，如: https://auth.example.com
+      enabled: true
 
-      # OAuth 模式配置（mode 为 "oauth" 时使用）
-      authorizationEndpoint: "" # OAuth 授权端点
-      tokenEndpoint: "" # OAuth Token 端点
-      userinfoEndpoint: "" # 用户信息端点（可选）
+      # ============================================
+      # 认证模式选择
+      # ============================================
+      # mode: "oidc" - OIDC 模式（自动发现端点，需配置 providerURL）
+      # mode: "oauth" - 纯 OAuth 模式（手动配置端点）
+      mode: "oauth"
 
-      # 用户信息获取方式: "endpoint", "token", "both"
-      # - endpoint: 从 userinfo API 获取
-      # - token: 从 access_token/id_token JWT 解析
-      # - both: 优先从 token 解析，失败则调用 endpoint
+      # ============================================
+      # OIDC 模式配置（mode: "oidc" 时使用）
+      # ============================================
+      # Mock OAuth2 Server: make mock-oauth-start
+      providerURL: "http://localhost:8888/default"
+
+      # ============================================
+      # OAuth 模式配置（mode: "oauth" 时使用）
+      # ============================================
+      # 如果你的 OAuth Provider 不支持 OIDC 发现，使用这些配置：
+      authorizationEndpoint: "https://uniportal.huawei.com/saaslogin1/oauth2/authorize" # 如: https://auth.internal.com/oauth/authorize
+      tokenEndpoint: "https://uniportal.huawei.com/saaslogin1/oauth2/accesstoken" # 如: https://auth.internal.com/oauth/token
+      userinfoEndpoint: "https://uniportal.huawei.com/saaslogin1/oauth2/userinfo" # 如: https://auth.internal.com/api/user（可选）
+
+      # ============================================
+      # 用户信息获取方式
+      # ============================================
+      # userinfoSource: "endpoint" - 从 userinfo API 获取
+      # userinfoSource: "token"    - 从 access_token/id_token JWT 解析
+      # userinfoSource: "both"     - 优先从 token 解析，失败则调用 endpoint
       userinfoSource: "endpoint"
 
-      # userinfo API 的请求方式: "get" 或 "post"
-      # - get:  GET 请求 + Authorization: Bearer {token} （标准 OIDC）
-      # - post: POST JSON 请求，body 包含 {client_id, access_token, scope}
-      userinfoMethod: "get"
+      # userinfoMethod: userinfo API 的请求方式
+      # - "get":  GET 请求 + Authorization: Bearer {token} （标准 OIDC 方式）
+      # - "post": POST JSON 请求，body 包含 {client_id, access_token, scope}
+      userinfoMethod: "post"
 
       # 用户信息字段映射（适用于 token 解析和 endpoint 响应）
-      tokenUsernameClaim: "preferred_username" # 用户名字段
-      tokenEmailClaim: "email" # 邮箱字段
+      # 如果 OAuth Provider 返回的字段名不是标准的，可以通过这两个配置指定
+      tokenUsernameClaim: "uid" # 用户名字段，常见值: username, preferred_username, login, user
+      tokenEmailClaim: "email" # 邮箱字段，常见值: email, mail, user_email
 
+      # ============================================
       # 公共配置
-      clientID: ""
-      clientSecret: ""
-      redirectURL: "" # 如: https://genet.example.com/api/auth/callback
-      frontendURL: "" # 如: https://genet.example.com
+      # ============================================
+      clientID: "genet_client_id"
+      clientSecret: "genet_secret"
+      redirectURL: "http://genet.dev.huawei.com/api/auth/callback"
+      frontendURL: "http://genet.dev.huawei.com"
       scopes:
-        - "openid"
-        - "profile"
-        - "email"
-      jwtSecret: "" # 生产环境必须设置强密钥
-      cookieDomain: ""
-      cookieSecure: true # 生产环境使用 HTTPS
+        - "base.profile"
+      jwtSecret: "genet-dev-jwt-secret-32chars!!"
+      cookieDomain: "" # 空表示当前域
+      cookieSecure: true # 本地开发用 http
+
 
     # ============================================
     # OIDC Provider 配置（Genet 作为 OIDC Provider）
@@ -485,25 +459,25 @@ backend:
     # 启用后，Genet 会作为 OIDC Provider，将企业 OAuth 转换为标准 OIDC
     # K8s API Server 可以直接信任 Genet，用户可以使用 kubectl 访问集群
     oidcProvider:
-      enabled: false
+      enabled: false # 本地开发时可设为 true 进行测试
       # Issuer URL，必须是外部可访问的地址
-      # 例如: https://genet.example.com
-      issuerURL: ""
-      # RSA 密钥（用于签名 JWT，生产环境应配置固定密钥）
-      # 如果留空，会自动生成（但重启后已签发的 Token 会失效）
+      # 本地开发时使用: http://localhost:8080
+      issuerURL: "https://genet.dev.huawei.com"
+      # RSA 密钥（留空则自动生成）
       rsaPrivateKey: ""
       rsaPublicKey: ""
       # Kubernetes 客户端配置
       kubernetesClientID: "kubernetes"
-      kubernetesClientSecret: ""
+      kubernetesClientSecret: "kubernetes-secret"
 
     # ============================================
     # K8s 集群配置（用于生成 kubeconfig）
     # ============================================
     cluster:
-      name: "" # 集群名称，如: my-cluster
-      server: "" # K8s API Server 地址，如: https://k8s-api.example.com:6443
-      caData: "" # CA 证书（base64 编码）
+      name: "flash-cluster" # 集群名称
+      server: "https://141.111.32.128:8443" # K8s API Server 地址，如: https://localhost:6443
+      caData: "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUMvakNDQWVhZ0F3SUJBZ0lCQURBTkJna3Foa2lHOXcwQkFRc0ZBREFWTVJNd0VRWURWUVFERXdwcmRXSmwKY201bGRHVnpNQjRYRFRJMk1ERXdOakV4TlRJeU9Gb1hEVE0yTURFd05ERXhOVEl5T0Zvd0ZURVRNQkVHQTFVRQpBeE1LYTNWaVpYSnVaWFJsY3pDQ0FTSXdEUVlKS29aSWh2Y05BUUVCQlFBRGdnRVBBRENDQVFvQ2dnRUJBT0dsCmM2eEhxWmU2QVZoakkzNWlqcVRMV0Y2VmJGWUhVTGx6RmU3em1xeFZUbnJ5UTl1QjJkUFdLZXpCMm5mZGx6VUUKYmY2eDlrVlRWMWw5Q09oMS9yTVFpS2tjakhORjFzYW91ZW9oUERZdktqRDd4WnpWY0pwV0ZhK2Q4NHpKL05mbApSSWxwcVh0aE9KMXFiTk9zUkk0NGlmMGJtVlIrV2kySG5zRnJDTTFnZEl0cTFtUXZaSkJRdTJ3RFZVY2pka1hWCk14WGQzc29ZNW1NMW9PTW84THdaTW93eFV5emxkbGhnQm5ka2tBU04yTUU4Q2xHVXkyaHE2SU1mWFJ2dXhPOWoKVEtlcDVhMjhkc2ZxV2FIbGRPYUdzZS9iaFF0NEduWEs3NVQ4cTRwb0tudnQyWVR3ZzZ5R0cyMHowRHNmb0lMdwprTnpNTFg2ZitDa21BTFVuY2NFQ0F3RUFBYU5aTUZjd0RnWURWUjBQQVFIL0JBUURBZ0trTUE4R0ExVWRFd0VCCi93UUZNQU1CQWY4d0hRWURWUjBPQkJZRUZDbFZqVjZLblNzdVdNY2ZKcXdOR1dKV1p1c3FNQlVHQTFVZEVRUU8KTUF5Q0NtdDFZbVZ5Ym1WMFpYTXdEUVlKS29aSWh2Y05BUUVMQlFBRGdnRUJBRnpSaTlzNVNqSC9GS200RU5RMwoyMlZWUjZjalRrSFV5SnAwVSt6RG9FZ0NTZnpUQzBuTi9tZk9YanFYNGRKaGJiUGoycXMrRFI2aGFYckRGT3RECjAxWktQZmY5SUc5YVB3Y0paZWYzRk01ZW9sL2ZueFA2TTZjd25hTXBQNVdsU0h3WC80bzZGQWxEZmhUL0tDamcKa1RvSzliWGY2UXptWmxoZjlPa3NhZjJOVU4wOVpabmJmY0FDdU1WYi93Wmlyb3hpeXVGR1VYQmI3b2lNOENGSwpzekFpaFVHaWJoMU52S1cvU1ZtV2p4YmhON0ZhMkNMc3Y4VHpZVHhOb3p4VUQ2K2MzT2xkQUZ3MmlzOXVpa0VBCnduS081NDRoekhFTVdCQW03ZGpuajF1dFNMckVQSDBFTU1yUktLM1g4cDBDNHNBcHByeVlmOGJWSWExK1BhbXMKRzY4PQotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCg==" # CA 证书（base64 编码）
+
 
     # ============================================
     # Kubeconfig 生成配置
@@ -521,39 +495,50 @@ backend:
     # 用户 RBAC 配置
     # ============================================
     userRBAC:
-      enabled: false # 是否启用用户 RBAC 管理
+      enabled: true # 是否启用用户 RBAC 管理
       autoCreate: true # 登录时自动创建用户 Namespace 和 RBAC
 
     # 管理员列表（用于管理页访问控制）
     # 支持配置 OAuth 返回的 username 或 email
-    adminUsers: []
+    adminUsers:
+      - y00961166
       # - "alice"
       # - "ops@example.com"
 
     # Open API 配置
     openAPI:
-      enabled: false
+      enabled: true
       namespace: "genet-open-api" # Open API 资源固定创建在此 namespace
       apiKeys: [] # 兼容旧版静态 API Keys（建议逐步迁移到管理页）
         # - "replace-with-strong-api-key"
 
-    # 代理配置（会注入到用户 Pod 的环境变量和 ~/.bashrc 中）
+    # 代理配置（会注入到 Pod 的环境变量和 ~/.bashrc 中）
     proxy:
-      httpProxy: "" # HTTP 代理地址，如: http://proxy.example.com:8080
-      httpsProxy: "" # HTTPS 代理地址
-      noProxy: "localhost,127.0.0.1,.cluster.local,10.0.0.0/8" # 不使用代理的地址
+      # HTTP 代理地址，留空则不配置
+      httpProxy: "http://p_atlas:proxy%40123@172.19.152.237:8080"
+      # HTTPS 代理地址，留空则不配置
+      httpsProxy: "http://p_atlas:proxy%40123@172.19.152.237:8080"
+      # 不使用代理的地址列表（逗号分隔）
+      noProxy: "localhost,127.0.0.1,.cluster.local,.huawei.com"
+      # 示例配置：
+      # httpProxy: "http://proxy.example.com:8080"
+      # httpsProxy: "http://proxy.example.com:8080"
+      # noProxy: "localhost,127.0.0.1,.cluster.local,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
 
     # 镜像仓库配置（用于镜像保存/commit 功能和镜像搜索）
     registry:
-      url: "" # 镜像仓库地址，如: registry.example.com
-      username: "" # 仓库用户名
-      password: "" # 仓库密码
-      insecure: false # 是否使用 HTTP（不安全）协议推送镜像，内网 HTTP 仓库设为 true
-      type: "docker" # 仓库类型: harbor | docker，用于镜像搜索 API
+      # 镜像仓库地址，如 registry.example.com 或 docker.io
+      url: "registry.dev.huawei.com"
+      # 仓库用户名（可选，用于推送镜像）
+      username: "admin"
+      # 仓库密码（可选，用于推送镜像）
+      password: "Harbor12345"
+      insecure: true # 是否使用 HTTP（不安全）协议推送镜像，内网 HTTP 仓库设为 true
+      type: "harbor" # 仓库类型: harbor | docker，用于镜像搜索 API
 
     # 系统依赖镜像配置
     images:
-      nerdctl: "ghcr.io/containerd/nerdctl:v1.7.0" # nerdctl 镜像，用于 commit 操作
+      nerdctl: "registry.dev.huawei.com/flash_stor/nerdctl:v1.7.0" # nerdctl 镜像，用于 commit 操作
 
     # Kubernetes 客户端配置
     kubernetes:
@@ -565,25 +550,41 @@ backend:
     # ============================================
     # Prometheus 地址（用于获取 GPU/NPU 实时利用率）
     # 留空则不从 Prometheus 获取指标，仅从 K8s 获取 Pod 占用信息
-    prometheusURL: "" # 如: http://prometheus.monitoring:9090
+    prometheusURL: "http://prometheus-kube-prometheus-prometheus.monitoring:9090" # 如: http://prometheus.monitoring:9090
 
 # Frontend configuration
 frontend:
   image:
-    repository: genet-frontend
+    repository: registry.dev.huawei.com/flash_stor/genet-frontend
     # tag: 留空则使用 Chart appVersion
     tag: ""
   imagePullPolicy: IfNotPresent
   replicas: 2
 
   # 节点选择器（K8s 原生格式）
-  nodeSelector: {}
+  nodeSelector: { }
 
   # 亲和性调度（K8s 原生格式）
-  affinity: {}
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              # 架构必须是 amd64
+              - key: kubernetes.io/arch
+                operator: In
+                values: [ "amd64" ]
+
+              # 只要是 NVIDIA GPU 节点（不关心 true/false），直接排除
+              - key: nvidia.com/gpu.present
+                operator: DoesNotExist
+
+              # 只要是加速卡节点（Ascend / 未来其他），直接排除
+              - key: accelerator
+                operator: DoesNotExist
 
   # 容忍度（K8s 原生格式）
-  tolerations: []
+  tolerations: [ ]
 
 # CronJob configuration (pod cleanup)
 cleanup:
@@ -593,41 +594,57 @@ cleanup:
   timezone: "Asia/Shanghai"
   image:
     # cleanup 使用 backend 镜像
-    repository: genet-backend
+    repository: registry.dev.huawei.com/flash_stor/genet-backend
     # tag: 留空则使用 Chart appVersion
     tag: ""
 
   # 节点选择器（K8s 原生格式）
-  nodeSelector: {}
+  nodeSelector: { }
 
   # 亲和性调度（K8s 原生格式）
-  affinity: {}
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              # 架构必须是 amd64
+              - key: kubernetes.io/arch
+                operator: In
+                values: [ "amd64" ]
+
+              # 只要是 NVIDIA GPU 节点（不关心 true/false），直接排除
+              - key: nvidia.com/gpu.present
+                operator: DoesNotExist
+
+              # 只要是加速卡节点（Ascend / 未来其他），直接排除
+              - key: accelerator
+                operator: DoesNotExist
 
   # 容忍度（K8s 原生格式）
-  tolerations: []
+  tolerations: [ ]
 
 # Ingress configuration
 ingress:
   enabled: true
   className: "nginx"
-  host: "genet.example.com"
+  host: "genet.dev.huawei.com"
 
   # 额外的 Ingress 注解
-  annotations: {}
-    # nginx.ingress.kubernetes.io/proxy-body-size: "100m"
-    # nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+  annotations: { }
+  # nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+  # nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
 
   # TLS 配置
   tls:
-    enabled: false
+    enabled: true
     # 证书 Secret 名称（如果使用 cert-manager，可留空自动生成）
     secretName: ""
 
   # cert-manager 配置（自动申请 TLS 证书）
   certManager:
-    enabled: false
+    enabled: true
     # 使用 ClusterIssuer（集群级别）
-    clusterIssuer: "" # 如: "letsencrypt-prod"
+    clusterIssuer: "selfsigned-issuer" # 如: "letsencrypt-prod"
     # 或使用 Issuer（Namespace 级别）
     issuer: "" # 如: "letsencrypt-staging"
 
@@ -645,9 +662,11 @@ service:
 # ============================================
 # 前提：需要先安装 cert-manager
 # kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
+# oidc 证书配置：
+# kubectl get secret genet-ca-secret  -n cert-manager -o jsonpath='{.data.tls\.crt}' | base64 --decode > /etc/ssl/certs/oidc-ca-cert.crt
 certManager:
   # 是否创建 ClusterIssuer（如果已有可设为 false）
-  createClusterIssuer: false
+  createClusterIssuer: true
 
   # cert-manager 所在的 namespace（用于存放 CA 证书 Secret）
   # ClusterIssuer 只能引用此 namespace 中的 Secret
