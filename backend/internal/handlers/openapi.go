@@ -109,6 +109,18 @@ func deriveCustomNameForUpdate(podID, userIdentifier string) string {
 	return suffix
 }
 
+func openAPIOwnerLabelSelector(ownerUser, extra string) string {
+	base := fmt.Sprintf("genet.io/open-api=true,genet.io/openapi-owner=%s", ownerUser)
+	if extra != "" {
+		return extra + "," + base
+	}
+	return base
+}
+
+func isOpenAPIOwnedBy(labels map[string]string, ownerUser string) bool {
+	return labels["genet.io/openapi-owner"] == ownerUser
+}
+
 // CreatePod 创建 Pod（JSON 格式，字段与 UI 创建 Pod 一致）
 func (h *OpenAPIHandler) CreatePod(c *gin.Context) {
 	if _, ok := applyOpenAPIOwnerUserContext(c); !ok {

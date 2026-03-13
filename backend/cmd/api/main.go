@@ -245,6 +245,20 @@ func main() {
 			openAPI.PUT("/pods/:id", auth.RequireOpenAPIScope(models.APIKeyScopeWrite), openAPIHandler.UpdatePod)
 			openAPI.DELETE("/pods/:id", auth.RequireOpenAPIScope(models.APIKeyScopeWrite), openAPIHandler.DeletePod)
 
+			// Service CRUD
+			openAPI.POST("/services", auth.RequireOpenAPIScope(models.APIKeyScopeWrite), openAPIHandler.CreateService)
+			openAPI.GET("/services", auth.RequireOpenAPIScope(models.APIKeyScopeRead), openAPIHandler.ListServices)
+			openAPI.GET("/services/:name", auth.RequireOpenAPIScope(models.APIKeyScopeRead), openAPIHandler.GetService)
+			openAPI.PUT("/services/:name", auth.RequireOpenAPIScope(models.APIKeyScopeWrite), openAPIHandler.UpdateService)
+			openAPI.DELETE("/services/:name", auth.RequireOpenAPIScope(models.APIKeyScopeWrite), openAPIHandler.DeleteService)
+
+			// ConfigMap CRUD
+			openAPI.POST("/configmaps", auth.RequireOpenAPIScope(models.APIKeyScopeWrite), openAPIHandler.CreateConfigMap)
+			openAPI.GET("/configmaps", auth.RequireOpenAPIScope(models.APIKeyScopeRead), openAPIHandler.ListConfigMaps)
+			openAPI.GET("/configmaps/:name", auth.RequireOpenAPIScope(models.APIKeyScopeRead), openAPIHandler.GetConfigMap)
+			openAPI.PUT("/configmaps/:name", auth.RequireOpenAPIScope(models.APIKeyScopeWrite), openAPIHandler.UpdateConfigMap)
+			openAPI.DELETE("/configmaps/:name", auth.RequireOpenAPIScope(models.APIKeyScopeWrite), openAPIHandler.DeleteConfigMap)
+
 			// Job CRUD
 			openAPI.POST("/jobs", auth.RequireOpenAPIScope(models.APIKeyScopeWrite), openAPIHandler.CreateJob)
 			openAPI.GET("/jobs", auth.RequireOpenAPIScope(models.APIKeyScopeRead), openAPIHandler.ListJobs)
