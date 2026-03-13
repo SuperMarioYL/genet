@@ -38,6 +38,43 @@
 <!-- 截图位置：登录页面 -->
 > **[截图]** 登录页面
 
+### 1.1 使用 genet CLI（可选）
+
+如果你更习惯在终端里工作，可以使用 `genet` CLI：
+
+```bash
+# 首次登录
+genet login --server https://genet.example.com
+
+# 查看当前身份
+genet whoami
+
+# 创建 Pod
+genet run nvidia/cuda:12.0.0-base-ubuntu22.04 --gpus 0 --cpu 2 --memory 4Gi --wait
+
+# 查看和管理 Pod
+genet ps
+genet logs <pod-name>
+genet describe <pod-name>
+genet rm <pod-name>
+```
+
+常用附加命令：
+
+```bash
+# 保存镜像
+genet commit <pod-name> registry.local/alice/train:latest
+
+# 查看个人镜像
+genet image ls
+
+# 搜索仓库镜像
+genet registry search cuda
+
+# 获取 kubeconfig
+genet kubeconfig get --file ~/.kube/genet-config
+```
+
 ---
 
 ### 2. 查看 GPU 资源概览

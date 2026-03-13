@@ -58,6 +58,7 @@ frontend/.cache/
 tmp/
 temp/
 *.tmp
+.worktrees/
 
 # Kubernetes
 *.kubeconfig

@@ -103,6 +103,7 @@ func main() {
 	podHandler := handlers.NewPodHandler(k8sClient, promClient, config)
 	configHandler := handlers.NewConfigHandler(config, k8sClient)
 	authHandler := handlers.NewAuthHandler(config)
+	cliAuthHandler := handlers.NewCLIAuthHandler(k8sClient, config)
 	adminHandler := handlers.NewAdminHandler(config, k8sClient)
 	kubeconfigHandler := handlers.NewKubeconfigHandler(config, k8sClient)
 	clusterHandler := handlers.NewClusterHandler(k8sClient, promClient, config)
@@ -171,6 +172,15 @@ func main() {
 		api.GET("/auth/login", oauthHandler.Login)
 		api.GET("/auth/callback", oauthHandler.Callback)
 		api.GET("/auth/logout", oauthHandler.Logout)
+
+		cliAuth := api.Group("/cli/auth")
+		{
+			cliAuth.POST("/start", cliAuthHandler.Start)
+			cliAuth.GET("/complete", auth.AuthMiddleware(config), cliAuthHandler.Complete)
+			cliAuth.POST("/exchange", cliAuthHandler.Exchange)
+			cliAuth.POST("/refresh", cliAuthHandler.Refresh)
+			cliAuth.POST("/logout", cliAuthHandler.Logout)
+		}
 
 		// 集群信息（公开）
 		api.GET("/cluster/info", kubeconfigHandler.GetClusterInfo)
