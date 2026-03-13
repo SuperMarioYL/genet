@@ -112,6 +112,17 @@ func NewClient(config *models.Config) (*Client, error) {
 	}, nil
 }
 
+func NewClientWithClientset(clientset kubernetes.Interface, config *models.Config) *Client {
+	if config == nil {
+		config = &models.Config{}
+	}
+	return &Client{
+		clientset: clientset,
+		config:    config,
+		log:       logger.Named("k8s"),
+	}
+}
+
 // GetClientset 获取 Kubernetes clientset
 func (c *Client) GetClientset() kubernetes.Interface {
 	return c.clientset

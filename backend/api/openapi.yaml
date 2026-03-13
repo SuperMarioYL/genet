@@ -2,10 +2,10 @@ openapi: "3.0.3"
 info:
   title: Genet Open API
   description: |
-    Genet OpenAPI for Pod/Job operations.
-    - Pod APIs use JSON request/response and align with Create Pod UI capabilities.
-    - Job APIs keep YAML request format (K8s native Job spec).
-    - Pod APIs require API key bound with `ownerUser` in admin page.
+    Genet OpenAPI for Pod, Service, ConfigMap, and Job operations.
+    - All resources use simplified JSON request/response models.
+    - Effective namespace is always derived from the API key bound `ownerUser`.
+    - Server injects ownership and management labels automatically.
   version: "1.0.0"
 
 servers:
@@ -180,40 +180,27 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
-  /api/open/jobs:
+  /api/open/services:
     post:
-      summary: Create Job
+      summary: Create Service
       description: |
-        Create a Job in the configured namespace.
-        Request body is YAML format (K8s native Job spec).
-        Any namespace in request body will be overridden by server.
-      operationId: createJob
-      tags: [Jobs]
+        Create a Service for the API key bound `ownerUser`.
+        Namespace and system labels are assigned by the server.
+      operationId: createService
+      tags: [Services]
       requestBody:
         required: true
         content:
-          application/yaml:
+          application/json:
             schema:
-              $ref: "#/components/schemas/Job"
-            example: |
-              metadata:
-                name: my-job
-              spec:
-                backoffLimit: 3
-                template:
-                  spec:
-                    containers:
-                      - name: worker
-                        image: busybox:latest
-                        command: ["echo", "hello"]
-                    restartPolicy: Never
+              $ref: "#/components/schemas/OpenAPIServiceRequest"
       responses:
         "201":
-          description: Job created
+          description: Service created
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Job"
+                $ref: "#/components/schemas/OpenAPIServiceResponse"
         "400":
           description: Invalid request body
           content:
@@ -222,6 +209,310 @@ paths:
                 $ref: "#/components/schemas/Error"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Target pod not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    get:
+      summary: List Services
+      description: List Services for current owner user.
+      operationId: listServices
+      tags: [Services]
+      parameters:
+        - name: labelSelector
+          in: query
+          description: Additional K8s label selector; owner filters are always appended by server.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Service list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenAPIServiceListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/open/services/{name}:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Service name
+
+    get:
+      summary: Get Service
+      operationId: getService
+      tags: [Services]
+      responses:
+        "200":
+          description: Service details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenAPIServiceResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    put:
+      summary: Update Service
+      description: |
+        Update an existing Service in place.
+        Namespace and system labels remain server-managed.
+      operationId: updateService
+      tags: [Services]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OpenAPIServiceRequest"
+      responses:
+        "200":
+          description: Service updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenAPIServiceResponse"
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Immutable field conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    delete:
+      summary: Delete Service
+      operationId: deleteService
+      tags: [Services]
+      responses:
+        "200":
+          description: Service deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/open/configmaps:
+    post:
+      summary: Create ConfigMap
+      description: |
+        Create a ConfigMap for the API key bound `ownerUser`.
+        Namespace and system labels are assigned by the server.
+      operationId: createConfigMap
+      tags: [ConfigMaps]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OpenAPIConfigMapRequest"
+      responses:
+        "201":
+          description: ConfigMap created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenAPIConfigMapDetail"
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    get:
+      summary: List ConfigMaps
+      description: List ConfigMaps for current owner user.
+      operationId: listConfigMaps
+      tags: [ConfigMaps]
+      parameters:
+        - name: labelSelector
+          in: query
+          description: Additional K8s label selector; owner filters are always appended by server.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: ConfigMap list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenAPIConfigMapListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/open/configmaps/{name}:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+        description: ConfigMap name
+
+    get:
+      summary: Get ConfigMap
+      operationId: getConfigMap
+      tags: [ConfigMaps]
+      responses:
+        "200":
+          description: ConfigMap details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenAPIConfigMapDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    put:
+      summary: Update ConfigMap
+      description: Update an existing ConfigMap in place.
+      operationId: updateConfigMap
+      tags: [ConfigMaps]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OpenAPIConfigMapRequest"
+      responses:
+        "200":
+          description: ConfigMap updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenAPIConfigMapDetail"
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Immutable ConfigMap cannot be updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    delete:
+      summary: Delete ConfigMap
+      operationId: deleteConfigMap
+      tags: [ConfigMaps]
+      responses:
+        "200":
+          description: ConfigMap deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/open/jobs:
+    post:
+      summary: Create Job
+      description: |
+        Create a Job using Genet simplified JSON fields.
+        Namespace and system labels are assigned by the server.
+      operationId: createJob
+      tags: [Jobs]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OpenAPIJobRequest"
+      responses:
+        "201":
+          description: Job created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenAPIJobResponse"
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "409":
           description: Job already exists
           content:
@@ -233,13 +524,13 @@ paths:
 
     get:
       summary: List Jobs
-      description: List all Jobs created via Open API in the configured namespace.
+      description: List Jobs for current owner user.
       operationId: listJobs
       tags: [Jobs]
       parameters:
         - name: labelSelector
           in: query
-          description: "Additional K8s label selector (genet.io/open-api=true is always appended)"
+          description: Additional K8s label selector; owner filters are always appended by server.
           schema:
             type: string
       responses:
@@ -248,9 +539,11 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/JobList"
+                $ref: "#/components/schemas/OpenAPIJobListResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -273,9 +566,11 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Job"
+                $ref: "#/components/schemas/OpenAPIJobResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -283,22 +578,24 @@ paths:
 
     put:
       summary: Update Job
-      description: "Update an existing Job. Request body is YAML. Namespace will be overridden."
+      description: |
+        Update an existing Job using the simplified JSON request body.
+        Current behavior is recreate: the old Job is deleted and a new Job is created.
       operationId: updateJob
       tags: [Jobs]
       requestBody:
         required: true
         content:
-          application/yaml:
+          application/json:
             schema:
-              $ref: "#/components/schemas/Job"
+              $ref: "#/components/schemas/OpenAPIJobRequest"
       responses:
         "200":
           description: Job updated
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Job"
+                $ref: "#/components/schemas/OpenAPIJobResponse"
         "400":
           description: Invalid request body
           content:
@@ -307,8 +604,16 @@ paths:
                 $ref: "#/components/schemas/Error"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: Running job cannot be updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "500":
           $ref: "#/components/responses/InternalError"
 
@@ -325,6 +630,8 @@ paths:
                 $ref: "#/components/schemas/Message"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -516,58 +823,298 @@ components:
           type: integer
           description: GPU quota limit.
 
-    Job:
-      type: object
-      description: "Kubernetes Job (batchv1.Job). Namespace field will be ignored and overridden by server."
-      properties:
-        apiVersion:
-          type: string
-          example: batch/v1
-        kind:
-          type: string
-          example: Job
-        metadata:
-          $ref: "#/components/schemas/ObjectMeta"
-        spec:
-          type: object
-          description: "K8s JobSpec - see https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#jobspec-v1-batch"
-        status:
-          type: object
-          description: "K8s JobStatus (read-only, returned by server)"
-
-    JobList:
-      type: object
-      properties:
-        apiVersion:
-          type: string
-        kind:
-          type: string
-          example: JobList
-        metadata:
-          type: object
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/Job"
-
-    ObjectMeta:
+    OpenAPIServiceRequest:
       type: object
       properties:
         name:
           type: string
-          description: "Resource name (required for create)"
-        namespace:
+          description: Service name.
+          example: "svc-demo"
+        type:
           type: string
-          description: "Will be IGNORED - server always uses configured namespace"
-        labels:
+          description: Service type.
+          enum: [ClusterIP, NodePort, LoadBalancer]
+          default: ClusterIP
+        targetPodName:
+          type: string
+          description: Optional target Pod name. When provided, server generates selector `app=<targetPodName>`.
+        selector:
           type: object
           additionalProperties:
             type: string
-          description: "Labels (genet.io/open-api=true and genet.io/managed=true will be auto-added)"
+          description: Custom selector. Cannot be used together with `targetPodName`.
+        ports:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/OpenAPIServicePort"
+        sessionAffinity:
+          type: string
+          enum: [None, ClientIP]
+          default: None
+        publishNotReadyAddresses:
+          type: boolean
+          default: false
         annotations:
           type: object
           additionalProperties:
             type: string
+          description: User annotations. `genet.io/*` is reserved.
+      required:
+        - name
+        - ports
+
+    OpenAPIServicePort:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Optional port name.
+        protocol:
+          type: string
+          enum: [TCP, UDP, SCTP]
+          default: TCP
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        targetPort:
+          type: string
+          description: Integer or named target port.
+          example: "8080"
+        nodePort:
+          type: integer
+          minimum: 1
+          maximum: 65535
+          description: Optional fixed nodePort. Only valid for NodePort services.
+      required:
+        - port
+
+    OpenAPIServiceResponse:
+      type: object
+      properties:
+        name:
+          type: string
+        namespace:
+          type: string
+        type:
+          type: string
+        selector:
+          type: object
+          additionalProperties:
+            type: string
+        ports:
+          type: array
+          items:
+            $ref: "#/components/schemas/OpenAPIServicePort"
+        clusterIP:
+          type: string
+        externalIPs:
+          type: array
+          items:
+            type: string
+        loadBalancer:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    OpenAPIServiceListResponse:
+      type: object
+      properties:
+        services:
+          type: array
+          items:
+            $ref: "#/components/schemas/OpenAPIServiceResponse"
+
+    OpenAPIConfigMapRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          description: ConfigMap name.
+        data:
+          type: object
+          additionalProperties:
+            type: string
+        binaryData:
+          type: object
+          additionalProperties:
+            type: string
+          description: Base64-encoded binary values.
+        immutable:
+          type: boolean
+          default: false
+        annotations:
+          type: object
+          additionalProperties:
+            type: string
+          description: User annotations. `genet.io/*` is reserved.
+      required:
+        - name
+
+    OpenAPIConfigMapSummary:
+      type: object
+      properties:
+        name:
+          type: string
+        namespace:
+          type: string
+        immutable:
+          type: boolean
+        dataKeys:
+          type: array
+          items:
+            type: string
+        binaryDataKeys:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    OpenAPIConfigMapDetail:
+      allOf:
+        - $ref: "#/components/schemas/OpenAPIConfigMapSummary"
+        - type: object
+          properties:
+            data:
+              type: object
+              additionalProperties:
+                type: string
+            binaryData:
+              type: object
+              additionalProperties:
+                type: string
+
+    OpenAPIConfigMapListResponse:
+      type: object
+      properties:
+        configMaps:
+          type: array
+          items:
+            $ref: "#/components/schemas/OpenAPIConfigMapSummary"
+
+    OpenAPIEnvVar:
+      type: object
+      properties:
+        name:
+          type: string
+        value:
+          type: string
+      required:
+        - name
+
+    OpenAPIJobRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Job name.
+        image:
+          type: string
+          description: Container image.
+        command:
+          type: array
+          items:
+            type: string
+        args:
+          type: array
+          items:
+            type: string
+        env:
+          type: array
+          items:
+            $ref: "#/components/schemas/OpenAPIEnvVar"
+        workingDir:
+          type: string
+        gpuType:
+          type: string
+        gpuCount:
+          type: integer
+          minimum: 0
+          maximum: 8
+        cpu:
+          type: string
+        memory:
+          type: string
+        shmSize:
+          type: string
+        nodeName:
+          type: string
+        gpuDevices:
+          type: array
+          items:
+            type: integer
+        userMounts:
+          type: array
+          items:
+            $ref: "#/components/schemas/OpenAPIUserMount"
+        parallelism:
+          type: integer
+          minimum: 0
+        completions:
+          type: integer
+          minimum: 0
+        backoffLimit:
+          type: integer
+          minimum: 0
+        ttlSecondsAfterFinished:
+          type: integer
+          minimum: 0
+        restartPolicy:
+          type: string
+          enum: [Never, OnFailure]
+          default: Never
+        annotations:
+          type: object
+          additionalProperties:
+            type: string
+          description: User annotations. `genet.io/*` is reserved.
+      required:
+        - name
+        - image
+
+    OpenAPIJobResponse:
+      type: object
+      properties:
+        name:
+          type: string
+        namespace:
+          type: string
+        image:
+          type: string
+        parallelism:
+          type: integer
+        completions:
+          type: integer
+        active:
+          type: integer
+        succeeded:
+          type: integer
+        failed:
+          type: integer
+        status:
+          type: string
+          enum: [Pending, Running, Succeeded, Failed]
+        createdAt:
+          type: string
+          format: date-time
+        completionTime:
+          type: string
+          format: date-time
+          nullable: true
+
+    OpenAPIJobListResponse:
+      type: object
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: "#/components/schemas/OpenAPIJobResponse"
 
     Error:
       type: object
