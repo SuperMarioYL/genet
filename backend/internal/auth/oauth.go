@@ -23,6 +23,7 @@ const (
 	// Cookie 名称
 	SessionCookieName = "genet_session"
 	StateCookieName   = "genet_oauth_state"
+	ReturnToCookieName = "genet_oauth_return_to"
 
 	// Session 有效期
 	SessionDuration = 24 * time.Hour
@@ -227,6 +228,18 @@ func (h *OAuthHandler) Login(c *gin.Context) {
 		true, // HttpOnly
 	)
 
+	if returnTo := strings.TrimSpace(c.Query("return_to")); returnTo != "" {
+		c.SetCookie(
+			ReturnToCookieName,
+			returnTo,
+			300,
+			"/",
+			h.config.OAuth.CookieDomain,
+			h.config.OAuth.CookieSecure,
+			true,
+		)
+	}
+
 	// 构建授权 URL
 	params := url.Values{}
 	params.Set("client_id", h.config.OAuth.ClientID)
@@ -273,6 +286,8 @@ func (h *OAuthHandler) Callback(c *gin.Context) {
 
 	// 清除 state cookie
 	c.SetCookie(StateCookieName, "", -1, "/", h.config.OAuth.CookieDomain, h.config.OAuth.CookieSecure, true)
+	returnTo, _ := c.Cookie(ReturnToCookieName)
+	c.SetCookie(ReturnToCookieName, "", -1, "/", h.config.OAuth.CookieDomain, h.config.OAuth.CookieSecure, true)
 
 	// 获取 authorization code
 	code := c.Query("code")
@@ -343,6 +358,9 @@ func (h *OAuthHandler) Callback(c *gin.Context) {
 	frontendURL := h.config.OAuth.FrontendURL
 	if frontendURL == "" {
 		frontendURL = "/"
+	}
+	if strings.TrimSpace(returnTo) != "" {
+		frontendURL = returnTo
 	}
 	c.Redirect(http.StatusFound, frontendURL)
 }
@@ -680,4 +698,9 @@ func (h *OAuthHandler) ValidateSession(tokenString string) (*SessionClaims, erro
 	}
 
 	return nil, fmt.Errorf("invalid token")
+}
+
+// CreateSessionTokenForTest 暴露给跨 package 测试使用。
+func (h *OAuthHandler) CreateSessionTokenForTest(username, email string) (string, error) {
+	return h.createSessionToken(username, email)
 }
