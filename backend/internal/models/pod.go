@@ -28,20 +28,45 @@ type UserMount struct {
 
 // PodResponse Pod 响应
 type PodResponse struct {
-	ID             string     `json:"id"`
-	Name           string     `json:"name"`
-	Namespace      string     `json:"namespace"` // Pod 所在的 namespace
-	Container      string     `json:"container"` // 主容器名称
-	Status         string     `json:"status"`
-	Phase          string     `json:"phase"`
-	Image          string     `json:"image"`
-	GPUType        string     `json:"gpuType"`
-	GPUCount       int        `json:"gpuCount"`
-	CPU            string     `json:"cpu"`    // CPU 核数
-	Memory         string     `json:"memory"` // 内存大小
-	CreatedAt      time.Time  `json:"createdAt"`
-	NodeIP         string     `json:"nodeIP"`
-	ProtectedUntil *time.Time `json:"protectedUntil,omitempty"` // 保护截止时间，nil 表示未保护
+	ID             string          `json:"id"`
+	Name           string          `json:"name"`
+	Namespace      string          `json:"namespace"` // Pod 所在的 namespace
+	Container      string          `json:"container"` // 主容器名称
+	Status         string          `json:"status"`
+	Phase          string          `json:"phase"`
+	Image          string          `json:"image"`
+	GPUType        string          `json:"gpuType"`
+	GPUCount       int             `json:"gpuCount"`
+	CPU            string          `json:"cpu"`    // CPU 核数
+	Memory         string          `json:"memory"` // 内存大小
+	CreatedAt      time.Time       `json:"createdAt"`
+	NodeIP         string          `json:"nodeIP"`
+	Connections    *PodConnections `json:"connections,omitempty"`
+	ProtectedUntil *time.Time      `json:"protectedUntil,omitempty"` // 保护截止时间，nil 表示未保护
+}
+
+type PodConnections struct {
+	SSH  PodSSHConnections `json:"ssh"`
+	Apps PodAppConnections `json:"apps"`
+}
+
+type PodSSHConnections struct {
+	Host     string `json:"host,omitempty"`
+	Port     string `json:"port,omitempty"`
+	User     string `json:"user,omitempty"`
+	Password string `json:"password,omitempty"`
+}
+
+type PodAppConnections struct {
+	SSHCommand       string `json:"sshCommand,omitempty"`
+	VSCodeURI        string `json:"vscodeURI,omitempty"`
+	XshellURI        string `json:"xshellURI,omitempty"`
+	CodeServerURL    string `json:"codeServerURL,omitempty"`
+	CodeServerReady  bool   `json:"codeServerReady"`
+	CodeServerStatus string `json:"codeServerStatus,omitempty"`
+	WebShellURL      string `json:"webShellURL,omitempty"`
+	WebShellReady    bool   `json:"webShellReady"`
+	WebShellStatus   string `json:"webShellStatus,omitempty"`
 }
 
 // PodListResponse Pod 列表响应

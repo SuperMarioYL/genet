@@ -22,6 +22,13 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate, cleanupSchedule, clean
   const navigate = useNavigate();
   const [deleting, setDeleting] = useState(false);
   const [extending, setExtending] = useState(false);
+  const connections = pod.connections;
+  const codeServerURL = connections?.apps?.codeServerURL;
+  const codeServerReady = Boolean(connections?.apps?.codeServerReady);
+  const codeServerStatus = connections?.apps?.codeServerStatus || 'unavailable';
+  const webShellURL = connections?.apps?.webShellURL;
+  const webShellReady = Boolean(connections?.apps?.webShellReady);
+  const webShellStatus = connections?.apps?.webShellStatus || 'unavailable';
 
   const copyToClipboard = async (text: string, label: string) => {
     try {
@@ -214,6 +221,10 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate, cleanupSchedule, clean
     copyToClipboard(cmd, 'kubectl exec 命令');
   };
 
+  const openInNewTab = (href: string) => {
+    window.open(href, '_blank', 'noopener,noreferrer');
+  };
+
   const handleDelete = () => {
     Modal.confirm({
       title: '确认删除 Pod？',
@@ -389,6 +400,32 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate, cleanupSchedule, clean
           <div className="pod-connections">
             <span className="connections-label">快速连接</span>
             <Space size="small" wrap>
+              {codeServerURL && (
+                <Tooltip title={codeServerReady ? '在浏览器中打开 code-server' : 'code-server 启动中，请稍后重试'}>
+                  <Button
+                    size="small"
+                    type="primary"
+                    icon={<CloudServerOutlined />}
+                    onClick={() => openInNewTab(codeServerURL)}
+                    disabled={!codeServerReady}
+                  >
+                    code-server
+                  </Button>
+                </Tooltip>
+              )}
+              {webShellURL && (
+                <Tooltip title={webShellReady ? '打开浏览器终端' : 'Web Shell 当前不可用'}>
+                  <Button
+                    size="small"
+                    type="primary"
+                    icon={<CodeOutlined />}
+                    onClick={() => openInNewTab(webShellURL)}
+                    disabled={!webShellReady}
+                  >
+                    Web Shell
+                  </Button>
+                </Tooltip>
+              )}
               <Tooltip title="VSCode 连接指南">
                   <Button 
                     size="small"
@@ -418,6 +455,16 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate, cleanupSchedule, clean
                 />
                 </Tooltip>
               </Space>
+            {codeServerURL && !codeServerReady && (
+              <Text type="secondary" className="connections-hint">
+                {codeServerStatus === 'starting' ? '启动中' : '不可用'}
+              </Text>
+            )}
+            {webShellURL && !webShellReady && (
+              <Text type="secondary" className="connections-hint">
+                {webShellStatus === 'enabled' ? '启动中' : '不可用'}
+              </Text>
+            )}
           </div>
         </>
       )}

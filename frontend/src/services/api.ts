@@ -209,6 +209,32 @@ export const buildImage = (id: string) => {
   return api.post(`/pods/${id}/build`);
 };
 
+export interface CreateWebShellSessionRequest {
+  cols: number;
+  rows: number;
+}
+
+export interface WebShellSessionResponse {
+  sessionId: string;
+  webSocketURL: string;
+  container: string;
+  shell: string;
+  cols: number;
+  rows: number;
+  expiresAt: string;
+}
+
+export const createWebShellSession = (
+  id: string,
+  data: CreateWebShellSessionRequest,
+): Promise<WebShellSessionResponse> => {
+  return api.post(`/pods/${encodeURIComponent(id)}/webshell/sessions`, data);
+};
+
+export const deleteWebShellSession = (id: string, sessionId: string): Promise<{ message: string }> => {
+  return api.delete(`/pods/${encodeURIComponent(id)}/webshell/sessions/${encodeURIComponent(sessionId)}`);
+};
+
 // 镜像 Commit 相关
 export interface CommitImageRequest {
   imageName: string;

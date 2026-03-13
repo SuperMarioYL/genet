@@ -193,6 +193,11 @@ func main() {
 			pods.GET("", podHandler.ListPods)
 			pods.POST("", podHandler.CreatePod)
 			pods.GET("/:id", podHandler.GetPod)
+			pods.Any("/:id/apps/code-server", podHandler.ProxyCodeServer)
+			pods.Any("/:id/apps/code-server/*path", podHandler.ProxyCodeServer)
+			pods.POST("/:id/webshell/sessions", podHandler.CreateWebShellSession)
+			pods.GET("/:id/webshell/sessions/:sessionId/ws", podHandler.WebShellWebSocket)
+			pods.DELETE("/:id/webshell/sessions/:sessionId", podHandler.DeleteWebShellSession)
 			pods.DELETE("/:id", podHandler.DeletePod)
 			pods.POST("/:id/extend", podHandler.ExtendPod) // 延长 Pod 保护期
 			pods.GET("/:id/logs", podHandler.GetPodLogs)

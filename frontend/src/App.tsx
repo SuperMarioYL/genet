@@ -8,6 +8,7 @@ import ParticleBackground from './components/ParticleBackground';
 import Dashboard from './pages/Dashboard';
 import AdminAPIKeys from './pages/AdminAPIKeys';
 import PodDetail from './pages/PodDetail';
+import WebShellPage from './pages/WebShell';
 import { getAuthStatus, AuthStatus } from './services/api';
 import './App.css';
 
@@ -77,6 +78,7 @@ const AppContent: React.FC = () => {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/pods/:id" element={<PodDetail />} />
+          <Route path="/pods/:id/webshell" element={<WebShellPage />} />
           <Route path="/admin/apikeys" element={<AdminAPIKeys />} />
         </Routes>
       </Router>

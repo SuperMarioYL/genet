@@ -2,7 +2,7 @@
 
 <div align="center">
 
-基于 Kubernetes 构建的个人 Pod 管理平台，支持 Web UI、SSH/VSCode 连接、自动回收和镜像保存。
+基于 Kubernetes 构建的个人 Pod 管理平台，支持 Web UI、Web Shell、SSH/VSCode 连接、自动回收和镜像保存。
 
 [![Go Version](https://img.shields.io/badge/Go-1.21-blue)](https://golang.org)
 [![React Version](https://img.shields.io/badge/React-18.2-61dafb)](https://reactjs.org)
@@ -19,6 +19,7 @@
 - 🎯 **Helm 部署**：一键安装，通过 `--set` 调整参数
 - 📊 **配额限制**：限制每用户 Pod 数量和 GPU 总数
 - 💻 **SSH 和 VSCode 支持**：hostNetwork 暴露，一键复制连接信息
+- 🖥️ **浏览器终端**：直接在 Pod 卡片或详情页打开 Web Shell
 - 🔐 **OAuth 认证**：内置 OAuth 支持（GitHub、GitLab、OIDC 等）
 - 🌐 **代理配置**：支持为 Pod 配置 HTTP/HTTPS 代理
 
@@ -148,6 +149,32 @@ ssh root@<node-ip> -p <ssh-port>
 1. 点击 Pod 详情中的 "VSCode" 按钮
 2. 或复制 SSH 配置到 `~/.ssh/config`
 3. 在 VSCode 中连接：F1 → "Remote-SSH: Connect to Host"
+
+### code-server Web IDE
+
+启用后，运行中的 Pod 会在卡片和详情页显示 `code-server` 按钮，点击后会通过 Genet 同域代理在新标签页打开 Web IDE。
+
+```yaml
+backend:
+  config:
+    pod:
+      codeServer:
+        enabled: true
+```
+
+说明：
+- `v1` 直接代理到 Pod IP，不创建额外 Service/Ingress
+- 默认安装脚本依赖镜像内存在 `sh`、`curl` 或 `wget`，以及 `tar`
+- 若 Pod 正常运行但 `code-server` 启动失败，页面会显示“启动中”或“不可用”，不会影响 Pod 本身
+
+### Web Shell
+
+运行中的 Pod 会在卡片和详情页显示 `Web Shell` 按钮，点击后会打开独立终端页面，并通过 Genet 后端 WebSocket 桥接到 Kubernetes `exec -it -- /bin/sh`。
+
+说明：
+- `v1` 仅支持当前 Pod 的主工作容器
+- 终端会话为临时会话，关闭页面后即结束
+- 若 Pod 不处于 `Running`，页面不会提供可用入口
 
 ## ⚙️ 配置
 

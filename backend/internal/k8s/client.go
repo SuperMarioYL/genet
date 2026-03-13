@@ -27,9 +27,10 @@ func init() {
 
 // Client K8s 客户端
 type Client struct {
-	clientset kubernetes.Interface
-	config    *models.Config
-	log       *zap.Logger
+	clientset  kubernetes.Interface
+	restConfig *rest.Config
+	config     *models.Config
+	log        *zap.Logger
 }
 
 // NewClient 创建新的 K8s 客户端
@@ -106,9 +107,10 @@ func NewClient(config *models.Config) (*Client, error) {
 		zap.Int("timeout", timeout))
 
 	return &Client{
-		clientset: clientset,
-		config:    config,
-		log:       log,
+		clientset:  clientset,
+		restConfig: restConfig,
+		config:     config,
+		log:        log,
 	}, nil
 }
 
@@ -117,9 +119,10 @@ func NewClientWithClientset(clientset kubernetes.Interface, config *models.Confi
 		config = &models.Config{}
 	}
 	return &Client{
-		clientset: clientset,
-		config:    config,
-		log:       logger.Named("k8s"),
+		clientset:  clientset,
+		restConfig: nil,
+		config:     config,
+		log:        logger.Named("k8s"),
 	}
 }
 
@@ -138,8 +141,13 @@ func NewClientForTest(clientset kubernetes.Interface, config *models.Config) *Cl
 		config = models.DefaultConfig()
 	}
 	return &Client{
-		clientset: clientset,
-		config:    config,
-		log:       logger.Named("k8s-test"),
+		clientset:  clientset,
+		restConfig: nil,
+		config:     config,
+		log:        logger.Named("k8s-test"),
 	}
+}
+
+func (c *Client) GetRESTConfig() *rest.Config {
+	return c.restConfig
 }
