@@ -2,6 +2,7 @@ package auth
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -61,7 +62,24 @@ func AuthMiddleware(config *models.Config) gin.HandlerFunc {
 			}
 		}
 
-		// 3. 如果还是没有用户信息，使用默认开发用户（仅在 OAuth 未启用时）
+		// 3. CLI bearer token
+		if username == "" {
+			authHeader := strings.TrimSpace(c.GetHeader("Authorization"))
+			if strings.HasPrefix(authHeader, "Bearer ") {
+				tokenString := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
+				claims, err := validateCLIAccessToken(config, tokenString)
+				if err == nil {
+					username = claims.Username
+					email = claims.Email
+					authMethod = "cli-token"
+					authLog.Debug("User authenticated via CLI access token",
+						zap.String("username", username),
+						zap.String("email", email))
+				}
+			}
+		}
+
+		// 4. 如果还是没有用户信息，使用默认开发用户（仅在 OAuth 未启用时）
 		if username == "" {
 			if !config.OAuth.Enabled {
 				// 开发模式：从查询参数获取用户名
