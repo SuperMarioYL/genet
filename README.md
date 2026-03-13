@@ -53,6 +53,40 @@ kubectl port-forward -n genet-system svc/genet-frontend 8080:80
 
 详见 [部署文档](docs/DEPLOYMENT.md)
 
+### CLI 快速开始
+
+构建 CLI：
+
+```bash
+cd backend
+go build -o bin/genet ./cmd/genet
+```
+
+首次登录：
+
+```bash
+./backend/bin/genet login --server http://localhost:8080
+./backend/bin/genet whoami
+```
+
+创建和管理 Pod：
+
+```bash
+./backend/bin/genet run nvidia/cuda:12.0.0-base-ubuntu22.04 --gpus 0 --cpu 2 --memory 4Gi --wait
+./backend/bin/genet ps
+./backend/bin/genet logs <pod-id>
+./backend/bin/genet rm <pod-id>
+```
+
+其他常用命令：
+
+```bash
+./backend/bin/genet commit <pod-id> registry.local/alice/train:latest
+./backend/bin/genet image ls
+./backend/bin/genet registry search cuda
+./backend/bin/genet kubeconfig get --file ~/.kube/genet-config
+```
+
 ## 📚 文档
 
 - [部署指南](docs/DEPLOYMENT.md) - 完整的部署和配置说明

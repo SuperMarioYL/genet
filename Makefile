@@ -18,6 +18,7 @@ build-backend: ## 构建后端二进制
 	@echo "==> 构建后端..."
 	cd backend && go build -o bin/api-server ./cmd/api
 	cd backend && go build -o bin/cleanup ./cmd/cleanup
+	cd backend && go build -o bin/genet ./cmd/genet
 
 build-frontend: ## 构建前端
 	@echo "==> 构建前端..."
@@ -201,4 +202,3 @@ mock-oauth-logs: ## 查看 Mock OAuth2 Server 日志
 dev-auth-status: ## 查看 Mock OAuth2 Server 状态
 	@echo "==> Mock OAuth2 Server 状态:"
 	@docker ps --filter "name=$(MOCK_OAUTH_CONTAINER)" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-
