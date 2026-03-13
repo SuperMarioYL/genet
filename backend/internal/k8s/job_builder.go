@@ -25,6 +25,7 @@ func (c *Client) BuildJobFromOpenAPIRequest(ctx context.Context, namespace, owne
 		Command:    req.Command,
 		Args:       req.Args,
 		WorkingDir: req.WorkingDir,
+		Env:        buildOpenAPIEnvVars(req.Env),
 		NodeName:   req.NodeName,
 		GPUCount:   req.GPUCount,
 		GPUType:    req.GPUType,
@@ -82,4 +83,40 @@ func (c *Client) BuildJobFromOpenAPIRequest(ctx context.Context, namespace, owne
 	}
 
 	return job, nil
+}
+
+func buildOpenAPIEnvVars(envs []models.OpenAPIEnvVar) []corev1.EnvVar {
+	if len(envs) == 0 {
+		return nil
+	}
+
+	result := make([]corev1.EnvVar, 0, len(envs))
+	for _, env := range envs {
+		result = append(result, corev1.EnvVar{
+			Name:  env.Name,
+			Value: env.Value,
+		})
+	}
+	return result
+}
+
+func (c *Client) CreateJob(ctx context.Context, job *batchv1.Job) (*batchv1.Job, error) {
+	return c.clientset.BatchV1().Jobs(job.Namespace).Create(ctx, job, metav1.CreateOptions{})
+}
+
+func (c *Client) ListJobs(ctx context.Context, namespace, labelSelector string) (*batchv1.JobList, error) {
+	return c.clientset.BatchV1().Jobs(namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: labelSelector,
+	})
+}
+
+func (c *Client) GetJob(ctx context.Context, namespace, name string) (*batchv1.Job, error) {
+	return c.clientset.BatchV1().Jobs(namespace).Get(ctx, name, metav1.GetOptions{})
+}
+
+func (c *Client) DeleteJob(ctx context.Context, namespace, name string) error {
+	propagation := metav1.DeletePropagationBackground
+	return c.clientset.BatchV1().Jobs(namespace).Delete(ctx, name, metav1.DeleteOptions{
+		PropagationPolicy: &propagation,
+	})
 }

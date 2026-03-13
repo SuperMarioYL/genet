@@ -25,6 +25,9 @@ func TestBuildJobFromRequestUsesSharedRuntimeResources(t *testing.T) {
 		Memory:  "8Gi",
 		Command: []string{"sh"},
 		Args:    []string{"-c", "echo hi"},
+		Env: []models.OpenAPIEnvVar{
+			{Name: "APP_MODE", Value: "test"},
+		},
 	}
 
 	job, err := client.BuildJobFromOpenAPIRequest(context.Background(), "user-alice", "alice", req)
@@ -37,5 +40,8 @@ func TestBuildJobFromRequestUsesSharedRuntimeResources(t *testing.T) {
 	}
 	if job.Labels["genet.io/openapi-owner"] != "alice" {
 		t.Fatal("expected owner label to be set")
+	}
+	if got := job.Spec.Template.Spec.Containers[0].Env[0].Name; got != "APP_MODE" {
+		t.Fatalf("expected first env var APP_MODE, got %s", got)
 	}
 }
