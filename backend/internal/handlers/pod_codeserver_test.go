@@ -222,7 +222,7 @@ func TestProxyCodeServerForwardsPathAndQuery(t *testing.T) {
 	appServer := httptest.NewServer(router)
 	defer appServer.Close()
 
-	req, err := http.NewRequest(http.MethodGet, appServer.URL+"/api/pods/pod-alice-dev/apps/code-server/api/v1/workspace?folder=%2Fworkspace", nil)
+	req, err := http.NewRequest(http.MethodGet, appServer.URL+"/api/pods/pod-alice-dev/apps/code-server/api/v1/workspace?folder=%2Fworkspace-genet", nil)
 	if err != nil {
 		t.Fatalf("failed to create request: %v", err)
 	}
@@ -249,7 +249,7 @@ func TestProxyCodeServerForwardsPathAndQuery(t *testing.T) {
 	if payload["path"] != "/api/v1/workspace" {
 		t.Fatalf("expected forwarded path /api/v1/workspace, got %q", payload["path"])
 	}
-	if payload["query"] != "folder=%2Fworkspace" {
+	if payload["query"] != "folder=%2Fworkspace-genet" {
 		t.Fatalf("expected original query preserved, got %q", payload["query"])
 	}
 }

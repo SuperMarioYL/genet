@@ -173,7 +173,7 @@ ssh -p <端口> root@<节点IP>
 
 1. 管理员启用 `pod.codeServer.enabled=true`
 2. Pod 进入 `Running` 后，卡片和详情页会出现 **「code-server」** 按钮
-3. 点击后会在浏览器新标签页打开 `/workspace`
+3. 点击后会在浏览器新标签页打开 `/workspace-genet`
 4. 如果按钮置灰并显示“启动中”或“不可用”，说明 Pod 已运行但 Web IDE 仍未就绪，可稍后刷新重试
 
 **方式四：Web Shell**
@@ -247,16 +247,16 @@ kubectl exec -it <pod-name> -- /bin/bash
 
 ### 存储说明
 
-每个用户有独立的持久化存储（PVC），挂载在 `/workspace` 目录：
+每个用户有独立的持久化存储（PVC），挂载在 `/workspace-genet` 目录：
 
 ```
-/workspace/
+/workspace-genet/
 ├── projects/      # 项目代码
 ├── datasets/      # 数据集（建议软链接）
 └── checkpoints/   # 模型检查点
 ```
 
-**注意：Pod 删除后 `/workspace` 数据保留，其他目录数据丢失。**
+**注意：Pod 删除后 `/workspace-genet` 数据保留，其他目录数据丢失。**
 
 ---
 

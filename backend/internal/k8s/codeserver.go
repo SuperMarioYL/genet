@@ -14,15 +14,15 @@ func buildCodeServerStartupScript(cfg models.CodeServerConfig) string {
 
 	workspaceDir := cfg.WorkspaceDir
 	if workspaceDir == "" {
-		workspaceDir = "/workspace"
+		workspaceDir = models.DefaultWorkspaceDir
 	}
 	userDataDir := cfg.UserDataDir
 	if userDataDir == "" {
-		userDataDir = "/workspace/.code-server"
+		userDataDir = models.DefaultCodeServerUserDataDir
 	}
 	extensionsDir := cfg.ExtensionsDir
 	if extensionsDir == "" {
-		extensionsDir = "/workspace/.code-server/extensions"
+		extensionsDir = models.DefaultCodeServerExtensionsDir
 	}
 	logFile := strings.TrimRight(userDataDir, "/") + "/code-server.log"
 	port := cfg.Port

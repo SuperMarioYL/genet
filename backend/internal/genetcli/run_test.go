@@ -19,7 +19,7 @@ func TestBuildRunPodRequestMapsDevicesAndVolumes(t *testing.T) {
 		ShmSize: "1Gi",
 		Node:    "gpu-node-01",
 		Devices: "0,2",
-		Volumes: []string{"/data:/workspace/data:ro"},
+		Volumes: []string{"/data:/workspace-genet/data:ro"},
 	})
 	if err != nil {
 		t.Fatalf("build request: %v", err)

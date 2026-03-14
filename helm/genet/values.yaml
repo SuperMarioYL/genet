@@ -398,9 +398,9 @@ backend:
       codeServer:
         enabled: false
         port: 13337
-        workspaceDir: "/workspace"
-        userDataDir: "/workspace/.code-server"
-        extensionsDir: "/workspace/.code-server/extensions"
+        workspaceDir: "/workspace-genet"
+        userDataDir: "/workspace-genet/.code-server"
+        extensionsDir: "/workspace-genet/.code-server/extensions"
         # 默认通过官方 release 安装；要求镜像中至少有 curl/wget 和 tar
         installScript: |
           CODE_SERVER_VERSION="${CODE_SERVER_VERSION:-4.103.2}"

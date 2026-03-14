@@ -7,6 +7,13 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+const (
+	DefaultWorkspaceDir            = "/workspace-genet"
+	DefaultVSCodeServerDir         = DefaultWorkspaceDir + "/.vscode-server"
+	DefaultCodeServerUserDataDir   = DefaultWorkspaceDir + "/.code-server"
+	DefaultCodeServerExtensionsDir = DefaultCodeServerUserDataDir + "/extensions"
+)
+
 // Config 系统配置
 type Config struct {
 	PodLimitPerUser int                `yaml:"podLimitPerUser" json:"podLimitPerUser"`
@@ -473,7 +480,7 @@ func DefaultConfig() *Config {
 			Volumes: []StorageVolume{
 				{
 					Name:         "workspace",
-					MountPath:    "/workspace",
+					MountPath:    DefaultWorkspaceDir,
 					Type:         "pvc",
 					StorageClass: "hostpath",
 					Size:         "50Gi",
@@ -490,13 +497,13 @@ set -e
 echo "=== Starting Genet Pod ==="
 
 # 创建必要目录
-mkdir -p /workspace
+mkdir -p ` + DefaultWorkspaceDir + `
 
 # 持久化 VS Code Server 目录（避免每次连接重新下载）
-mkdir -p /workspace/.vscode-server
+mkdir -p ` + DefaultVSCodeServerDir + `
 rm -rf /root/.vscode-server 2>/dev/null || true
-ln -sf /workspace/.vscode-server /root/.vscode-server
-echo "VS Code Server directory linked to /workspace/.vscode-server"
+ln -sf ` + DefaultVSCodeServerDir + ` /root/.vscode-server
+echo "VS Code Server directory linked to ` + DefaultVSCodeServerDir + `"
 
 {{.ProxyScript}}
 
@@ -521,9 +528,9 @@ tail -f /dev/null
 			CodeServer: CodeServerConfig{
 				Enabled:       false,
 				Port:          13337,
-				WorkspaceDir:  "/workspace",
-				UserDataDir:   "/workspace/.code-server",
-				ExtensionsDir: "/workspace/.code-server/extensions",
+				WorkspaceDir:  DefaultWorkspaceDir,
+				UserDataDir:   DefaultCodeServerUserDataDir,
+				ExtensionsDir: DefaultCodeServerExtensionsDir,
 				InstallScript: `CODE_SERVER_VERSION="${CODE_SERVER_VERSION:-4.103.2}"
 ARCH="$(uname -m)"
 case "$ARCH" in

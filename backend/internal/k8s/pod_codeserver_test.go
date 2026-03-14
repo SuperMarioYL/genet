@@ -17,20 +17,20 @@ func TestBuildCodeServerStartupScriptIncludesExpectedCommand(t *testing.T) {
 	script := buildCodeServerStartupScript(models.CodeServerConfig{
 		Enabled:             true,
 		Port:                13337,
-		WorkspaceDir:        "/workspace",
-		UserDataDir:         "/workspace/.code-server",
-		ExtensionsDir:       "/workspace/.code-server/extensions",
+		WorkspaceDir:        models.DefaultWorkspaceDir,
+		UserDataDir:         models.DefaultCodeServerUserDataDir,
+		ExtensionsDir:       models.DefaultCodeServerExtensionsDir,
 		InstallScript:       "echo install code-server",
 		StartTimeoutSeconds: 20,
 	})
 
 	expectedSnippets := []string{
 		"echo install code-server",
-		"mkdir -p '/workspace/.code-server'",
+		"mkdir -p '" + models.DefaultCodeServerUserDataDir + "'",
 		"--bind-addr 0.0.0.0:13337",
-		"--user-data-dir '/workspace/.code-server'",
-		"--extensions-dir '/workspace/.code-server/extensions'",
-		"'/workspace' > '/workspace/.code-server/code-server.log' 2>&1 &",
+		"--user-data-dir '" + models.DefaultCodeServerUserDataDir + "'",
+		"--extensions-dir '" + models.DefaultCodeServerExtensionsDir + "'",
+		"'" + models.DefaultWorkspaceDir + "' > '" + models.DefaultCodeServerUserDataDir + "/code-server.log' 2>&1 &",
 	}
 
 	for _, snippet := range expectedSnippets {
@@ -44,9 +44,9 @@ func TestBuildCodeServerStartupScriptDoesNotAbortPodStartupOnInstallFailure(t *t
 	script := buildCodeServerStartupScript(models.CodeServerConfig{
 		Enabled:       true,
 		Port:          13337,
-		WorkspaceDir:  "/workspace",
-		UserDataDir:   "/workspace/.code-server",
-		ExtensionsDir: "/workspace/.code-server/extensions",
+		WorkspaceDir:  models.DefaultWorkspaceDir,
+		UserDataDir:   models.DefaultCodeServerUserDataDir,
+		ExtensionsDir: models.DefaultCodeServerExtensionsDir,
 		InstallScript: "exit 1",
 	})
 

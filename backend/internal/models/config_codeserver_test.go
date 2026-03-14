@@ -14,13 +14,13 @@ func TestDefaultConfigProvidesCodeServerDefaults(t *testing.T) {
 	if cfg.Pod.CodeServer.Port != 13337 {
 		t.Fatalf("expected default port 13337, got %d", cfg.Pod.CodeServer.Port)
 	}
-	if cfg.Pod.CodeServer.WorkspaceDir != "/workspace" {
+	if cfg.Pod.CodeServer.WorkspaceDir != DefaultWorkspaceDir {
 		t.Fatalf("unexpected workspace dir: %q", cfg.Pod.CodeServer.WorkspaceDir)
 	}
-	if cfg.Pod.CodeServer.UserDataDir != "/workspace/.code-server" {
+	if cfg.Pod.CodeServer.UserDataDir != DefaultCodeServerUserDataDir {
 		t.Fatalf("unexpected user data dir: %q", cfg.Pod.CodeServer.UserDataDir)
 	}
-	if cfg.Pod.CodeServer.ExtensionsDir != "/workspace/.code-server/extensions" {
+	if cfg.Pod.CodeServer.ExtensionsDir != DefaultCodeServerExtensionsDir {
 		t.Fatalf("unexpected extensions dir: %q", cfg.Pod.CodeServer.ExtensionsDir)
 	}
 	if cfg.Pod.CodeServer.StartTimeoutSeconds != 20 {

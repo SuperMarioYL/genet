@@ -42,7 +42,7 @@ paths:
               name: "train"
               userMounts:
                 - hostPath: "/mnt/datasets"
-                  mountPath: "/workspace/datasets"
+                  mountPath: "/workspace-genet/datasets"
                   readOnly: true
       responses:
         "201":
@@ -722,7 +722,7 @@ components:
         mountPath:
           type: string
           description: Container mount path.
-          example: "/workspace/datasets"
+          example: "/workspace-genet/datasets"
         readOnly:
           type: boolean
           description: Whether mount is read-only.

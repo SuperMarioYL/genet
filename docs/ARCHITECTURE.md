@@ -921,7 +921,7 @@ storage:
   volumes:
     # 用户独立工作空间
     - name: "workspace"
-      mountPath: "/workspace"
+      mountPath: "/workspace-genet"
       type: "pvc"
       storageClass: "standard"
       size: "50Gi"
