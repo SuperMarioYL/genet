@@ -28,6 +28,7 @@ describe('PodCard code-server entry', () => {
   let container: HTMLDivElement;
   let root: Root;
   let openSpy: ReturnType<typeof jest.spyOn>;
+  let writeTextMock: ReturnType<typeof jest.fn>;
 
   beforeEach(() => {
     (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
@@ -45,6 +46,13 @@ describe('PodCard code-server entry', () => {
       }),
     });
     openSpy = jest.spyOn(window, 'open').mockImplementation(() => null);
+    writeTextMock = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: writeTextMock,
+      },
+    });
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -176,5 +184,50 @@ describe('PodCard code-server entry', () => {
     expect(button).toBeTruthy();
     expect(button?.hasAttribute('disabled')).toBe(true);
     expect(container.textContent).toContain('启动中');
+  });
+
+  it('copies a genet run command derived from pod fields', async () => {
+    await act(async () => {
+      root.render(
+        <MemoryRouter>
+          <PodCard
+            pod={{
+              id: 'pod-alice-dev',
+              name: 'pod-alice-dev',
+              namespace: 'user-alice',
+              status: 'Running',
+              image: 'nvidia/cuda:12.0.0-base-ubuntu22.04',
+              cpu: '4',
+              memory: '8Gi',
+              gpuCount: 1,
+              gpuType: 'NVIDIA A100',
+              connections: {
+                apps: {
+                  webShellURL: '/pods/pod-alice-dev/webshell',
+                  webShellReady: true,
+                  webShellStatus: 'enabled',
+                },
+              },
+            }}
+            onUpdate={() => undefined}
+          />
+        </MemoryRouter>,
+      );
+    });
+
+    await flushEffects();
+
+    const button = Array.from(container.querySelectorAll('button')).find(
+      (candidate) => candidate.textContent?.includes('genet'),
+    );
+    expect(button).toBeTruthy();
+
+    await act(async () => {
+      button?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(writeTextMock).toHaveBeenCalledWith(
+      `genet run nvidia/cuda:12.0.0-base-ubuntu22.04 --name dev --gpus 1 --gpu-type 'NVIDIA A100' --cpu 4 --memory 8Gi`,
+    );
   });
 });
