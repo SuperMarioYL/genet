@@ -51,6 +51,8 @@ export interface AuthStatus {
   authenticated: boolean;
   username?: string;
   email?: string;
+  isAdmin?: boolean;
+  poolType?: 'shared' | 'exclusive';
   oauthEnabled: boolean;
   loginURL?: string;
 }
@@ -86,6 +88,39 @@ export interface AdminAPIKeyListResponse {
   items: AdminAPIKeyItem[];
 }
 
+export interface AdminOverviewResponse {
+  nodeSummary: {
+    shared: number;
+    exclusive: number;
+  };
+  userSummary: {
+    shared: number;
+    exclusive: number;
+  };
+}
+
+export interface AdminNodePoolItem {
+  nodeName: string;
+  nodeIP: string;
+  poolType: 'shared' | 'exclusive';
+}
+
+export interface AdminNodePoolListResponse {
+  nodes: AdminNodePoolItem[];
+}
+
+export interface AdminUserPoolItem {
+  username: string;
+  email?: string;
+  poolType: 'shared' | 'exclusive';
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+export interface AdminUserPoolListResponse {
+  users: AdminUserPoolItem[];
+}
+
 export interface CreateAdminAPIKeyRequest {
   name: string;
   ownerUser: string;
@@ -108,6 +143,26 @@ export interface UpdateAdminAPIKeyRequest {
 
 export const getAdminMe = (): Promise<AdminMeResponse> => {
   return api.get('/admin/me');
+};
+
+export const getAdminOverview = (): Promise<AdminOverviewResponse> => {
+  return api.get('/admin/overview');
+};
+
+export const listAdminNodePools = (): Promise<AdminNodePoolListResponse> => {
+  return api.get('/admin/nodes/pools');
+};
+
+export const updateAdminNodePool = (name: string, poolType: 'shared' | 'exclusive'): Promise<AdminNodePoolItem> => {
+  return api.patch(`/admin/nodes/${encodeURIComponent(name)}/pool`, { poolType });
+};
+
+export const listAdminUserPools = (): Promise<AdminUserPoolListResponse> => {
+  return api.get('/admin/users/pools');
+};
+
+export const updateAdminUserPool = (username: string, poolType: 'shared' | 'exclusive'): Promise<AdminUserPoolItem> => {
+  return api.patch(`/admin/users/${encodeURIComponent(username)}/pool`, { poolType });
 };
 
 export const listAdminAPIKeys = (): Promise<AdminAPIKeyListResponse> => {
@@ -163,7 +218,104 @@ export interface CreatePodRequest {
   userMounts?: UserMount[]; // 用户自定义挂载（可选）
 }
 
-export const listPods = () => {
+export interface ManagedPod {
+  id: string;
+  name: string;
+  namespace: string;
+  container: string;
+  status: string;
+  phase: string;
+  image: string;
+  gpuType: string;
+  gpuCount: number;
+  cpu: string;
+  memory: string;
+  createdAt: string;
+  nodeIP?: string;
+  workloadKind?: string;
+  workloadName?: string;
+  protectedUntil?: string;
+  connections?: any;
+}
+
+export interface PodListResponse {
+  pods: ManagedPod[];
+  quota: {
+    podUsed: number;
+    podLimit: number;
+    gpuUsed: number;
+    gpuLimit: number;
+  };
+}
+
+export interface CreateStatefulSetRequest {
+  image: string;
+  gpuType?: string;
+  gpuCount: number;
+  cpu?: string;
+  memory?: string;
+  shmSize?: string;
+  nodeName?: string;
+  name?: string;
+  replicas: number;
+  userMounts?: UserMount[];
+}
+
+export interface CreateDeploymentRequest {
+  image: string;
+  gpuType?: string;
+  gpuCount: number;
+  cpu?: string;
+  memory?: string;
+  shmSize?: string;
+  nodeName?: string;
+  name?: string;
+  replicas: number;
+  userMounts?: UserMount[];
+}
+
+export interface ManagedDeployment {
+  id: string;
+  name: string;
+  namespace: string;
+  status: string;
+  image: string;
+  gpuType: string;
+  gpuCount: number;
+  cpu: string;
+  memory: string;
+  replicas: number;
+  readyReplicas: number;
+  createdAt: string;
+  pods: ManagedPod[];
+}
+
+export interface ManagedStatefulSet {
+  id: string;
+  name: string;
+  namespace: string;
+  status: string;
+  image: string;
+  gpuType: string;
+  gpuCount: number;
+  cpu: string;
+  memory: string;
+  replicas: number;
+  readyReplicas: number;
+  createdAt: string;
+  serviceName: string;
+  pods: ManagedPod[];
+}
+
+export interface StatefulSetListResponse {
+  items: ManagedStatefulSet[];
+}
+
+export interface DeploymentListResponse {
+  items: ManagedDeployment[];
+}
+
+export const listPods = (): Promise<PodListResponse> => {
   return api.get('/pods');
 };
 
@@ -173,6 +325,38 @@ export const createPod = (data: CreatePodRequest) => {
 
 export const getPod = (id: string) => {
   return api.get(`/pods/${id}`);
+};
+
+export const listDeployments = (): Promise<DeploymentListResponse> => {
+  return api.get('/deployments');
+};
+
+export const createDeployment = (data: CreateDeploymentRequest) => {
+  return api.post('/deployments', data);
+};
+
+export const getDeployment = (id: string): Promise<ManagedDeployment> => {
+  return api.get(`/deployments/${id}`);
+};
+
+export const deleteDeployment = (id: string) => {
+  return api.delete(`/deployments/${id}`);
+};
+
+export const listStatefulSets = (): Promise<StatefulSetListResponse> => {
+  return api.get('/statefulsets');
+};
+
+export const createStatefulSet = (data: CreateStatefulSetRequest) => {
+  return api.post('/statefulsets', data);
+};
+
+export const getStatefulSet = (id: string): Promise<ManagedStatefulSet> => {
+  return api.get(`/statefulsets/${id}`);
+};
+
+export const deleteStatefulSet = (id: string) => {
+  return api.delete(`/statefulsets/${id}`);
 };
 
 export const downloadPodYAML = (id: string) => {

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Modal, Form, Select, InputNumber, Input, message, Alert, AutoComplete, Collapse, Typography, Tooltip, Button, Space, Spin } from 'antd';
 import { PlusOutlined, SettingOutlined, QuestionCircleOutlined, EnvironmentOutlined, FolderOutlined, DeleteOutlined, DatabaseOutlined, ThunderboltOutlined, AppstoreOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import { getConfig, createPod, getGPUOverview, GPUOverviewResponse, NodeGPUInfo, CreatePodRequest, UserMount, StorageVolumeInfo, UserSavedImage, searchRegistryImages, RegistryImageInfo, getRegistryImageTags } from '../../services/api';
+import { getConfig, createDeployment, createPod, createStatefulSet, getGPUOverview, GPUOverviewResponse, NodeGPUInfo, CreateDeploymentRequest, CreatePodRequest, CreateStatefulSetRequest, UserMount, StorageVolumeInfo, UserSavedImage, searchRegistryImages, RegistryImageInfo, getRegistryImageTags } from '../../services/api';
 import GPUSelector from '../../components/GPUSelector';
 import { getCleanupLabel } from '../../utils/cleanup';
 import './CreatePodModal.css';
@@ -17,8 +17,22 @@ const getPoolLabel = (poolType?: 'shared' | 'exclusive'): string => {
   return normalizePoolType(poolType) === 'exclusive' ? '独占池' : '共享池';
 };
 
+type WorkloadType = 'pod' | 'deployment' | 'statefulset';
+
+const getWorkloadLabel = (workloadType: WorkloadType): string => {
+  switch (workloadType) {
+    case 'pod':
+      return 'Pod';
+    case 'statefulset':
+      return 'StatefulSet';
+    default:
+      return 'Deployment';
+  }
+};
+
 interface CreatePodModalProps {
   visible: boolean;
+  isAdmin?: boolean;
   onCancel: () => void;
   onSuccess: () => void;
   currentQuota: any;
@@ -26,6 +40,7 @@ interface CreatePodModalProps {
 
 const CreatePodModal: React.FC<CreatePodModalProps> = ({
   visible,
+  isAdmin = false,
   onCancel,
   onSuccess,
   currentQuota,
@@ -34,6 +49,12 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [config, setConfig] = useState<any>(null);
   const [selectedGPUCount, setSelectedGPUCount] = useState(1);
+  const watchedWorkloadType = (Form.useWatch('workloadType', form) || 'deployment') as WorkloadType;
+  const watchedPodCount = Form.useWatch('podCount', form);
+  const replicaCount = watchedWorkloadType === 'pod' ? 1 : Math.max(1, Number(watchedPodCount) || 1);
+  const allowManualGPUSelection = watchedWorkloadType === 'pod';
+  const canUseManualGPUSelection = isAdmin && allowManualGPUSelection;
+  const workloadLabel = getWorkloadLabel(watchedWorkloadType);
 
   // 监听 Platform+GPU 类型变化，用于节点过滤和镜像过滤
   const watchedPlatformGPU = Form.useWatch('platformGpuType', form);
@@ -127,6 +148,8 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
       }
 
       form.setFieldsValue({
+        workloadType: 'deployment',
+        podCount: 1,
         gpuCount: 1,
         cpu: data.ui?.defaultCPU || '4',
         memory: data.ui?.defaultMemory || '8Gi',
@@ -136,6 +159,15 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
       message.error(`加载配置失败: ${error.message}`);
     }
   };
+
+  useEffect(() => {
+    if (watchedWorkloadType === 'pod') {
+      form.setFieldsValue({ podCount: 1 });
+    }
+    if (watchedWorkloadType !== 'pod' && selectedGPUDevices.length > 0) {
+      setSelectedGPUDevices([]);
+    }
+  }, [form, selectedGPUDevices.length, watchedWorkloadType]);
 
   // Registry 镜像搜索（防抖）
   const handleRegistrySearch = useCallback((keyword: string) => {
@@ -244,6 +276,9 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
+      const workloadType = (values.workloadType || 'deployment') as WorkloadType;
+      const requestedReplicas = workloadType === 'pod' ? 1 : Math.max(1, Number(values.podCount) || 1);
+      const requestedWorkloadLabel = getWorkloadLabel(workloadType);
 
       // CPU Only 模式下不需要 GPU 相关验证
       const effectiveGPUCount = isCPUOnly ? 0 : (values.gpuCount || 0);
@@ -266,7 +301,7 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
         finalImage = `${finalImage}:${values.imageTag}`;
       }
 
-      const payload: CreatePodRequest = {
+      const basePayload: CreatePodRequest = {
         image: finalImage,
         gpuCount: effectiveGPUCount,
         gpuType: watchedGPUType, // 使用解析后的 GPU 类型名称
@@ -277,24 +312,24 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
 
       // 处理自定义名称
       if (values.name && values.name.trim()) {
-        payload.name = values.name.trim();
+        basePayload.name = values.name.trim();
       }
 
       // 处理高级配置
       if (selectedNode) {
-        payload.nodeName = selectedNode;
+        basePayload.nodeName = selectedNode;
       }
-      if (selectedGPUDevices.length > 0) {
-        payload.gpuDevices = selectedGPUDevices;
+      if (canUseManualGPUSelection && selectedGPUDevices.length > 0) {
+        basePayload.gpuDevices = selectedGPUDevices;
         // GPU 数量由选择的卡数决定
-        payload.gpuCount = selectedGPUDevices.length;
+        basePayload.gpuCount = selectedGPUDevices.length;
       }
 
       // CPU Only 模式：GPU 数量为 0，但保留 gpuType 用于 NodeSelector
       if (isCPUOnly) {
-        payload.gpuCount = 0;
-      } else if (payload.gpuCount === 0) {
-        delete payload.gpuType;
+        basePayload.gpuCount = 0;
+      } else if (basePayload.gpuCount === 0) {
+        delete basePayload.gpuType;
       }
 
       // 处理用户自定义挂载
@@ -308,14 +343,28 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
           return;
         }
 
-        payload.userMounts = validUserMounts;
+        basePayload.userMounts = validUserMounts;
       }
 
-      await createPod(payload);
+      if (workloadType === 'statefulset') {
+        const payload: CreateStatefulSetRequest = {
+          ...basePayload,
+          replicas: requestedReplicas,
+        };
+        await createStatefulSet(payload);
+      } else if (workloadType === 'deployment') {
+        const payload: CreateDeploymentRequest = {
+          ...basePayload,
+          replicas: requestedReplicas,
+        };
+        await createDeployment(payload);
+      } else {
+        await createPod(basePayload);
+      }
 
       // 显示创建中状态
       message.loading({
-        content: 'Pod 创建中，等待调度...',
+        content: `${requestedWorkloadLabel} 创建中，等待调度...`,
         key: 'podCreating',
         duration: 0,
       });
@@ -325,7 +374,7 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
 
       // 延迟更新消息（给用户一个视觉反馈过渡）
       setTimeout(() => {
-        message.success({ content: 'Pod 创建已提交，请在列表中查看状态', key: 'podCreating', duration: 3 });
+        message.success({ content: `${requestedWorkloadLabel} 创建已提交，请在列表中查看状态`, key: 'podCreating', duration: 3 });
       }, 2000);
 
     } catch (error: any) {
@@ -337,9 +386,10 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
   };
 
   const willExceedQuota = () => {
-    const newPodCount = currentQuota.podUsed + 1;
+    const newPodCount = currentQuota.podUsed + replicaCount;
     // 如果选择了具体 GPU 卡，使用卡数；否则使用输入的 GPU 数量
-    const gpuToAdd = isCPUOnly ? 0 : (selectedGPUDevices.length > 0 ? selectedGPUDevices.length : selectedGPUCount);
+    const gpuPerReplica = isCPUOnly ? 0 : (canUseManualGPUSelection && selectedGPUDevices.length > 0 ? selectedGPUDevices.length : selectedGPUCount);
+    const gpuToAdd = gpuPerReplica * replicaCount;
     const newGPUCount = currentQuota.gpuUsed + gpuToAdd;
     return {
       podExceeded: newPodCount > currentQuota.podLimit,
@@ -412,8 +462,7 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
     // 同步更新 GPU 数量显示
     if (devices.length > 0) {
       setSelectedGPUCount(devices.length);
-      // 共享模式下同步表单值
-      if (isSharing) {
+      if (isSharing && canUseManualGPUSelection) {
         form.setFieldsValue({ gpuCount: devices.length });
       }
     }
@@ -421,7 +470,7 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
 
   // 计算实际 GPU 数量（CPU Only 模式为 0，共享模式由选中卡数决定）
   const effectiveGPUCount = isCPUOnly ? 0 : (
-    isSharing && selectedGPUDevices.length > 0
+    canUseManualGPUSelection && isSharing && selectedGPUDevices.length > 0
       ? selectedGPUDevices.length
       : selectedGPUCount
   );
@@ -543,14 +592,14 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
       title={
         <div className="modal-title-custom">
           <PlusOutlined />
-          <span>创建新的 Pod</span>
+          <span>创建新的工作负载</span>
         </div>
       }
       open={visible}
       onCancel={onCancel}
       onOk={handleSubmit}
       confirmLoading={loading}
-      okText="创建 Pod"
+      okText={`创建 ${workloadLabel}`}
       cancelText="取消"
       okButtonProps={{ disabled: !canCreate }}
       width={showRightPanel ? 900 : 600}
@@ -559,18 +608,70 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
       <Form
         form={form}
         layout="vertical"
-        initialValues={{ gpuCount: 1, cpu: '4', memory: '8Gi', shmSize: '1Gi' }}
+        initialValues={{ workloadType: 'deployment', podCount: 1, gpuCount: 1, cpu: '4', memory: '8Gi', shmSize: '1Gi' }}
         className="create-pod-form"
       >
         <div className={showRightPanel ? 'create-pod-layout' : ''}>
           {/* 左栏 */}
           <div className={showRightPanel ? 'create-pod-left' : ''}>
 
+            <Form.Item
+              label="工作负载类型"
+              name="workloadType"
+              rules={[{ required: true, message: '请选择工作负载类型' }]}
+              extra="默认 Deployment；Pod 为单实例，Deployment 和 StatefulSet 支持设置副本数"
+            >
+              <Select
+                onChange={(value: WorkloadType) => {
+                  if (value === 'pod') {
+                    form.setFieldsValue({ podCount: 1 });
+                  }
+                  setSelectedGPUDevices([]);
+                }}
+                options={[
+                  { value: 'pod', label: 'Pod' },
+                  { value: 'deployment', label: 'Deployment' },
+                  { value: 'statefulset', label: 'StatefulSet' },
+                ]}
+              />
+            </Form.Item>
+
             {/* ── 计算资源 ── */}
             <div className="form-section-title">
               <ThunderboltOutlined />
               <span>计算资源</span>
             </div>
+
+            {watchedWorkloadType !== 'pod' && (
+              <Form.Item
+                label="Pod 数量"
+                name="podCount"
+                rules={[
+                  { required: true, message: '请输入 Pod 数量' },
+                  {
+                    validator: (_, value) => {
+                      const parsed = Number(value);
+                      if (Number.isInteger(parsed) && parsed >= 1 && parsed <= 8) {
+                        return Promise.resolve();
+                      }
+                      return Promise.reject(new Error('请输入 1 到 8 之间的整数'));
+                    },
+                  },
+                ]}
+                extra={`${workloadLabel} 将按每副本资源配置创建 ${replicaCount} 个 Pod`}
+              >
+                <AutoComplete
+                  placeholder="选择或输入 Pod 数量"
+                  options={[1, 2, 4, 8].map((count) => ({ value: String(count), label: `${count}` }))}
+                  onChange={(value) => {
+                    const nextCount = Math.max(1, Number(value) || 1);
+                    if (nextCount > 1 && selectedGPUDevices.length > 0) {
+                      setSelectedGPUDevices([]);
+                    }
+                  }}
+                />
+              </Form.Item>
+            )}
 
             <Form.Item
               label="平台 / 计算类型"
@@ -669,7 +770,7 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
                     }
                   }}
                   value={selectedGPUDevices.length > 0 ? selectedGPUDevices.length : selectedGPUCount}
-                  disabled={selectedGPUDevices.length > 0}
+                  disabled={selectedGPUDevices.length > 0 && canUseManualGPUSelection}
                 />
               </Form.Item>
             )}
@@ -677,7 +778,7 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
             {/* 共享模式调度提示（非 CPU Only） */}
             {isSharing && !isCPUOnly && (
               <div className="sharing-gpu-count">
-                {selectedGPUDevices.length > 0 ? (
+                {selectedGPUDevices.length > 0 && canUseManualGPUSelection ? (
                   <>
                     <Text>当前模式: </Text>
                     <Text strong>手动指定</Text>
@@ -802,8 +903,8 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
             <Form.Item
               label={
                 <span>
-                  Pod 名称
-                  <Tooltip title="自定义 Pod 名称后缀，留空则使用时间戳自动生成">
+                  {workloadLabel} 名称
+                  <Tooltip title={`自定义 ${workloadLabel} 名称后缀，留空则使用时间戳自动生成`}>
                     <QuestionCircleOutlined style={{ marginLeft: 4, color: '#999' }} />
                   </Tooltip>
                 </span>
@@ -839,7 +940,7 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
             </div>
 
             <Alert
-              message={<span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span>⏰</span> 所有 Pod 将在 {getCleanupLabel(config?.cleanupSchedule, config?.cleanupTimezone) || '定时'} 自动删除</span>}
+              message={<span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span>⏰</span> 所有工作负载将在 {getCleanupLabel(config?.cleanupSchedule, config?.cleanupTimezone) || '定时'} 自动删除</span>}
               type="warning"
               showIcon={false}
               className="time-warning"
@@ -858,15 +959,23 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
                       <span>节点与 GPU 卡（选填）</span>
                     </div>
                     <Alert
-                      message="可选手动指定；留空时将按热力图负载自动分配"
+                      message={canUseManualGPUSelection ? '可选手动指定；留空时将按热力图负载自动分配' : `${workloadLabel} 模式下可固定节点，GPU 卡将自动分配`}
                       type="info"
                       showIcon
                       style={{ marginBottom: 12 }}
                     />
                     {renderNodeSelector()}
-                    {selectedNode && (hasPrometheus || isSharing) && renderGPUSelector()}
+                    {canUseManualGPUSelection && selectedNode && (hasPrometheus || isSharing) && renderGPUSelector()}
+                    {!canUseManualGPUSelection && (
+                      <Alert
+                        message={`${workloadLabel} 不支持手动指定具体 GPU 卡`}
+                        type="info"
+                        showIcon
+                        style={{ marginTop: 12 }}
+                      />
+                    )}
                   </div>
-                ) : (
+                ) : canUseManualGPUSelection ? (
                   <Collapse
                     ghost
                     className="advanced-settings-collapse"
@@ -884,12 +993,12 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
                         children: (
                           <div className="advanced-settings-content">
                             {renderNodeSelector()}
-                            {selectedNode && hasPrometheus && (
+                            {canUseManualGPUSelection && selectedNode && hasPrometheus && (
                               <div className="gpu-selector-wrapper">
                                 {renderGPUSelector()}
                               </div>
                             )}
-                            {selectedNode && !hasPrometheus && (
+                            {canUseManualGPUSelection && selectedNode && !hasPrometheus && (
                               <Alert
                                 message="未配置 Prometheus，无法选择具体 GPU 卡"
                                 type="info"
@@ -902,6 +1011,20 @@ const CreatePodModal: React.FC<CreatePodModalProps> = ({
                       },
                     ]}
                   />
+                ) : (
+                  <div className="gpu-selection-panel">
+                    <div className="gpu-selection-panel-title">
+                      <EnvironmentOutlined />
+                      <span>节点调度</span>
+                    </div>
+                    <Alert
+                      message={watchedWorkloadType === 'pod' ? '当前权限不支持手动指定 GPU 卡，可固定节点或使用自动调度' : `${workloadLabel} 支持固定节点，但不支持手动指定具体 GPU 卡`}
+                      type="info"
+                      showIcon
+                      style={{ marginBottom: 12 }}
+                    />
+                    {renderNodeSelector()}
+                  </div>
                 )
               )}
 

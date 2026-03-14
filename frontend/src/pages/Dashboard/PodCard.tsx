@@ -16,70 +16,10 @@ interface PodCardProps {
   onUpdate: () => void;
   cleanupSchedule?: string;
   cleanupTimezone?: string;
+  allowDelete?: boolean;
 }
 
-const shellSafePattern = /^[A-Za-z0-9_./:-]+$/;
-
-const quoteShellArg = (value: string) => {
-  if (shellSafePattern.test(value)) {
-    return value;
-  }
-  return `'${value.replace(/'/g, `'\"'\"'`)}'`;
-};
-
-const inferCustomPodName = (pod: any) => {
-  const namespace = typeof pod?.namespace === 'string' ? pod.namespace : '';
-  const podName = typeof pod?.name === 'string' ? pod.name : '';
-  if (!namespace.startsWith('user-') || podName === '') {
-    return '';
-  }
-
-  const userIdentifier = namespace.slice('user-'.length);
-  const prefix = `pod-${userIdentifier}-`;
-  if (!podName.startsWith(prefix)) {
-    return '';
-  }
-
-  const suffix = podName.slice(prefix.length);
-  if (suffix === '' || /^\d+$/.test(suffix)) {
-    return '';
-  }
-
-  return suffix;
-};
-
-const buildGenetRunCommand = (pod: any) => {
-  const parts = ['genet', 'run'];
-  const image = typeof pod?.image === 'string' ? pod.image.trim() : '';
-  parts.push(image ? quoteShellArg(image) : '<image>');
-
-  const customName = inferCustomPodName(pod);
-  if (customName) {
-    parts.push('--name', quoteShellArg(customName));
-  }
-
-  const gpuCount = typeof pod?.gpuCount === 'number' ? pod.gpuCount : 0;
-  parts.push('--gpus', String(gpuCount));
-
-  const gpuType = typeof pod?.gpuType === 'string' ? pod.gpuType.trim() : '';
-  if (gpuCount > 0 && gpuType) {
-    parts.push('--gpu-type', quoteShellArg(gpuType));
-  }
-
-  const cpu = typeof pod?.cpu === 'string' ? pod.cpu.trim() : '';
-  if (cpu) {
-    parts.push('--cpu', quoteShellArg(cpu));
-  }
-
-  const memory = typeof pod?.memory === 'string' ? pod.memory.trim() : '';
-  if (memory) {
-    parts.push('--memory', quoteShellArg(memory));
-  }
-
-  return parts.join(' ');
-};
-
-const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate, cleanupSchedule, cleanupTimezone }) => {
+const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate, cleanupSchedule, cleanupTimezone, allowDelete = true }) => {
   const navigate = useNavigate();
   const [deleting, setDeleting] = useState(false);
   const [extending, setExtending] = useState(false);
@@ -280,10 +220,6 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate, cleanupSchedule, clean
     const container = pod.container || 'workspace';
     const cmd = `kubectl exec -it -n ${namespace} ${podName} -c ${container} -- /bin/sh`;
     copyToClipboard(cmd, 'kubectl exec 命令');
-  };
-
-  const copyGenetRunCommand = () => {
-    copyToClipboard(buildGenetRunCommand(pod), 'genet 命令');
   };
 
   const openInNewTab = (href: string) => {
@@ -511,16 +447,6 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate, cleanupSchedule, clean
                   kubectl
                   </Button>
                 </Tooltip>
-              <Tooltip title="复制 genet run 命令">
-                  <Button
-                    size="small"
-                    icon={<CopyOutlined />}
-                    onClick={copyGenetRunCommand}
-                    className="glass-button"
-                  >
-                    genet
-                  </Button>
-                </Tooltip>
               <Tooltip title="复制 Namespace">
                   <Button 
                     size="small"
@@ -563,15 +489,17 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate, cleanupSchedule, clean
         >
           YAML
         </Button>
-        <Button
-          size="small"
-          danger
-          icon={<DeleteOutlined />}
-          onClick={handleDelete}
-          loading={deleting}
-        >
-          删除
-        </Button>
+        {allowDelete && (
+          <Button
+            size="small"
+            danger
+            icon={<DeleteOutlined />}
+            onClick={handleDelete}
+            loading={deleting}
+          >
+            删除
+          </Button>
+        )}
       </div>
     </GlassCard>
   );

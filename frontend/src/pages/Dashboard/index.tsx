@@ -1,15 +1,18 @@
-import { CloudDownloadOutlined, HeatMapOutlined, KeyOutlined, PlusOutlined, ReloadOutlined, SwapOutlined } from '@ant-design/icons';
+import { CloudDownloadOutlined, HeatMapOutlined, PlusOutlined, ReloadOutlined, SwapOutlined } from '@ant-design/icons';
 import { Button, Col, Empty, Layout, message, Modal, Row, Space, Statistic, Tag, Typography } from 'antd';
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AcceleratorHeatmap from '../../components/AcceleratorHeatmap';
 import GlassCard from '../../components/GlassCard';
 import ThemeToggle from '../../components/ThemeToggle';
-import { downloadKubeconfig, getAdminMe, getClusterInfo, getConfig, getKubeconfig, listPods } from '../../services/api';
+import UserMenu from '../../components/UserMenu';
+import { AuthStatus, downloadKubeconfig, getAuthStatus, getClusterInfo, getConfig, getKubeconfig, listDeployments, listPods, listStatefulSets } from '../../services/api';
 import { getCleanupLabel } from '../../utils/cleanup';
 import CreatePodModal from './CreatePodModal';
+import DeploymentCard from './DeploymentCard';
 import './index.css';
 import PodCard from './PodCard';
+import StatefulSetCard from './StatefulSetCard';
 
 const { Text, Paragraph } = Typography;
 const { Header, Content } = Layout;
@@ -17,6 +20,8 @@ const { Header, Content } = Layout;
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const [pods, setPods] = useState<any[]>([]);
+  const [deployments, setDeployments] = useState<any[]>([]);
+  const [statefulSets, setStatefulSets] = useState<any[]>([]);
   const [quota, setQuota] = useState<any>({ podUsed: 0, podLimit: 5, gpuUsed: 0, gpuLimit: 8 });
   const [loading, setLoading] = useState(false);
   const [createModalVisible, setCreateModalVisible] = useState(false);
@@ -29,7 +34,7 @@ const Dashboard: React.FC = () => {
   const [cleanupTimezone, setCleanupTimezone] = useState<string>('');
   const [imageTransferModalVisible, setImageTransferModalVisible] = useState(false);
   const [imageTransferConfig, setImageTransferConfig] = useState<any>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [viewer, setViewer] = useState<AuthStatus | null>(null);
 
   const initialLoadDone = React.useRef(false);
 
@@ -39,9 +44,15 @@ const Dashboard: React.FC = () => {
       setLoading(true);
     }
     try {
-      const data: any = await listPods();
-      setPods(data.pods || []);
-      setQuota(data.quota || quota);
+      const [podData, deploymentData, statefulSetData] = await Promise.all([
+        listPods(),
+        listDeployments().catch(() => ({ items: [] })),
+        listStatefulSets().catch(() => ({ items: [] })),
+      ]);
+      setPods(podData.pods || []);
+      setDeployments(deploymentData.items || []);
+      setStatefulSets(statefulSetData.items || []);
+      setQuota(podData.quota || quota);
     } catch (error: any) {
       if (!initialLoadDone.current) {
         message.error(`加载 Pod 列表失败: ${error.message}`);
@@ -68,10 +79,10 @@ const Dashboard: React.FC = () => {
         setImageTransferConfig(config.ui.imageTransfer);
       }
     }).catch(() => {});
-    getAdminMe().then((me) => {
-      setIsAdmin(!!me?.isAdmin);
+    getAuthStatus().then((status) => {
+      setViewer(status);
     }).catch(() => {
-      setIsAdmin(false);
+      setViewer(null);
     });
     // 每 10 秒轮询一次，提高响应速度
     const timer = setInterval(loadPods, 10000);
@@ -104,9 +115,9 @@ const Dashboard: React.FC = () => {
   };
 
   const handleCreateSuccess = () => {
-    setCreateModalVisible(false);
-    message.success('Pod 创建成功！');
-    loadPods();
+      setCreateModalVisible(false);
+      message.success('工作负载创建成功！');
+      loadPods();
   };
 
   const handleOpenHeatmap = () => {
@@ -130,7 +141,7 @@ const Dashboard: React.FC = () => {
               </svg>
             </div>
             <h1 className="brand-title">Genet</h1>
-            <span className="brand-subtitle">Pod 管理平台</span>
+            <span className="brand-subtitle">工作负载管理平台</span>
           </div>
           <Space size="middle">
             <Button
@@ -139,7 +150,7 @@ const Dashboard: React.FC = () => {
               onClick={() => setCreateModalVisible(true)}
               className="action-btn"
             >
-              创建 Pod
+              创建工作负载
             </Button>
             <Button
               icon={<HeatMapOutlined />}
@@ -166,15 +177,6 @@ const Dashboard: React.FC = () => {
                 镜像摆渡
               </Button>
             )}
-            {isAdmin && (
-              <Button
-                icon={<KeyOutlined />}
-                onClick={() => navigate('/admin/apikeys')}
-                className="action-btn glass-button"
-              >
-                API Keys
-              </Button>
-            )}
             <Button
               icon={<ReloadOutlined />}
               onClick={loadPods}
@@ -182,6 +184,12 @@ const Dashboard: React.FC = () => {
               className="action-btn glass-button"
             />
             <ThemeToggle />
+            <UserMenu
+              username={viewer?.username}
+              isAdmin={viewer?.isAdmin}
+              poolType={viewer?.poolType}
+              onPrimaryAction={() => navigate(viewer?.isAdmin ? '/admin' : '/me')}
+            />
           </Space>
         </div>
       </Header>
@@ -239,7 +247,11 @@ const Dashboard: React.FC = () => {
                   </div>
                   <Statistic
                     title="运行中"
-                    value={pods.filter(p => p.status === 'Running').length}
+                    value={
+                      pods.filter(p => p.status === 'Running').length +
+                      deployments.reduce((sum, item) => sum + (item.readyReplicas || 0), 0) +
+                      statefulSets.reduce((sum, item) => sum + (item.readyReplicas || 0), 0)
+                    }
                     valueStyle={{ color: 'var(--success)', fontWeight: 600 }}
                   />
                 </div>
@@ -247,7 +259,7 @@ const Dashboard: React.FC = () => {
               <Col xs={24} sm={12} md={6}>
                 <div className="quota-info">
                   <Text type="secondary" className="quota-notice">
-                    {cleanupLabel ? `所有 Pod 将在 ${cleanupLabel} 自动清理` : '所有 Pod 将定时自动清理'}
+                    {cleanupLabel ? `所有工作负载将在 ${cleanupLabel} 自动清理` : '所有工作负载将定时自动清理'}
                   </Text>
                 </div>
               </Col>
@@ -256,8 +268,10 @@ const Dashboard: React.FC = () => {
 
           {/* Pod 列表标题 */}
           <div className="section-header animate-slide-up stagger-1">
-            <h2 className="section-title">我的 Pods</h2>
-            <Text type="secondary">{pods.length} 个实例</Text>
+            <h2 className="section-title">我的工作负载</h2>
+            <Text type="secondary">
+              {pods.length + deployments.length + statefulSets.length} 个工作负载 / {quota.podUsed} 个 Pod 实例
+            </Text>
           </div>
 
           {/* Pod 列表 */}
@@ -272,7 +286,7 @@ const Dashboard: React.FC = () => {
                   </GlassCard>
                 ))}
               </div>
-            ) : pods.length === 0 ? (
+            ) : pods.length === 0 && deployments.length === 0 && statefulSets.length === 0 ? (
               <GlassCard className="empty-card animate-scale-in" hover={false}>
                 <Empty
                   image={
@@ -286,7 +300,7 @@ const Dashboard: React.FC = () => {
                   }
                   description={
                     <span className="empty-text">
-                      暂无 Pod，点击上方按钮创建你的第一个开发环境
+                      暂无工作负载，点击上方按钮创建你的第一个开发环境
                     </span>
                   }
                 >
@@ -296,15 +310,39 @@ const Dashboard: React.FC = () => {
                     onClick={() => setCreateModalVisible(true)}
                     size="large"
                   >
-                    创建 Pod
+                    创建工作负载
                   </Button>
                 </Empty>
               </GlassCard>
             ) : (
               <Row gutter={[20, 20]}>
+                {deployments.map((deployment, index) => (
+                  <Col key={deployment.id} xs={24}>
+                    <div className={`animate-slide-up stagger-${Math.min(index + 2, 6)}`}>
+                      <DeploymentCard
+                        deployment={deployment}
+                        onUpdate={loadPods}
+                        cleanupSchedule={cleanupSchedule}
+                        cleanupTimezone={cleanupTimezone}
+                      />
+                    </div>
+                  </Col>
+                ))}
+                {statefulSets.map((statefulSet, index) => (
+                  <Col key={statefulSet.id} xs={24}>
+                    <div className={`animate-slide-up stagger-${Math.min(index + deployments.length + 2, 6)}`}>
+                      <StatefulSetCard
+                        statefulSet={statefulSet}
+                        onUpdate={loadPods}
+                        cleanupSchedule={cleanupSchedule}
+                        cleanupTimezone={cleanupTimezone}
+                      />
+                    </div>
+                  </Col>
+                ))}
                 {pods.map((pod, index) => (
                   <Col key={pod.id} xs={24} sm={24} md={12} lg={8} xl={8}>
-                    <div className={`animate-slide-up stagger-${Math.min(index + 2, 6)}`}>
+                    <div className={`animate-slide-up stagger-${Math.min(index + deployments.length + statefulSets.length + 2, 6)}`}>
                       <PodCard pod={pod} onUpdate={loadPods} cleanupSchedule={cleanupSchedule} cleanupTimezone={cleanupTimezone} />
                     </div>
                   </Col>
@@ -318,6 +356,7 @@ const Dashboard: React.FC = () => {
       {/* 创建 Pod 对话框 */}
       <CreatePodModal
         visible={createModalVisible}
+        isAdmin={!!viewer?.isAdmin}
         onCancel={() => setCreateModalVisible(false)}
         onSuccess={handleCreateSuccess}
         currentQuota={quota}

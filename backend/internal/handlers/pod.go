@@ -44,6 +44,7 @@ var autoInjectedEnvVarOrder = []string{
 	"NODE_IP",
 	"HOST_IP",
 	"NODE_NAME",
+	"NODE_RANK",
 	"POD_IP",
 	"POD_NAME",
 	"POD_NAMESPACE",
@@ -129,6 +130,8 @@ func (h *PodHandler) buildPodResponse(ctx context.Context, pod *corev1.Pod) mode
 		Memory:         display.Memory,
 		CreatedAt:      display.CreatedAt,
 		NodeIP:         nodeIP,
+		WorkloadKind:   podWorkloadKind(pod),
+		WorkloadName:   pod.Labels["genet.io/workload-name"],
 		Connections:    h.buildPodConnections(ctx, pod),
 		ProtectedUntil: protectedUntil,
 	}
@@ -166,6 +169,41 @@ func (h *PodHandler) buildPodConnections(ctx context.Context, pod *corev1.Pod) *
 		connections.Apps.CodeServerStatus = "starting"
 	}
 	return connections
+}
+
+func podWorkloadKind(pod *corev1.Pod) string {
+	if pod == nil {
+		return "pod"
+	}
+	switch managedWorkloadParentKind(pod) {
+	case "StatefulSet":
+		return "statefulset-pod"
+	case "Deployment", "ReplicaSet":
+		return "deployment-pod"
+	}
+	return "pod"
+}
+
+func managedWorkloadParentKind(pod *corev1.Pod) string {
+	if pod == nil {
+		return ""
+	}
+	switch pod.Labels["genet.io/workload-kind"] {
+	case "statefulset":
+		return "StatefulSet"
+	case "deployment":
+		return "Deployment"
+	}
+	for _, owner := range pod.OwnerReferences {
+		switch owner.Kind {
+		case "StatefulSet", "Deployment", "ReplicaSet":
+			return owner.Kind
+		}
+	}
+	if pod.Labels["genet.io/workload-name"] != "" {
+		return "StatefulSet"
+	}
+	return ""
 }
 
 func (h *PodHandler) defaultCodeServerTargetURL(pod *corev1.Pod) (*url.URL, error) {
@@ -252,18 +290,25 @@ func (h *PodHandler) ListPods(c *gin.Context) {
 
 	// 构建响应
 	podResponses := []models.PodResponse{}
-	totalGPU := 0
 
 	for _, pod := range pods {
 		response := h.buildPodResponse(ctx, &pod)
-		totalGPU += response.GPUCount
 		podResponses = append(podResponses, response)
+	}
+
+	allPods, err := h.k8sClient.ListAllPods(ctx, namespace)
+	if err != nil {
+		allPods = pods
+	}
+	totalGPU := 0
+	for _, pod := range allPods {
+		totalGPU += h.getPodDisplayInfo(&pod).GPUCount
 	}
 
 	response := models.PodListResponse{
 		Pods: podResponses,
 		Quota: models.QuotaInfo{
-			PodUsed:  len(podResponses),
+			PodUsed:  len(allPods),
 			PodLimit: h.config.PodLimitPerUser,
 			GpuUsed:  totalGPU,
 			GpuLimit: h.config.GpuLimitPerUser,
@@ -385,6 +430,14 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 	userIdentifier := k8s.GetUserIdentifier(username, email)
 	namespace := k8s.GetNamespaceForUserIdentifier(userIdentifier)
 	ctx := context.Background()
+	userPoolType, err := resolveUserPoolType(ctx, h.k8sClient, userIdentifier)
+	if err != nil {
+		h.log.Error("Failed to resolve user pool type",
+			zap.String("userIdentifier", userIdentifier),
+			zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("读取用户卡池归属失败: %v", err)})
+		return
+	}
 
 	h.log.Info("Creating pod",
 		zap.String("user", username),
@@ -397,7 +450,8 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 		zap.String("nodeName", req.NodeName),
 		zap.Ints("gpuDevices", req.GPUDevices),
 		zap.String("shmSize", req.ShmSize),
-		zap.String("customName", req.Name))
+		zap.String("customName", req.Name),
+		zap.String("poolType", userPoolType))
 
 	// 如果指定了 GPUDevices，自动设置 GPUCount
 	if len(req.GPUDevices) > 0 {
@@ -416,7 +470,7 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 	}
 
 	// 共享模式自动分配：当节点/卡未完整指定时，根据热力图口径自动选择
-	if err := h.autoAssignSharingPlacement(ctx, &req); err != nil {
+	if err := h.autoAssignSharingPlacement(ctx, &req, userPoolType); err != nil {
 		h.log.Warn("Failed to auto-assign sharing placement",
 			zap.String("user", username),
 			zap.String("gpuType", req.GPUType),
@@ -465,6 +519,15 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 				zap.String("nodeName", req.NodeName),
 				zap.Error(err))
 			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("指定的节点不存在: %s", req.NodeName)})
+			return
+		}
+		if err := validateRequestedNodePool(*node, h.config, userPoolType); err != nil {
+			h.log.Warn("Specified node not allowed for user pool",
+				zap.String("user", username),
+				zap.String("nodeName", req.NodeName),
+				zap.String("poolType", userPoolType),
+				zap.Error(err))
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 
@@ -616,6 +679,7 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 		Namespace:  namespace,
 		Username:   userIdentifier, // 使用 userIdentifier 作为存储卷路径中的用户标识
 		Email:      email,          // 用户邮箱
+		PoolType:   userPoolType,
 		Image:      req.Image,
 		GPUCount:   req.GPUCount,
 		GPUType:    req.GPUType,
@@ -634,7 +698,7 @@ func (h *PodHandler) CreatePod(c *gin.Context) {
 	h.log.Debug("Creating pod resource",
 		zap.String("podName", podName))
 
-	_, err := h.k8sClient.CreatePod(ctx, spec)
+	_, err = h.k8sClient.CreatePod(ctx, spec)
 	if err != nil {
 		h.log.Error("Failed to create pod",
 			zap.String("user", username),
@@ -852,6 +916,20 @@ func (h *PodHandler) DeletePod(c *gin.Context) {
 		zap.String("user", username),
 		zap.String("podID", podID),
 		zap.String("namespace", namespace))
+
+	pod, err := h.k8sClient.GetPod(ctx, namespace, podID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Pod 不存在"})
+		return
+	}
+	switch managedWorkloadParentKind(pod) {
+	case "StatefulSet":
+		c.JSON(http.StatusConflict, gin.H{"error": "StatefulSet 副本 Pod 不能单独删除，请删除整个 StatefulSet"})
+		return
+	case "Deployment", "ReplicaSet":
+		c.JSON(http.StatusConflict, gin.H{"error": "Deployment 副本 Pod 不能单独删除，请删除整个 Deployment"})
+		return
+	}
 
 	// 检查是否有正在运行的 commit job
 	commitStatus, err := h.k8sClient.GetCommitJobStatus(ctx, namespace, podID)
@@ -1338,7 +1416,7 @@ func getVolumeSourceInfo(vol corev1.Volume) (string, string) {
 // 1. 请求 GPUCount > 0
 // 2. 调度模式为 sharing
 // 3. 未同时提供 nodeName 和 gpuDevices
-func (h *PodHandler) autoAssignSharingPlacement(ctx context.Context, req *models.PodRequest) error {
+func (h *PodHandler) autoAssignSharingPlacement(ctx context.Context, req *models.PodRequest, userPoolType string) error {
 	if req.GPUCount <= 0 {
 		return nil
 	}
@@ -1367,8 +1445,26 @@ func (h *PodHandler) autoAssignSharingPlacement(ctx context.Context, req *models
 	metrics := h.queryAcceleratorMetricsForTypes(ctx, []models.AcceleratorType{accType})
 	clusterHelper := NewClusterHandler(h.k8sClient, h.promClient, h.config)
 	group := clusterHelper.buildAcceleratorGroup(accType, nodes.Items, pods.Items, metrics)
+	filteredNodes := make([]NodeInfo, 0, len(group.Nodes))
+	for _, node := range group.Nodes {
+		if nodePoolMatches(userPoolType, node.PoolType) {
+			filteredNodes = append(filteredNodes, node)
+		}
+	}
+	if req.NodeName != "" {
+		found := false
+		for _, node := range filteredNodes {
+			if node.NodeName == req.NodeName {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("节点 %s 不属于当前用户可用的%s", req.NodeName, poolTypeLabel(userPoolType))
+		}
+	}
 
-	selectedNode, selectedDevices, err := selectNodeAndDevicesForSharing(group.Nodes, req.GPUCount, req.NodeName)
+	selectedNode, selectedDevices, err := selectNodeAndDevicesForSharing(filteredNodes, req.GPUCount, req.NodeName)
 	if err != nil {
 		return err
 	}
@@ -1466,7 +1562,7 @@ func (h *PodHandler) queryAcceleratorMetricsForTypes(ctx context.Context, accele
 // checkQuota 检查用户配额
 func (h *PodHandler) checkQuota(ctx context.Context, userIdentifier, namespace string, requestGPUCount int) error {
 	// 列出用户的 Pod
-	pods, err := h.k8sClient.ListPods(ctx, namespace)
+	pods, err := h.k8sClient.ListAllPods(ctx, namespace)
 	if err != nil {
 		// 如果命名空间不存在，视为没有 Pod
 		h.log.Debug("Namespace not exists, quota check passed",

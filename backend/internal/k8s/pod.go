@@ -23,6 +23,7 @@ type PodSpec struct {
 	Namespace  string
 	Username   string
 	Email      string // 用户邮箱
+	PoolType   string // 用户所属节点池 shared | exclusive
 	Image      string
 	GPUCount   int
 	GPUType    string
@@ -521,6 +522,7 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 	// 1. 深拷贝全局配置，避免跨请求污染
 	// 2. 当指定节点时，将 hostname 约束按 AND 合并到每个 required term，避免 term 追加导致 OR 放宽
 	pod.Spec.Affinity = buildPodAffinity(c.config.Pod.Affinity, spec.NodeName)
+	applyUserPoolSchedulingConstraints(&pod.Spec, spec.PoolType, c.config)
 	// 使用 nodeAffinity（而非 PodSpec.NodeName）可保留调度器参与，
 	// WaitForFirstConsumer 的 PVC 仍可获得 selected-node annotation。
 	if spec.NodeName != "" {
@@ -675,6 +677,27 @@ func (c *Client) PodExists(ctx context.Context, namespace, name string) bool {
 
 // ListPods 列出用户的所有 Pod
 func (c *Client) ListPods(ctx context.Context, namespace string) ([]corev1.Pod, error) {
+	allPods, err := c.ListAllPods(ctx, namespace)
+	if err != nil {
+		return nil, err
+	}
+
+	pods := make([]corev1.Pod, 0, len(allPods))
+	for _, pod := range allPods {
+		if isManagedWorkloadChildPod(&pod) {
+			continue
+		}
+		pods = append(pods, pod)
+	}
+
+	c.log.Debug("Listed standalone pods",
+		zap.String("namespace", namespace),
+		zap.Int("count", len(pods)))
+
+	return pods, nil
+}
+
+func (c *Client) ListAllPods(ctx context.Context, namespace string) ([]corev1.Pod, error) {
 	// 兼容旧逻辑：优先查询 Genet 管理的 Pod
 	managedList, err := c.clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: "genet.io/managed=true",
@@ -726,6 +749,22 @@ func (c *Client) ListPods(ctx context.Context, namespace string) ([]corev1.Pod, 
 		zap.Int("mergedCount", len(pods)))
 
 	return pods, nil
+}
+
+func isManagedWorkloadChildPod(pod *corev1.Pod) bool {
+	if pod == nil {
+		return false
+	}
+	switch pod.Labels["genet.io/workload-kind"] {
+	case "statefulset", "deployment":
+		return true
+	}
+	for _, owner := range pod.OwnerReferences {
+		if owner.Kind == "StatefulSet" || owner.Kind == "Deployment" || owner.Kind == "ReplicaSet" {
+			return true
+		}
+	}
+	return false
 }
 
 // GetPodLogs 获取 Pod 日志

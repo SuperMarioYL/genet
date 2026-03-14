@@ -101,8 +101,10 @@ func main() {
 
 	// 初始化处理器
 	podHandler := handlers.NewPodHandler(k8sClient, promClient, config)
+	deploymentHandler := handlers.NewDeploymentHandler(k8sClient, config)
+	statefulSetHandler := handlers.NewStatefulSetHandler(k8sClient, config)
 	configHandler := handlers.NewConfigHandler(config, k8sClient)
-	authHandler := handlers.NewAuthHandler(config)
+	authHandler := handlers.NewAuthHandler(config, k8sClient)
 	cliAuthHandler := handlers.NewCLIAuthHandler(k8sClient, config)
 	adminHandler := handlers.NewAdminHandler(config, k8sClient)
 	kubeconfigHandler := handlers.NewKubeconfigHandler(config, k8sClient)
@@ -212,6 +214,24 @@ func main() {
 			pods.GET("/:id/commit/logs", podHandler.GetCommitLogs)
 		}
 
+		statefulSets := api.Group("/statefulsets")
+		statefulSets.Use(auth.AuthMiddleware(config))
+		{
+			statefulSets.GET("", statefulSetHandler.ListStatefulSets)
+			statefulSets.POST("", statefulSetHandler.CreateStatefulSet)
+			statefulSets.GET("/:id", statefulSetHandler.GetStatefulSet)
+			statefulSets.DELETE("/:id", statefulSetHandler.DeleteStatefulSet)
+		}
+
+		deployments := api.Group("/deployments")
+		deployments.Use(auth.AuthMiddleware(config))
+		{
+			deployments.GET("", deploymentHandler.ListDeployments)
+			deployments.POST("", deploymentHandler.CreateDeployment)
+			deployments.GET("/:id", deploymentHandler.GetDeployment)
+			deployments.DELETE("/:id", deploymentHandler.DeleteDeployment)
+		}
+
 		// 用户镜像管理端点（需要认证）
 		images := api.Group("/images")
 		images.Use(auth.AuthMiddleware(config))
@@ -240,6 +260,11 @@ func main() {
 		admin.Use(auth.AuthMiddleware(config), auth.RequireAdmin(config))
 		{
 			admin.GET("/me", adminHandler.GetMe)
+			admin.GET("/overview", adminHandler.GetOverview)
+			admin.GET("/nodes/pools", adminHandler.ListNodePools)
+			admin.PATCH("/nodes/:name/pool", adminHandler.UpdateNodePool)
+			admin.GET("/users/pools", adminHandler.ListUserPools)
+			admin.PATCH("/users/:username/pool", adminHandler.UpdateUserPool)
 			admin.GET("/apikeys", adminHandler.ListAPIKeys)
 			admin.POST("/apikeys", adminHandler.CreateAPIKey)
 			admin.PATCH("/apikeys/:id", adminHandler.UpdateAPIKey)
@@ -259,6 +284,16 @@ func main() {
 			openAPI.GET("/pods/:id", auth.RequireOpenAPIScope(models.APIKeyScopeRead), openAPIHandler.GetPod)
 			openAPI.PUT("/pods/:id", auth.RequireOpenAPIScope(models.APIKeyScopeWrite), openAPIHandler.UpdatePod)
 			openAPI.DELETE("/pods/:id", auth.RequireOpenAPIScope(models.APIKeyScopeWrite), openAPIHandler.DeletePod)
+
+			openAPI.POST("/deployments", auth.RequireOpenAPIScope(models.APIKeyScopeWrite), openAPIHandler.CreateDeployment)
+			openAPI.GET("/deployments", auth.RequireOpenAPIScope(models.APIKeyScopeRead), openAPIHandler.ListDeployments)
+			openAPI.GET("/deployments/:id", auth.RequireOpenAPIScope(models.APIKeyScopeRead), openAPIHandler.GetDeployment)
+			openAPI.DELETE("/deployments/:id", auth.RequireOpenAPIScope(models.APIKeyScopeWrite), openAPIHandler.DeleteDeployment)
+
+			openAPI.POST("/statefulsets", auth.RequireOpenAPIScope(models.APIKeyScopeWrite), openAPIHandler.CreateStatefulSet)
+			openAPI.GET("/statefulsets", auth.RequireOpenAPIScope(models.APIKeyScopeRead), openAPIHandler.ListStatefulSets)
+			openAPI.GET("/statefulsets/:id", auth.RequireOpenAPIScope(models.APIKeyScopeRead), openAPIHandler.GetStatefulSet)
+			openAPI.DELETE("/statefulsets/:id", auth.RequireOpenAPIScope(models.APIKeyScopeWrite), openAPIHandler.DeleteStatefulSet)
 
 			// Service CRUD
 			openAPI.POST("/services", auth.RequireOpenAPIScope(models.APIKeyScopeWrite), openAPIHandler.CreateService)

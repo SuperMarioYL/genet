@@ -17,19 +17,23 @@ import (
 
 // OpenAPIHandler Open API 处理器
 type OpenAPIHandler struct {
-	k8sClient  *k8s.Client
-	podHandler *PodHandler
-	config     *models.Config
-	log        *zap.Logger
+	k8sClient          *k8s.Client
+	podHandler         *PodHandler
+	deploymentHandler  *DeploymentHandler
+	statefulSetHandler *StatefulSetHandler
+	config             *models.Config
+	log                *zap.Logger
 }
 
 // NewOpenAPIHandler 创建 Open API 处理器
 func NewOpenAPIHandler(k8sClient *k8s.Client, config *models.Config) *OpenAPIHandler {
 	return &OpenAPIHandler{
-		k8sClient:  k8sClient,
-		podHandler: NewPodHandler(k8sClient, nil, config),
-		config:     config,
-		log:        logger.Named("openapi"),
+		k8sClient:          k8sClient,
+		podHandler:         NewPodHandler(k8sClient, nil, config),
+		deploymentHandler:  NewDeploymentHandler(k8sClient, config),
+		statefulSetHandler: NewStatefulSetHandler(k8sClient, config),
+		config:             config,
+		log:                logger.Named("openapi"),
 	}
 }
 
@@ -168,4 +172,60 @@ func (h *OpenAPIHandler) DeletePod(c *gin.Context) {
 		return
 	}
 	h.podHandler.DeletePod(c)
+}
+
+func (h *OpenAPIHandler) CreateStatefulSet(c *gin.Context) {
+	if _, ok := applyOpenAPIOwnerUserContext(c); !ok {
+		return
+	}
+	h.statefulSetHandler.CreateStatefulSet(c)
+}
+
+func (h *OpenAPIHandler) CreateDeployment(c *gin.Context) {
+	if _, ok := applyOpenAPIOwnerUserContext(c); !ok {
+		return
+	}
+	h.deploymentHandler.CreateDeployment(c)
+}
+
+func (h *OpenAPIHandler) ListDeployments(c *gin.Context) {
+	if _, ok := applyOpenAPIOwnerUserContext(c); !ok {
+		return
+	}
+	h.deploymentHandler.ListDeployments(c)
+}
+
+func (h *OpenAPIHandler) GetDeployment(c *gin.Context) {
+	if _, ok := applyOpenAPIOwnerUserContext(c); !ok {
+		return
+	}
+	h.deploymentHandler.GetDeployment(c)
+}
+
+func (h *OpenAPIHandler) DeleteDeployment(c *gin.Context) {
+	if _, ok := applyOpenAPIOwnerUserContext(c); !ok {
+		return
+	}
+	h.deploymentHandler.DeleteDeployment(c)
+}
+
+func (h *OpenAPIHandler) ListStatefulSets(c *gin.Context) {
+	if _, ok := applyOpenAPIOwnerUserContext(c); !ok {
+		return
+	}
+	h.statefulSetHandler.ListStatefulSets(c)
+}
+
+func (h *OpenAPIHandler) GetStatefulSet(c *gin.Context) {
+	if _, ok := applyOpenAPIOwnerUserContext(c); !ok {
+		return
+	}
+	h.statefulSetHandler.GetStatefulSet(c)
+}
+
+func (h *OpenAPIHandler) DeleteStatefulSet(c *gin.Context) {
+	if _, ok := applyOpenAPIOwnerUserContext(c); !ok {
+		return
+	}
+	h.statefulSetHandler.DeleteStatefulSet(c)
 }

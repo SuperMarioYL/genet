@@ -31,6 +31,9 @@ type WorkloadRuntimeSpec struct {
 	GPUType    string
 	GPUDevices []int
 	UserMounts []models.UserMount
+
+	EnableNodeRank         bool
+	SharedNodeTotalDevices int
 }
 
 type WorkloadRuntime struct {
@@ -100,13 +103,19 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 
 		var scriptBuf bytes.Buffer
 		if err := tmpl.Execute(&scriptBuf, map[string]interface{}{
-			"ProxyScript": proxySetupScript,
+			"ProxyScript":      proxySetupScript,
+			"CodeServerScript": buildCodeServerStartupScript(c.config.Pod.CodeServer),
 		}); err != nil {
 			return nil, fmt.Errorf("渲染启动脚本失败: %w", err)
 		}
 
+		startupScript := scriptBuf.String()
+		if spec.EnableNodeRank {
+			startupScript = wrapStartupScriptWithNodeRank(startupScript)
+		}
+
 		command = []string{"/bin/sh", "-c"}
-		args = []string{scriptBuf.String()}
+		args = []string{startupScript}
 	}
 
 	container := corev1.Container{
@@ -175,6 +184,9 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 	}
 
 	container.Env = append(container.Env, buildAutoInjectedDownwardEnvVars(container.Name)...)
+	if spec.EnableNodeRank {
+		container.Env = append(container.Env, corev1.EnvVar{Name: "NODE_RANK", Value: ""})
+	}
 
 	var runtimeClassName *string
 	acceleratorType := ""
@@ -190,31 +202,54 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 		}
 
 		if c.config.GPU.SchedulingMode == "sharing" {
-			if spec.NodeName == "" || len(spec.GPUDevices) == 0 {
-				return nil, fmt.Errorf("共享模式下必须指定节点和 GPU 卡")
+			if spec.NodeName == "" {
+				return nil, fmt.Errorf("共享模式下必须指定节点")
 			}
-			if c.config.GPU.MaxPodsPerGPU > 0 {
-				podsPerGPU := c.countPodsPerGPU(ctx, spec.NodeName)
-				for _, deviceIdx := range spec.GPUDevices {
-					if podsPerGPU[deviceIdx] >= c.config.GPU.MaxPodsPerGPU {
-						return nil, fmt.Errorf("GPU 卡 %d 已达到共享上限 (%d 个 Pod)", deviceIdx, c.config.GPU.MaxPodsPerGPU)
+			if len(spec.GPUDevices) > 0 {
+				if c.config.GPU.MaxPodsPerGPU > 0 {
+					podsPerGPU := c.countPodsPerGPU(ctx, spec.NodeName)
+					for _, deviceIdx := range spec.GPUDevices {
+						if podsPerGPU[deviceIdx] >= c.config.GPU.MaxPodsPerGPU {
+							return nil, fmt.Errorf("GPU 卡 %d 已达到共享上限 (%d 个 Pod)", deviceIdx, c.config.GPU.MaxPodsPerGPU)
+						}
 					}
 				}
-			}
 
-			deviceStr := intsToCommaString(spec.GPUDevices)
-			switch acceleratorType {
-			case "nvidia":
-				container.Env = append(container.Env,
-					corev1.EnvVar{Name: "NVIDIA_VISIBLE_DEVICES", Value: deviceStr},
-					corev1.EnvVar{Name: "NVIDIA_DRIVER_CAPABILITIES", Value: "compute,utility"},
-				)
-			case "ascend":
-				container.Env = append(container.Env,
-					corev1.EnvVar{Name: "ASCEND_RT_VISIBLE_DEVICES", Value: deviceStr},
-					corev1.EnvVar{Name: "ASCEND_VISIBLE_DEVICES", Value: deviceStr},
-					corev1.EnvVar{Name: "ASCEND_GLOBAL_LOG_LEVEL", Value: "3"},
-				)
+				deviceStr := intsToCommaString(spec.GPUDevices)
+				switch acceleratorType {
+				case "nvidia":
+					container.Env = append(container.Env,
+						corev1.EnvVar{Name: "NVIDIA_VISIBLE_DEVICES", Value: deviceStr},
+						corev1.EnvVar{Name: "NVIDIA_DRIVER_CAPABILITIES", Value: "compute,utility"},
+					)
+				case "ascend":
+					container.Env = append(container.Env,
+						corev1.EnvVar{Name: "ASCEND_RT_VISIBLE_DEVICES", Value: deviceStr},
+						corev1.EnvVar{Name: "ASCEND_VISIBLE_DEVICES", Value: deviceStr},
+						corev1.EnvVar{Name: "ASCEND_GLOBAL_LOG_LEVEL", Value: "3"},
+					)
+				}
+			} else if spec.EnableNodeRank && spec.SharedNodeTotalDevices > 0 {
+				switch acceleratorType {
+				case "nvidia":
+					container.Env = append(container.Env,
+						corev1.EnvVar{Name: "NVIDIA_DRIVER_CAPABILITIES", Value: "compute,utility"},
+					)
+				case "ascend":
+					container.Env = append(container.Env,
+						corev1.EnvVar{Name: "ASCEND_GLOBAL_LOG_LEVEL", Value: "3"},
+					)
+				}
+				if len(container.Args) == 1 {
+					container.Args[0] = wrapStartupScriptWithSharedDeviceAssignment(
+						container.Args[0],
+						acceleratorType,
+						spec.GPUCount,
+						spec.SharedNodeTotalDevices,
+					)
+				}
+			} else {
+				return nil, fmt.Errorf("共享模式下必须指定 GPU 卡或启用基于副本序号的自动分配")
 			}
 			if c.config.GPU.RuntimeClassName != "" {
 				runtimeClassName = &c.config.GPU.RuntimeClassName
@@ -329,4 +364,54 @@ echo "Proxy configured: HTTP_PROXY=%s, HTTPS_PROXY=%s"
 		DNSPolicy:        c.config.Pod.DNSPolicy,
 		DNSConfig:        c.config.Pod.DNSConfig,
 	}, nil
+}
+
+func wrapStartupScriptWithNodeRank(script string) string {
+	return fmt.Sprintf(`
+if [ -n "${POD_NAME:-}" ]; then
+  export NODE_RANK="${POD_NAME##*-}"
+fi
+%s
+`, script)
+}
+
+func wrapStartupScriptWithSharedDeviceAssignment(script, acceleratorType string, devicesPerReplica, totalDevices int) string {
+	var exportLines string
+	switch acceleratorType {
+	case "ascend":
+		exportLines = `
+  export ASCEND_RT_VISIBLE_DEVICES="$GENET_VISIBLE_DEVICES"
+  export ASCEND_VISIBLE_DEVICES="$GENET_VISIBLE_DEVICES"
+`
+	default:
+		exportLines = `
+  export NVIDIA_VISIBLE_DEVICES="$GENET_VISIBLE_DEVICES"
+`
+	}
+
+	return fmt.Sprintf(`
+if [ %d -gt 0 ] && [ %d -gt 0 ]; then
+  rank="${NODE_RANK:-}"
+  if [ -z "$rank" ] && [ -n "${POD_NAME:-}" ]; then
+    rank="$(printf '%%s' "$POD_NAME" | cksum | awk '{print $1}')"
+  fi
+  if [ -z "$rank" ]; then
+    rank="0"
+  fi
+  devices=""
+  i=0
+  while [ "$i" -lt %d ]; do
+    idx=$(( (rank * %d + i) %% %d ))
+    if [ -n "$devices" ]; then
+      devices="${devices},${idx}"
+    else
+      devices="${idx}"
+    fi
+    i=$((i + 1))
+  done
+  export GENET_VISIBLE_DEVICES="$devices"
+%s
+fi
+%s
+`, devicesPerReplica, totalDevices, devicesPerReplica, devicesPerReplica, totalDevices, exportLines, script)
 }

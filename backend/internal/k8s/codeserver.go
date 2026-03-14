@@ -24,6 +24,8 @@ func buildCodeServerStartupScript(cfg models.CodeServerConfig) string {
 	if extensionsDir == "" {
 		extensionsDir = models.DefaultCodeServerExtensionsDir
 	}
+	binDir := strings.TrimRight(userDataDir, "/") + "/bin"
+	binaryPath := binDir + "/code-server"
 	logFile := strings.TrimRight(userDataDir, "/") + "/code-server.log"
 	port := cfg.Port
 	if port <= 0 {
@@ -43,6 +45,12 @@ echo "=== Preparing code-server ==="
 mkdir -p %s
 mkdir -p %s
 mkdir -p %s
+mkdir -p %s
+export PATH=%s:$PATH
+
+if [ -x %s ]; then
+  chmod +x %s 2>/dev/null || true
+fi
 
 if ! command -v code-server >/dev/null 2>&1; then
   set +e
@@ -90,6 +98,10 @@ fi
 		shellQuote(workspaceDir),
 		shellQuote(userDataDir),
 		shellQuote(extensionsDir),
+		shellQuote(binDir),
+		shellQuote(binDir),
+		shellQuote(binaryPath),
+		shellQuote(binaryPath),
 		indentScript(installScript, 4),
 		port,
 		shellQuote(userDataDir),

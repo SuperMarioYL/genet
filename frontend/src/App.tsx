@@ -6,7 +6,9 @@ import { ThemeProvider, useTheme, lightAntdTheme, darkAntdTheme } from './theme'
 import ErrorBoundary from './components/ErrorBoundary';
 import ParticleBackground from './components/ParticleBackground';
 import Dashboard from './pages/Dashboard';
+import AdminPage from './pages/Admin';
 import AdminAPIKeys from './pages/AdminAPIKeys';
+import ProfilePage from './pages/Profile';
 import PodDetail from './pages/PodDetail';
 import WebShellPage from './pages/WebShell';
 import { getAuthStatus, AuthStatus } from './services/api';
@@ -77,6 +79,8 @@ const AppContent: React.FC = () => {
       <Router>
         <Routes>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/me" element={<ProfilePage />} />
+          <Route path="/admin" element={<AdminPage />} />
           <Route path="/pods/:id" element={<PodDetail />} />
           <Route path="/pods/:id/webshell" element={<WebShellPage />} />
           <Route path="/admin/apikeys" element={<AdminAPIKeys />} />

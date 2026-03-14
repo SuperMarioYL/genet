@@ -1,0 +1,49 @@
+.user-menu-trigger {
+  height: 42px;
+  border-radius: 999px !important;
+  padding: 0 12px !important;
+}
+
+.user-menu-avatar {
+  background: linear-gradient(135deg, rgba(15, 118, 110, 0.95), rgba(12, 74, 110, 0.88));
+}
+
+.user-menu-name {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-menu-pool {
+  margin-inline-end: 0 !important;
+  border-radius: 999px;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.user-menu-pool-shared {
+  color: #0f766e;
+  border-color: rgba(15, 118, 110, 0.24);
+  background: rgba(15, 118, 110, 0.08);
+}
+
+.user-menu-pool-exclusive {
+  color: #9a3412;
+  border-color: rgba(154, 52, 18, 0.24);
+  background: rgba(154, 52, 18, 0.08);
+}
+
+.user-menu-caret {
+  color: var(--text-muted);
+}
+
+@media (max-width: 768px) {
+  .user-menu-name {
+    max-width: 88px;
+  }
+
+  .user-menu-pool {
+    display: none;
+  }
+}

@@ -85,6 +85,24 @@ func GeneratePodName(userIdentifier, customName string) string {
 	return fmt.Sprintf("pod-%s-%d", userIdentifier, time.Now().Unix())
 }
 
+// GenerateStatefulSetName 生成 StatefulSet 名称
+func GenerateStatefulSetName(userIdentifier, customName string) string {
+	if customName != "" {
+		customName = SanitizeK8sName(customName)
+		return fmt.Sprintf("sts-%s-%s", userIdentifier, customName)
+	}
+	return fmt.Sprintf("sts-%s-%d", userIdentifier, time.Now().Unix())
+}
+
+// GenerateDeploymentName 生成 Deployment 名称
+func GenerateDeploymentName(userIdentifier, customName string) string {
+	if customName != "" {
+		customName = SanitizeK8sName(customName)
+		return fmt.Sprintf("deploy-%s-%s", userIdentifier, customName)
+	}
+	return fmt.Sprintf("deploy-%s-%d", userIdentifier, time.Now().Unix())
+}
+
 // GenerateJobName 生成 Job 名称
 // prefix: 前缀，如 "commit"
 // userIdentifier: 用户标识

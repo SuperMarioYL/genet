@@ -567,9 +567,15 @@ if [ -z "$CODE_SERVER_BIN" ]; then
   exit 1
 fi
 
-cp "$CODE_SERVER_BIN" /usr/local/bin/code-server
-chmod +x /usr/local/bin/code-server
-echo "code-server installed to /usr/local/bin/code-server"`,
+if [ -z "${CODE_SERVER_BIN_DIR:-}" ]; then
+  echo "code-server install failed: CODE_SERVER_BIN_DIR is not set"
+  exit 1
+fi
+
+mkdir -p "$CODE_SERVER_BIN_DIR"
+cp "$CODE_SERVER_BIN" "$CODE_SERVER_BIN_DIR/code-server"
+chmod +x "$CODE_SERVER_BIN_DIR/code-server"
+echo "code-server installed to $CODE_SERVER_BIN_DIR/code-server"`,
 				StartTimeoutSeconds: 20,
 			},
 		},

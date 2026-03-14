@@ -33,6 +33,32 @@ func (c *Client) EnsureVolumePVCs(ctx context.Context, namespace, userIdentifier
 	return nil
 }
 
+// EnsureStatefulSetVolumePVCs 仅为 StatefulSet 预先创建 user scope 的 PVC。
+// pod scope PVC 交给 volumeClaimTemplates 管理。
+func (c *Client) EnsureStatefulSetVolumePVCs(ctx context.Context, namespace, userIdentifier, workloadName string) error {
+	storageVolumes := c.config.Storage.GetEffectiveVolumes()
+
+	for _, vol := range storageVolumes {
+		if vol.Type != "pvc" {
+			continue
+		}
+		if strings.ToLower(vol.Scope) == "pod" {
+			continue
+		}
+
+		pvcName := c.GetPVCName(vol, userIdentifier, workloadName)
+		if pvcName == "" {
+			continue
+		}
+
+		if err := c.ensureSinglePVC(ctx, namespace, userIdentifier, pvcName, vol); err != nil {
+			return fmt.Errorf("确保卷 %s 的 PVC 失败: %w", vol.Name, err)
+		}
+	}
+
+	return nil
+}
+
 // ensureSinglePVC 确保单个 PVC 存在
 func (c *Client) ensureSinglePVC(ctx context.Context, namespace, userIdentifier, pvcName string, vol models.StorageVolume) error {
 	// 检查是否已存在
@@ -177,5 +203,26 @@ func (c *Client) DeletePodScopedPVCs(ctx context.Context, namespace, userIdentif
 		return fmt.Errorf("删除部分 scope=pod PVC 失败: %s", strings.Join(failed, "; "))
 	}
 
+	return nil
+}
+
+func (c *Client) DeleteStatefulSetScopedPVCs(ctx context.Context, namespace, workloadName string) error {
+	pvcs, err := c.clientset.CoreV1().PersistentVolumeClaims(namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: fmt.Sprintf("genet.io/workload-kind=statefulset,genet.io/workload-name=%s,genet.io/storage-scope=pod", workloadName),
+	})
+	if err != nil {
+		return fmt.Errorf("列出 StatefulSet PVC 失败: %w", err)
+	}
+
+	var failed []string
+	for _, pvc := range pvcs.Items {
+		if err := c.DeletePVC(ctx, namespace, pvc.Name); err != nil {
+			failed = append(failed, fmt.Sprintf("%s: %v", pvc.Name, err))
+		}
+	}
+
+	if len(failed) > 0 {
+		return fmt.Errorf("删除部分 StatefulSet PVC 失败: %s", strings.Join(failed, "; "))
+	}
 	return nil
 }

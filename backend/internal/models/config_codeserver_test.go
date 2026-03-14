@@ -32,4 +32,7 @@ func TestDefaultConfigProvidesCodeServerDefaults(t *testing.T) {
 	if strings.TrimSpace(cfg.Pod.CodeServer.InstallScript) == "" {
 		t.Fatalf("expected non-empty code-server install script")
 	}
+	if !strings.Contains(cfg.Pod.CodeServer.InstallScript, `"$CODE_SERVER_BIN_DIR/code-server"`) {
+		t.Fatalf("expected install script to persist code-server under CODE_SERVER_BIN_DIR")
+	}
 }

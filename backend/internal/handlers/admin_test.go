@@ -1,13 +1,19 @@
 package handlers
 
 import (
+	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 	"github.com/uc-package/genet/internal/auth"
+	"github.com/uc-package/genet/internal/k8s"
 	"github.com/uc-package/genet/internal/models"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 func TestAdminMe_ForbiddenForNonAdmin(t *testing.T) {
@@ -54,4 +60,194 @@ func TestAdminMe_OKForAdmin(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", rec.Code)
 	}
+}
+
+func TestAdminListNodePools_OK(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	cfg := adminTestConfig()
+	clientset := fake.NewSimpleClientset(
+		&corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   "node-shared",
+				Labels: map[string]string{},
+			},
+			Status: corev1.NodeStatus{
+				Addresses: []corev1.NodeAddress{{Type: corev1.NodeInternalIP, Address: "10.0.0.1"}},
+			},
+		},
+		&corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   "node-exclusive",
+				Labels: map[string]string{"genet.io/node-pool": "non-shared"},
+			},
+			Status: corev1.NodeStatus{
+				Addresses: []corev1.NodeAddress{{Type: corev1.NodeInternalIP, Address: "10.0.0.2"}},
+			},
+		},
+	)
+
+	rec := performAdminRequest(t, cfg, k8s.NewClientForTest(clientset, cfg), http.MethodGet, "/api/admin/nodes/pools", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+
+	var resp struct {
+		Nodes []struct {
+			NodeName string `json:"nodeName"`
+			PoolType string `json:"poolType"`
+		} `json:"nodes"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(resp.Nodes) != 2 {
+		t.Fatalf("expected 2 nodes, got %d", len(resp.Nodes))
+	}
+}
+
+func TestAdminUpdateNodePool_OK(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	cfg := adminTestConfig()
+	clientset := fake.NewSimpleClientset(
+		&corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   "node-a",
+				Labels: map[string]string{},
+			},
+		},
+	)
+
+	rec := performAdminRequest(t, cfg, k8s.NewClientForTest(clientset, cfg), http.MethodPatch, "/api/admin/nodes/node-a/pool", map[string]string{
+		"poolType": "exclusive",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	node, err := clientset.CoreV1().Nodes().Get(t.Context(), "node-a", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("failed to get updated node: %v", err)
+	}
+	if node.Labels["genet.io/node-pool"] != "non-shared" {
+		t.Fatalf("expected exclusive label to be set, got %#v", node.Labels)
+	}
+}
+
+func TestAdminListUserPools_OK(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	cfg := adminTestConfig()
+	clientset := fake.NewSimpleClientset(
+		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: cfg.OpenAPI.Namespace}},
+		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "user-alice"}},
+		&corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "pod-bob-dev",
+				Namespace: "user-bob",
+				Labels: map[string]string{
+					"genet.io/user": "bob",
+				},
+				Annotations: map[string]string{
+					"genet.io/email": "bob@example.com",
+				},
+			},
+			Status: corev1.PodStatus{Phase: corev1.PodRunning},
+		},
+	)
+	client := k8s.NewClientForTest(clientset, cfg)
+	if err := client.UpsertUserPoolBinding(t.Context(), k8s.UserPoolBindingRecord{
+		Username:  "alice",
+		PoolType:  k8s.UserPoolTypeExclusive,
+		UpdatedAt: metav1.Now().UTC(),
+		UpdatedBy: "admin",
+	}); err != nil {
+		t.Fatalf("failed to seed user pool binding: %v", err)
+	}
+
+	rec := performAdminRequest(t, cfg, client, http.MethodGet, "/api/admin/users/pools", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		Users []struct {
+			Username string `json:"username"`
+			PoolType string `json:"poolType"`
+		} `json:"users"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(resp.Users) < 2 {
+		t.Fatalf("expected at least 2 users, got %d", len(resp.Users))
+	}
+}
+
+func TestAdminUpdateUserPool_OK(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	cfg := adminTestConfig()
+	clientset := fake.NewSimpleClientset(&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: cfg.OpenAPI.Namespace}})
+	client := k8s.NewClientForTest(clientset, cfg)
+
+	rec := performAdminRequest(t, cfg, client, http.MethodPatch, "/api/admin/users/alice/pool", map[string]string{
+		"poolType": "exclusive",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	record, ok, err := client.GetUserPoolBinding(t.Context(), "alice")
+	if err != nil {
+		t.Fatalf("GetUserPoolBinding returned error: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected binding to exist")
+	}
+	if record.PoolType != k8s.UserPoolTypeExclusive {
+		t.Fatalf("expected pool type exclusive, got %s", record.PoolType)
+	}
+}
+
+func adminTestConfig() *models.Config {
+	cfg := models.DefaultConfig()
+	cfg.OAuth.Enabled = true
+	cfg.AdminUsers = []string{"alice"}
+	return cfg
+}
+
+func performAdminRequest(t *testing.T, cfg *models.Config, client *k8s.Client, method, path string, body interface{}) *httptest.ResponseRecorder {
+	t.Helper()
+
+	auth.InitAuthMiddleware(cfg)
+	h := NewAdminHandler(cfg, client)
+	r := gin.New()
+	admin := r.Group("/api/admin")
+	admin.Use(auth.AuthMiddleware(cfg), auth.RequireAdmin(cfg))
+	admin.GET("/me", h.GetMe)
+	admin.GET("/nodes/pools", h.ListNodePools)
+	admin.PATCH("/nodes/:name/pool", h.UpdateNodePool)
+	admin.GET("/users/pools", h.ListUserPools)
+	admin.PATCH("/users/:username/pool", h.UpdateUserPool)
+
+	var reqBody *bytes.Reader
+	if body == nil {
+		reqBody = bytes.NewReader(nil)
+	} else {
+		payload, err := json.Marshal(body)
+		if err != nil {
+			t.Fatalf("failed to encode request body: %v", err)
+		}
+		reqBody = bytes.NewReader(payload)
+	}
+
+	req := httptest.NewRequest(method, path, reqBody)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Auth-Request-User", "alice")
+	req.Header.Set("X-Auth-Request-Email", "alice@example.com")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec
 }

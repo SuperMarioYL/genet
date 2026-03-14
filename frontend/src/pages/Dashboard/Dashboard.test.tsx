@@ -5,11 +5,13 @@ import { createRoot, Root } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
 import Dashboard from './index';
 import {
-  getAdminMe,
+  getAuthStatus,
   getClusterInfo,
   getConfig,
   getKubeconfig,
   listPods,
+  listDeployments,
+  listStatefulSets,
 } from '../../services/api';
 
 declare const jest: typeof import('@jest/globals').jest;
@@ -24,22 +26,28 @@ jest.mock('../../components/GlassCard', () => ({ children, title }: any) => (
 jest.mock('../../components/ThemeToggle', () => () => <button type="button">theme</button>);
 jest.mock('./CreatePodModal', () => () => null);
 jest.mock('./PodCard', () => () => <div>pod card</div>);
+jest.mock('./DeploymentCard', () => () => <div>deployment card</div>);
+jest.mock('./StatefulSetCard', () => () => <div>statefulset card</div>);
 jest.mock('../../services/api', () => {
   const { fn } = require('jest-mock');
   return {
     listPods: fn(),
+    listDeployments: fn(),
+    listStatefulSets: fn(),
     getClusterInfo: fn(),
     getConfig: fn(),
-    getAdminMe: fn(),
+    getAuthStatus: fn(),
     getKubeconfig: fn(),
     downloadKubeconfig: fn(),
   };
 });
 
 const mockedListPods = listPods as MockedFunction<typeof listPods>;
+const mockedListDeployments = listDeployments as MockedFunction<typeof listDeployments>;
+const mockedListStatefulSets = listStatefulSets as MockedFunction<typeof listStatefulSets>;
 const mockedGetClusterInfo = getClusterInfo as MockedFunction<typeof getClusterInfo>;
 const mockedGetConfig = getConfig as MockedFunction<typeof getConfig>;
-const mockedGetAdminMe = getAdminMe as MockedFunction<typeof getAdminMe>;
+const mockedGetAuthStatus = getAuthStatus as MockedFunction<typeof getAuthStatus>;
 const mockedGetKubeconfig = getKubeconfig as MockedFunction<typeof getKubeconfig>;
 
 const flushEffects = async () => {
@@ -73,9 +81,11 @@ describe('Dashboard heatmap entry', () => {
       pods: [],
       quota: { podUsed: 0, podLimit: 5, gpuUsed: 0, gpuLimit: 8 },
     } as any);
+    mockedListDeployments.mockResolvedValue({ items: [] } as any);
+    mockedListStatefulSets.mockResolvedValue({ items: [] } as any);
     mockedGetClusterInfo.mockResolvedValue({ kubeconfigMode: 'cert' } as any);
     mockedGetConfig.mockResolvedValue({} as any);
-    mockedGetAdminMe.mockResolvedValue({ isAdmin: false } as any);
+    mockedGetAuthStatus.mockResolvedValue({ authenticated: true, username: 'alice', isAdmin: false, poolType: 'shared' } as any);
     mockedGetKubeconfig.mockResolvedValue({} as any);
 
     container = document.createElement('div');
@@ -143,5 +153,72 @@ describe('Dashboard heatmap entry', () => {
     expect(document.body.querySelector('.heatmap-title-summary')).toBeNull();
     expect(document.body.textContent).not.toContain('总卡数量');
     expect(document.body.textContent).not.toContain('占用量');
+  });
+
+  it('renders statefulset cards when workload data contains statefulsets', async () => {
+    mockedListStatefulSets.mockResolvedValueOnce({
+      items: [
+        {
+          id: 'sts-alice-train',
+          name: 'sts-alice-train',
+          replicas: 2,
+          readyReplicas: 1,
+          pods: [],
+        },
+      ],
+    } as any);
+
+    await act(async () => {
+      root.render(
+        <MemoryRouter>
+          <Dashboard />
+        </MemoryRouter>,
+      );
+    });
+
+    await flushEffects();
+
+    expect(container.textContent).toContain('statefulset card');
+  });
+
+  it('renders deployment cards when workload data contains deployments', async () => {
+    mockedListDeployments.mockResolvedValueOnce({
+      items: [
+        {
+          id: 'deploy-alice-train',
+          name: 'deploy-alice-train',
+          replicas: 1,
+          readyReplicas: 1,
+          pods: [],
+        },
+      ],
+    } as any);
+
+    await act(async () => {
+      root.render(
+        <MemoryRouter>
+          <Dashboard />
+        </MemoryRouter>,
+      );
+    });
+
+    await flushEffects();
+
+    expect(container.textContent).toContain('deployment card');
+  });
+
+  it('shows the current user in the header and removes the old API keys shortcut', async () => {
+    await act(async () => {
+      root.render(
+        <MemoryRouter>
+          <Dashboard />
+        </MemoryRouter>,
+      );
+    });
+
+    await flushEffects();
+
+    expect(container.textContent).toContain('alice');
+    expect(container.textContent).not.toContain('API Keys');
   });
 });

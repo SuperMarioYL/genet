@@ -2,7 +2,7 @@ openapi: "3.0.3"
 info:
   title: Genet Open API
   description: |
-    Genet OpenAPI for Pod, Service, ConfigMap, and Job operations.
+    Genet OpenAPI for Pod, Deployment, StatefulSet, Service, ConfigMap, and Job operations.
     - All resources use simplified JSON request/response models.
     - Effective namespace is always derived from the API key bound `ownerUser`.
     - Server injects ownership and management labels automatically.
@@ -167,6 +167,241 @@ paths:
       responses:
         "200":
           description: Pod deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/open/statefulsets:
+    post:
+      summary: Create StatefulSet
+      description: |
+        Create a StatefulSet using JSON request fields consistent with the web UI multi-pod workload form.
+        The effective namespace is derived from API key bound `ownerUser` (user-{identifier}).
+      operationId: createStatefulSet
+      tags: [StatefulSets]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OpenAPIStatefulSetCreateRequest"
+            example:
+              image: "nvidia/cuda:12.0.0-base-ubuntu22.04"
+              gpuType: "NVIDIA A100"
+              gpuCount: 1
+              replicas: 2
+              cpu: "8"
+              memory: "32Gi"
+              shmSize: "1Gi"
+              nodeName: "gpu-node-01"
+              name: "train"
+      responses:
+        "201":
+          description: StatefulSet created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenAPIStatefulSetCreateResponse"
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    get:
+      summary: List StatefulSets
+      operationId: listStatefulSets
+      tags: [StatefulSets]
+      responses:
+        "200":
+          description: StatefulSet list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenAPIStatefulSetList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/open/statefulsets/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: StatefulSet ID / name
+
+    get:
+      summary: Get StatefulSet
+      operationId: getStatefulSet
+      tags: [StatefulSets]
+      responses:
+        "200":
+          description: StatefulSet details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenAPIStatefulSet"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    delete:
+      summary: Delete StatefulSet
+      operationId: deleteStatefulSet
+      tags: [StatefulSets]
+      responses:
+        "200":
+          description: StatefulSet deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/open/deployments:
+    post:
+      summary: Create Deployment
+      description: |
+        Create a Deployment using JSON request fields consistent with the web UI workload form.
+        Resource values are per replica; total quota usage equals `replicas * per-replica resources`.
+        The effective namespace is derived from API key bound `ownerUser` (user-{identifier}).
+      operationId: createDeployment
+      tags: [Deployments]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OpenAPIDeploymentCreateRequest"
+            example:
+              image: "nvidia/cuda:12.0.0-base-ubuntu22.04"
+              gpuType: "NVIDIA A100"
+              gpuCount: 1
+              replicas: 2
+              cpu: "8"
+              memory: "32Gi"
+              shmSize: "1Gi"
+              nodeName: "gpu-node-01"
+              name: "train"
+      responses:
+        "201":
+          description: Deployment created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenAPIDeploymentCreateResponse"
+        "400":
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    get:
+      summary: List Deployments
+      operationId: listDeployments
+      tags: [Deployments]
+      responses:
+        "200":
+          description: Deployment list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenAPIDeploymentList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/open/deployments/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Deployment ID / name
+
+    get:
+      summary: Get Deployment
+      operationId: getDeployment
+      tags: [Deployments]
+      responses:
+        "200":
+          description: Deployment details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenAPIDeployment"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    delete:
+      summary: Delete Deployment
+      operationId: deleteDeployment
+      tags: [Deployments]
+      responses:
+        "200":
+          description: Deployment deleted
           content:
             application/json:
               schema:
@@ -806,6 +1041,234 @@ components:
             $ref: "#/components/schemas/OpenAPIPod"
         quota:
           $ref: "#/components/schemas/OpenAPIQuota"
+
+    OpenAPIStatefulSetCreateRequest:
+      type: object
+      description: |
+        JSON request for creating a StatefulSet.
+        Resource values are per replica; total quota usage equals `replicas * per-replica resources`.
+      properties:
+        image:
+          type: string
+          description: Container image.
+          example: "nvidia/cuda:12.0.0-base-ubuntu22.04"
+        gpuType:
+          type: string
+          description: GPU type display name. Optional when `gpuCount` is 0.
+          example: "NVIDIA A100"
+        gpuCount:
+          type: integer
+          minimum: 0
+          maximum: 8
+          description: Requested GPU count per replica.
+          example: 1
+        replicas:
+          type: integer
+          minimum: 1
+          maximum: 8
+          description: StatefulSet replica count.
+          example: 2
+        cpu:
+          type: string
+          description: CPU request per replica.
+          example: "8"
+        memory:
+          type: string
+          description: Memory request per replica.
+          example: "32Gi"
+        shmSize:
+          type: string
+          description: Shared memory size per replica.
+          example: "1Gi"
+        nodeName:
+          type: string
+          description: Optional fixed scheduling node for all replicas.
+          example: "gpu-node-01"
+        name:
+          type: string
+          description: Optional custom StatefulSet name suffix.
+          example: "train"
+        userMounts:
+          type: array
+          description: Optional custom hostPath mounts.
+          items:
+            $ref: "#/components/schemas/OpenAPIUserMount"
+      required:
+        - image
+        - gpuCount
+        - replicas
+
+    OpenAPIStatefulSetCreateResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Creation result message.
+          example: "StatefulSet 创建成功"
+        id:
+          type: string
+          description: StatefulSet ID / name.
+          example: "sts-alice-train"
+        name:
+          type: string
+          description: StatefulSet name.
+          example: "sts-alice-train"
+
+    OpenAPIStatefulSet:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        namespace:
+          type: string
+        status:
+          type: string
+        image:
+          type: string
+        gpuType:
+          type: string
+        gpuCount:
+          type: integer
+        cpu:
+          type: string
+        memory:
+          type: string
+        replicas:
+          type: integer
+        readyReplicas:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        serviceName:
+          type: string
+        pods:
+          type: array
+          items:
+            $ref: "#/components/schemas/OpenAPIPod"
+
+    OpenAPIStatefulSetList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OpenAPIStatefulSet"
+
+    OpenAPIDeploymentCreateRequest:
+      type: object
+      description: |
+        JSON request for creating a Deployment.
+        Resource values are per replica; total quota usage equals `replicas * per-replica resources`.
+      properties:
+        image:
+          type: string
+          description: Container image.
+          example: "nvidia/cuda:12.0.0-base-ubuntu22.04"
+        gpuType:
+          type: string
+          description: GPU type display name. Optional when `gpuCount` is 0.
+          example: "NVIDIA A100"
+        gpuCount:
+          type: integer
+          minimum: 0
+          maximum: 8
+          description: Requested GPU count per replica.
+          example: 1
+        replicas:
+          type: integer
+          minimum: 1
+          maximum: 8
+          description: Deployment replica count.
+          example: 2
+        cpu:
+          type: string
+          description: CPU request per replica.
+          example: "8"
+        memory:
+          type: string
+          description: Memory request per replica.
+          example: "32Gi"
+        shmSize:
+          type: string
+          description: Shared memory size per replica.
+          example: "1Gi"
+        nodeName:
+          type: string
+          description: Optional fixed scheduling node for all replicas.
+          example: "gpu-node-01"
+        name:
+          type: string
+          description: Optional custom Deployment name suffix.
+          example: "train"
+        userMounts:
+          type: array
+          description: Optional custom hostPath mounts.
+          items:
+            $ref: "#/components/schemas/OpenAPIUserMount"
+      required:
+        - image
+        - gpuCount
+        - replicas
+
+    OpenAPIDeploymentCreateResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Creation result message.
+          example: "Deployment 创建成功"
+        id:
+          type: string
+          description: Deployment ID / name.
+          example: "deploy-alice-train"
+        name:
+          type: string
+          description: Deployment name.
+          example: "deploy-alice-train"
+
+    OpenAPIDeployment:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        namespace:
+          type: string
+        status:
+          type: string
+        image:
+          type: string
+        gpuType:
+          type: string
+        gpuCount:
+          type: integer
+        cpu:
+          type: string
+        memory:
+          type: string
+        replicas:
+          type: integer
+        readyReplicas:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        pods:
+          type: array
+          items:
+            $ref: "#/components/schemas/OpenAPIPod"
+
+    OpenAPIDeploymentList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OpenAPIDeployment"
 
     OpenAPIQuota:
       type: object

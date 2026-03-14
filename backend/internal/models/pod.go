@@ -41,6 +41,8 @@ type PodResponse struct {
 	Memory         string          `json:"memory"` // 内存大小
 	CreatedAt      time.Time       `json:"createdAt"`
 	NodeIP         string          `json:"nodeIP"`
+	WorkloadKind   string          `json:"workloadKind,omitempty"`
+	WorkloadName   string          `json:"workloadName,omitempty"`
 	Connections    *PodConnections `json:"connections,omitempty"`
 	ProtectedUntil *time.Time      `json:"protectedUntil,omitempty"` // 保护截止时间，nil 表示未保护
 }

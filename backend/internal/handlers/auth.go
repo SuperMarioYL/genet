@@ -5,18 +5,21 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/uc-package/genet/internal/auth"
+	"github.com/uc-package/genet/internal/k8s"
 	"github.com/uc-package/genet/internal/models"
 )
 
 // AuthHandler 认证处理器
 type AuthHandler struct {
-	config *models.Config
+	config    *models.Config
+	k8sClient *k8s.Client
 }
 
 // NewAuthHandler 创建认证处理器
-func NewAuthHandler(config *models.Config) *AuthHandler {
+func NewAuthHandler(config *models.Config, k8sClient *k8s.Client) *AuthHandler {
 	return &AuthHandler{
-		config: config,
+		config:    config,
+		k8sClient: k8sClient,
 	}
 }
 
@@ -25,6 +28,8 @@ type AuthStatusResponse struct {
 	Authenticated bool   `json:"authenticated"`
 	Username      string `json:"username,omitempty"`
 	Email         string `json:"email,omitempty"`
+	IsAdmin       bool   `json:"isAdmin"`
+	PoolType      string `json:"poolType,omitempty"`
 	OAuthEnabled  bool   `json:"oauthEnabled"`
 	LoginURL      string `json:"loginURL,omitempty"`
 }
@@ -47,7 +52,15 @@ func (h *AuthHandler) GetAuthStatus(c *gin.Context) {
 		Authenticated: isAuthenticated,
 		Username:      username,
 		Email:         email,
+		IsAdmin:       auth.IsAdmin(h.config, username, email),
 		OAuthEnabled:  h.config.OAuth.Enabled,
+	}
+	if isAuthenticated && username != "" {
+		userIdentifier := k8s.GetUserIdentifier(username, email)
+		poolType, err := resolveUserPoolType(c.Request.Context(), h.k8sClient, userIdentifier)
+		if err == nil {
+			response.PoolType = poolType
+		}
 	}
 
 	// 如果 OAuth 已启用且未认证，返回登录 URL
@@ -57,4 +70,3 @@ func (h *AuthHandler) GetAuthStatus(c *gin.Context) {
 
 	c.JSON(http.StatusOK, response)
 }
-

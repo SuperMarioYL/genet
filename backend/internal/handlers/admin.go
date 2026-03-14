@@ -1,11 +1,13 @@
 package handlers
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -15,6 +17,8 @@ import (
 	"github.com/uc-package/genet/internal/logger"
 	"github.com/uc-package/genet/internal/models"
 	"go.uber.org/zap"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // AdminHandler 管理接口处理器
@@ -48,6 +52,42 @@ type AdminAPIKeyItem struct {
 // AdminAPIKeyListResponse API Key 列表响应
 type AdminAPIKeyListResponse struct {
 	Items []AdminAPIKeyItem `json:"items"`
+}
+
+type AdminOverviewResponse struct {
+	NodeSummary AdminPoolSummary `json:"nodeSummary"`
+	UserSummary AdminPoolSummary `json:"userSummary"`
+}
+
+type AdminPoolSummary struct {
+	Shared    int `json:"shared"`
+	Exclusive int `json:"exclusive"`
+}
+
+type AdminNodePoolItem struct {
+	NodeName string `json:"nodeName"`
+	NodeIP   string `json:"nodeIP"`
+	PoolType string `json:"poolType"`
+}
+
+type AdminNodePoolListResponse struct {
+	Nodes []AdminNodePoolItem `json:"nodes"`
+}
+
+type AdminUserPoolItem struct {
+	Username  string     `json:"username"`
+	Email     string     `json:"email,omitempty"`
+	PoolType  string     `json:"poolType"`
+	UpdatedAt *time.Time `json:"updatedAt,omitempty"`
+	UpdatedBy string     `json:"updatedBy,omitempty"`
+}
+
+type AdminUserPoolListResponse struct {
+	Users []AdminUserPoolItem `json:"users"`
+}
+
+type UpdatePoolTypeRequest struct {
+	PoolType string `json:"poolType" binding:"required"`
 }
 
 // CreateAdminAPIKeyRequest 创建 API Key 请求
@@ -85,6 +125,151 @@ func (h *AdminHandler) GetMe(c *gin.Context) {
 		Username: username,
 		Email:    email,
 		IsAdmin:  auth.IsAdmin(h.config, username, email),
+	})
+}
+
+func (h *AdminHandler) GetOverview(c *gin.Context) {
+	nodes, users, err := h.listAdminPoolState(c.Request.Context())
+	if err != nil {
+		h.log.Error("Failed to load admin overview", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load admin overview"})
+		return
+	}
+
+	resp := AdminOverviewResponse{}
+	for _, node := range nodes {
+		if node.PoolType == k8s.UserPoolTypeExclusive {
+			resp.NodeSummary.Exclusive++
+		} else {
+			resp.NodeSummary.Shared++
+		}
+	}
+	for _, user := range users {
+		if user.PoolType == k8s.UserPoolTypeExclusive {
+			resp.UserSummary.Exclusive++
+		} else {
+			resp.UserSummary.Shared++
+		}
+	}
+	c.JSON(http.StatusOK, resp)
+}
+
+func (h *AdminHandler) ListNodePools(c *gin.Context) {
+	nodes, _, err := h.listAdminPoolState(c.Request.Context())
+	if err != nil {
+		h.log.Error("Failed to list node pools", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list node pools"})
+		return
+	}
+	c.JSON(http.StatusOK, AdminNodePoolListResponse{Nodes: nodes})
+}
+
+func (h *AdminHandler) UpdateNodePool(c *gin.Context) {
+	if h.k8sClient == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "k8s client is not initialized"})
+		return
+	}
+
+	var req UpdatePoolTypeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid request: %v", err)})
+		return
+	}
+	poolType := strings.TrimSpace(req.PoolType)
+	if poolType != k8s.UserPoolTypeShared && poolType != k8s.UserPoolTypeExclusive {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid poolType, must be shared or exclusive"})
+		return
+	}
+
+	nodeName := strings.TrimSpace(c.Param("name"))
+	node, err := h.k8sClient.GetClientset().CoreV1().Nodes().Get(c.Request.Context(), nodeName, metav1.GetOptions{})
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "node not found"})
+		return
+	}
+
+	labelKey := defaultNonSharedLabelKey
+	labelValue := defaultNonSharedLabelValue
+	if h.config != nil {
+		if v := strings.TrimSpace(h.config.GPU.NodePool.NonSharedLabelKey); v != "" {
+			labelKey = v
+		}
+		if v := strings.TrimSpace(h.config.GPU.NodePool.NonSharedLabelValue); v != "" {
+			labelValue = v
+		}
+	}
+	if node.Labels == nil {
+		node.Labels = map[string]string{}
+	}
+	if poolType == k8s.UserPoolTypeExclusive {
+		node.Labels[labelKey] = labelValue
+	} else {
+		delete(node.Labels, labelKey)
+	}
+
+	updated, err := h.k8sClient.GetClientset().CoreV1().Nodes().Update(c.Request.Context(), node, metav1.UpdateOptions{})
+	if err != nil {
+		h.log.Error("Failed to update node pool", zap.String("node", nodeName), zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update node pool"})
+		return
+	}
+
+	c.JSON(http.StatusOK, AdminNodePoolItem{
+		NodeName: updated.Name,
+		NodeIP:   adminNodeInternalIP(*updated),
+		PoolType: getNodePoolType(*updated, h.config),
+	})
+}
+
+func (h *AdminHandler) ListUserPools(c *gin.Context) {
+	_, users, err := h.listAdminPoolState(c.Request.Context())
+	if err != nil {
+		h.log.Error("Failed to list user pools", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list user pools"})
+		return
+	}
+	c.JSON(http.StatusOK, AdminUserPoolListResponse{Users: users})
+}
+
+func (h *AdminHandler) UpdateUserPool(c *gin.Context) {
+	if h.k8sClient == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "k8s client is not initialized"})
+		return
+	}
+
+	var req UpdatePoolTypeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid request: %v", err)})
+		return
+	}
+	poolType := strings.TrimSpace(req.PoolType)
+	if poolType != k8s.UserPoolTypeShared && poolType != k8s.UserPoolTypeExclusive {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid poolType, must be shared or exclusive"})
+		return
+	}
+
+	username := strings.TrimSpace(c.Param("username"))
+	operator, _ := auth.GetUsername(c)
+	if operator == "" {
+		operator, _ = auth.GetEmail(c)
+	}
+	record := k8s.UserPoolBindingRecord{
+		Username:  username,
+		PoolType:  poolType,
+		UpdatedAt: time.Now().UTC(),
+		UpdatedBy: operator,
+	}
+	if err := h.k8sClient.UpsertUserPoolBinding(c.Request.Context(), record); err != nil {
+		h.log.Error("Failed to update user pool", zap.String("username", username), zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update user pool"})
+		return
+	}
+
+	c.JSON(http.StatusOK, AdminUserPoolItem{
+		Username:  record.Username,
+		PoolType:  record.PoolType,
+		UpdatedAt: &record.UpdatedAt,
+		UpdatedBy: record.UpdatedBy,
 	})
 }
 
@@ -333,4 +518,103 @@ func buildOpenAPIKeyPreview(plaintext string) string {
 		return plaintext
 	}
 	return plaintext[:12] + "..."
+}
+
+func (h *AdminHandler) listAdminPoolState(ctx context.Context) ([]AdminNodePoolItem, []AdminUserPoolItem, error) {
+	if h.k8sClient == nil {
+		return nil, nil, fmt.Errorf("k8s client is not initialized")
+	}
+
+	nodes, err := h.k8sClient.GetClientset().CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, nil, err
+	}
+	nodeItems := make([]AdminNodePoolItem, 0, len(nodes.Items))
+	for _, node := range nodes.Items {
+		nodeItems = append(nodeItems, AdminNodePoolItem{
+			NodeName: node.Name,
+			NodeIP:   adminNodeInternalIP(node),
+			PoolType: getNodePoolType(node, h.config),
+		})
+	}
+	sort.Slice(nodeItems, func(i, j int) bool {
+		return nodeItems[i].NodeName < nodeItems[j].NodeName
+	})
+
+	records, err := h.k8sClient.ListUserPoolBindings(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	userMap := map[string]AdminUserPoolItem{}
+	for _, rec := range records {
+		recCopy := rec
+		userMap[rec.Username] = AdminUserPoolItem{
+			Username:  rec.Username,
+			PoolType:  rec.PoolType,
+			UpdatedAt: &recCopy.UpdatedAt,
+			UpdatedBy: rec.UpdatedBy,
+		}
+	}
+
+	pods, err := h.k8sClient.GetClientset().CoreV1().Pods("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, pod := range pods.Items {
+		username := strings.TrimSpace(pod.Labels["genet.io/user"])
+		if username == "" {
+			continue
+		}
+		item := userMap[username]
+		item.Username = username
+		if item.PoolType == "" {
+			item.PoolType = k8s.UserPoolTypeShared
+		}
+		if item.Email == "" {
+			item.Email = strings.TrimSpace(pod.Annotations["genet.io/email"])
+		}
+		userMap[username] = item
+	}
+
+	namespaces, err := h.k8sClient.GetClientset().CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, ns := range namespaces.Items {
+		if !strings.HasPrefix(ns.Name, "user-") {
+			continue
+		}
+		username := strings.TrimSpace(strings.TrimPrefix(ns.Name, "user-"))
+		if username == "" {
+			continue
+		}
+		item := userMap[username]
+		item.Username = username
+		if item.PoolType == "" {
+			item.PoolType = k8s.UserPoolTypeShared
+		}
+		userMap[username] = item
+	}
+
+	userItems := make([]AdminUserPoolItem, 0, len(userMap))
+	for _, item := range userMap {
+		if item.PoolType == "" {
+			item.PoolType = k8s.UserPoolTypeShared
+		}
+		userItems = append(userItems, item)
+	}
+	sort.Slice(userItems, func(i, j int) bool {
+		return userItems[i].Username < userItems[j].Username
+	})
+
+	return nodeItems, userItems, nil
+}
+
+func adminNodeInternalIP(node corev1.Node) string {
+	for _, addr := range node.Status.Addresses {
+		if addr.Type == corev1.NodeInternalIP {
+			return addr.Address
+		}
+	}
+	return ""
 }

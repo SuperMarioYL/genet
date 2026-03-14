@@ -27,6 +27,9 @@ func TestBuildCodeServerStartupScriptIncludesExpectedCommand(t *testing.T) {
 	expectedSnippets := []string{
 		"echo install code-server",
 		"mkdir -p '" + models.DefaultCodeServerUserDataDir + "'",
+		"mkdir -p '" + models.DefaultCodeServerUserDataDir + "/bin'",
+		"export PATH='" + models.DefaultCodeServerUserDataDir + "/bin':$PATH",
+		"if [ -x '" + models.DefaultCodeServerUserDataDir + "/bin/code-server' ]; then",
 		"--bind-addr 0.0.0.0:13337",
 		"--user-data-dir '" + models.DefaultCodeServerUserDataDir + "'",
 		"--extensions-dir '" + models.DefaultCodeServerExtensionsDir + "'",
