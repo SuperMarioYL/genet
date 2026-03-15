@@ -69,15 +69,16 @@ func (c *Client) CreateDeployment(ctx context.Context, spec *DeploymentSpec) (*a
 		"app":                    spec.Name,
 	}
 	annotations := map[string]string{
-		"genet.io/created-at": time.Now().Format(time.RFC3339),
-		"genet.io/email":      spec.Email,
-		"genet.io/gpu-type":   spec.GPUType,
-		"genet.io/gpu-count":  fmt.Sprintf("%d", spec.GPUCount),
-		"genet.io/cpu":        spec.CPU,
-		"genet.io/memory":     spec.Memory,
-		"genet.io/shm-size":   spec.ShmSize,
-		"genet.io/image":      spec.Image,
-		"genet.io/replicas":   fmt.Sprintf("%d", spec.Replicas),
+		"genet.io/created-at":      time.Now().Format(time.RFC3339),
+		"genet.io/email":           spec.Email,
+		"genet.io/gpu-type":        spec.GPUType,
+		"genet.io/gpu-count":       fmt.Sprintf("%d", spec.GPUCount),
+		"genet.io/cpu":             spec.CPU,
+		"genet.io/memory":          spec.Memory,
+		"genet.io/shm-size":        spec.ShmSize,
+		"genet.io/image":           spec.Image,
+		"genet.io/replicas":        fmt.Sprintf("%d", spec.Replicas),
+		"genet.io/suspend-enabled": "true",
 	}
 
 	storageTypeAnnotation := ""
@@ -178,6 +179,37 @@ func (c *Client) DeleteDeployment(ctx context.Context, namespace, name string) e
 		return fmt.Errorf("删除 Deployment 失败: %w", err)
 	}
 	return nil
+}
+
+func (c *Client) ResumeDeployment(ctx context.Context, namespace, name string) (*appsv1.Deployment, error) {
+	deploy, err := c.clientset.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	if !strings.EqualFold(deploy.Annotations["genet.io/suspended"], "true") {
+		return nil, fmt.Errorf("deployment 未处于挂起状态")
+	}
+	image := strings.TrimSpace(deploy.Annotations["genet.io/suspended-image"])
+	if image == "" {
+		return nil, fmt.Errorf("deployment 缺少挂起恢复元数据")
+	}
+	replicas, err := parseSuspendedReplicas(deploy.Annotations, "deployment")
+	if err != nil {
+		return nil, err
+	}
+	if len(deploy.Spec.Template.Spec.Containers) == 0 {
+		return nil, fmt.Errorf("deployment 模板缺少容器")
+	}
+
+	deploy.Spec.Template.Spec.Containers[0].Image = image
+	deploy.Spec.Replicas = &replicas
+	deploy.Annotations = applyResumeMetadata(deploy.Annotations)
+
+	updated, err := c.clientset.AppsV1().Deployments(namespace).Update(ctx, deploy, metav1.UpdateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("恢复 Deployment 失败: %w", err)
+	}
+	return updated, nil
 }
 
 func (c *Client) HasPodScopedPVCVolumes() bool {

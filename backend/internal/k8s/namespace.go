@@ -175,3 +175,181 @@ func (c *Client) SyncUserNamespaceQuotas(ctx context.Context) error {
 
 	return nil
 }
+
+func (c *Client) ForceDeleteNamespace(ctx context.Context, namespace string) error {
+	namespace = strings.TrimSpace(namespace)
+	if namespace == "" {
+		return fmt.Errorf("namespace is required")
+	}
+
+	zeroGracePeriod := int64(0)
+	propagation := metav1.DeletePropagationBackground
+	deleteOptions := metav1.DeleteOptions{
+		GracePeriodSeconds: &zeroGracePeriod,
+		PropagationPolicy:  &propagation,
+	}
+
+	deleteByName := func(resourceType string, names []string, deleter func(string) error) error {
+		var failures []string
+		for _, name := range names {
+			if err := deleter(name); err != nil && !errors.IsNotFound(err) {
+				failures = append(failures, fmt.Sprintf("%s/%s: %v", resourceType, name, err))
+			}
+		}
+		if len(failures) > 0 {
+			return fmt.Errorf(strings.Join(failures, "; "))
+		}
+		return nil
+	}
+
+	var failures []string
+	for _, attempt := range []struct {
+		name string
+		fn   func() error
+	}{
+		{name: "pods", fn: func() error {
+			items, err := c.clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+			if err != nil && !errors.IsNotFound(err) {
+				return err
+			}
+			names := make([]string, 0, len(items.Items))
+			for _, item := range items.Items {
+				names = append(names, item.Name)
+			}
+			return deleteByName("pods", names, func(name string) error {
+				return c.clientset.CoreV1().Pods(namespace).Delete(ctx, name, deleteOptions)
+			})
+		}},
+		{name: "services", fn: func() error {
+			items, err := c.clientset.CoreV1().Services(namespace).List(ctx, metav1.ListOptions{})
+			if err != nil && !errors.IsNotFound(err) {
+				return err
+			}
+			names := make([]string, 0, len(items.Items))
+			for _, item := range items.Items {
+				names = append(names, item.Name)
+			}
+			return deleteByName("services", names, func(name string) error {
+				return c.clientset.CoreV1().Services(namespace).Delete(ctx, name, deleteOptions)
+			})
+		}},
+		{name: "configmaps", fn: func() error {
+			items, err := c.clientset.CoreV1().ConfigMaps(namespace).List(ctx, metav1.ListOptions{})
+			if err != nil && !errors.IsNotFound(err) {
+				return err
+			}
+			names := make([]string, 0, len(items.Items))
+			for _, item := range items.Items {
+				names = append(names, item.Name)
+			}
+			return deleteByName("configmaps", names, func(name string) error {
+				return c.clientset.CoreV1().ConfigMaps(namespace).Delete(ctx, name, deleteOptions)
+			})
+		}},
+		{name: "secrets", fn: func() error {
+			items, err := c.clientset.CoreV1().Secrets(namespace).List(ctx, metav1.ListOptions{})
+			if err != nil && !errors.IsNotFound(err) {
+				return err
+			}
+			names := make([]string, 0, len(items.Items))
+			for _, item := range items.Items {
+				names = append(names, item.Name)
+			}
+			return deleteByName("secrets", names, func(name string) error {
+				return c.clientset.CoreV1().Secrets(namespace).Delete(ctx, name, deleteOptions)
+			})
+		}},
+		{name: "persistentvolumeclaims", fn: func() error {
+			items, err := c.clientset.CoreV1().PersistentVolumeClaims(namespace).List(ctx, metav1.ListOptions{})
+			if err != nil && !errors.IsNotFound(err) {
+				return err
+			}
+			names := make([]string, 0, len(items.Items))
+			for _, item := range items.Items {
+				names = append(names, item.Name)
+			}
+			return deleteByName("persistentvolumeclaims", names, func(name string) error {
+				return c.clientset.CoreV1().PersistentVolumeClaims(namespace).Delete(ctx, name, deleteOptions)
+			})
+		}},
+		{name: "deployments", fn: func() error {
+			items, err := c.clientset.AppsV1().Deployments(namespace).List(ctx, metav1.ListOptions{})
+			if err != nil && !errors.IsNotFound(err) {
+				return err
+			}
+			names := make([]string, 0, len(items.Items))
+			for _, item := range items.Items {
+				names = append(names, item.Name)
+			}
+			return deleteByName("deployments", names, func(name string) error {
+				return c.clientset.AppsV1().Deployments(namespace).Delete(ctx, name, deleteOptions)
+			})
+		}},
+		{name: "statefulsets", fn: func() error {
+			items, err := c.clientset.AppsV1().StatefulSets(namespace).List(ctx, metav1.ListOptions{})
+			if err != nil && !errors.IsNotFound(err) {
+				return err
+			}
+			names := make([]string, 0, len(items.Items))
+			for _, item := range items.Items {
+				names = append(names, item.Name)
+			}
+			return deleteByName("statefulsets", names, func(name string) error {
+				return c.clientset.AppsV1().StatefulSets(namespace).Delete(ctx, name, deleteOptions)
+			})
+		}},
+		{name: "jobs", fn: func() error {
+			items, err := c.clientset.BatchV1().Jobs(namespace).List(ctx, metav1.ListOptions{})
+			if err != nil && !errors.IsNotFound(err) {
+				return err
+			}
+			names := make([]string, 0, len(items.Items))
+			for _, item := range items.Items {
+				names = append(names, item.Name)
+			}
+			return deleteByName("jobs", names, func(name string) error {
+				return c.clientset.BatchV1().Jobs(namespace).Delete(ctx, name, deleteOptions)
+			})
+		}},
+		{name: "roles", fn: func() error {
+			items, err := c.clientset.RbacV1().Roles(namespace).List(ctx, metav1.ListOptions{})
+			if err != nil && !errors.IsNotFound(err) {
+				return err
+			}
+			names := make([]string, 0, len(items.Items))
+			for _, item := range items.Items {
+				names = append(names, item.Name)
+			}
+			return deleteByName("roles", names, func(name string) error {
+				return c.clientset.RbacV1().Roles(namespace).Delete(ctx, name, deleteOptions)
+			})
+		}},
+		{name: "rolebindings", fn: func() error {
+			items, err := c.clientset.RbacV1().RoleBindings(namespace).List(ctx, metav1.ListOptions{})
+			if err != nil && !errors.IsNotFound(err) {
+				return err
+			}
+			names := make([]string, 0, len(items.Items))
+			for _, item := range items.Items {
+				names = append(names, item.Name)
+			}
+			return deleteByName("rolebindings", names, func(name string) error {
+				return c.clientset.RbacV1().RoleBindings(namespace).Delete(ctx, name, deleteOptions)
+			})
+		}},
+	} {
+		if err := attempt.fn(); err != nil && !errors.IsNotFound(err) {
+			failures = append(failures, fmt.Sprintf("%s: %v", attempt.name, err))
+		}
+	}
+
+	if err := c.clientset.CoreV1().Namespaces().Delete(ctx, namespace, deleteOptions); err != nil && !errors.IsNotFound(err) {
+		failures = append(failures, fmt.Sprintf("namespace: %v", err))
+	}
+
+	if len(failures) > 0 {
+		return fmt.Errorf("删除命名空间资源失败: %s", strings.Join(failures, "; "))
+	}
+
+	return nil
+}

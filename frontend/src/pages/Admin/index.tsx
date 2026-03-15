@@ -9,6 +9,7 @@ import {
   AdminNodePoolItem,
   AdminOverviewResponse,
   AdminUserPoolItem,
+  deleteAdminUser,
   getAdminMe,
   getAdminOverview,
   listAdminNodePools,
@@ -35,6 +36,7 @@ const AdminPage: React.FC = () => {
   const [overview, setOverview] = useState<AdminOverviewResponse | null>(null);
   const [nodes, setNodes] = useState<AdminNodePoolItem[]>([]);
   const [users, setUsers] = useState<AdminUserPoolItem[]>([]);
+  const [deletingUsers, setDeletingUsers] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
 
   const loadData = async () => {
@@ -92,6 +94,30 @@ const AdminPage: React.FC = () => {
     } catch (error: any) {
       setUsers(previous);
       message.error(`更新用户池失败: ${error.message}`);
+    }
+  };
+
+  const removeUser = async (username: string) => {
+    if (!window.confirm(`确定强制删除用户 ${username} 及其 namespace 下的资源？`)) {
+      return;
+    }
+
+    const previous = users;
+    setDeletingUsers((current) => ({ ...current, [username]: true }));
+    setUsers((current) => current.filter((item) => item.username !== username));
+    try {
+      await deleteAdminUser(username);
+      await loadData();
+      message.success(`已提交删除用户 ${username}`);
+    } catch (error: any) {
+      setUsers(previous);
+      message.error(`删除用户失败: ${error.message}`);
+    } finally {
+      setDeletingUsers((current) => {
+        const next = { ...current };
+        delete next[username];
+        return next;
+      });
     }
   };
 
@@ -206,18 +232,15 @@ const AdminPage: React.FC = () => {
                     '共享池',
                     'shared',
                     sharedNodes.map((node) => (
-                      <GlassCard
-                        key={node.nodeName}
-                        hover={false}
-                        className="pool-card"
-                      >
+                      <GlassCard key={node.nodeName} hover={false} className="pool-card">
                         <div
+                          className="pool-card-inner"
                           draggable
                           onDragStart={() => {
                             dragPayloadRef.current = { kind: 'node', name: node.nodeName, poolType: 'shared' };
                           }}
                         >
-                          <strong>{node.nodeName}</strong>
+                          <strong className="pool-card-title">{node.nodeName}</strong>
                           <div className="pool-card-meta">{node.nodeIP || '无 IP'}</div>
                         </div>
                       </GlassCard>
@@ -230,12 +253,13 @@ const AdminPage: React.FC = () => {
                     exclusiveNodes.map((node) => (
                       <GlassCard key={node.nodeName} hover={false} className="pool-card pool-card-exclusive">
                         <div
+                          className="pool-card-inner"
                           draggable
                           onDragStart={() => {
                             dragPayloadRef.current = { kind: 'node', name: node.nodeName, poolType: 'exclusive' };
                           }}
                         >
-                          <strong>{node.nodeName}</strong>
+                          <strong className="pool-card-title">{node.nodeName}</strong>
                           <div className="pool-card-meta">{node.nodeIP || '无 IP'}</div>
                         </div>
                       </GlassCard>
@@ -255,14 +279,30 @@ const AdminPage: React.FC = () => {
                     'shared',
                     sharedUsers.map((user) => (
                       <GlassCard key={user.username} hover={false} className="pool-card">
-                        <div
-                          draggable
-                          onDragStart={() => {
-                            dragPayloadRef.current = { kind: 'user', name: user.username, poolType: 'shared' };
-                          }}
-                        >
-                          <strong>{user.username}</strong>
-                          <div className="pool-card-meta">{user.email || '未记录邮箱'}</div>
+                        <div className="pool-card-row">
+                          <div
+                            className="pool-card-inner pool-card-handle"
+                            draggable
+                            onDragStart={() => {
+                              dragPayloadRef.current = { kind: 'user', name: user.username, poolType: 'shared' };
+                            }}
+                          >
+                            <strong className="pool-card-title">{user.username}</strong>
+                            <div className="pool-card-meta">{user.email || '未记录邮箱'}</div>
+                          </div>
+                          <Button
+                            danger
+                            type="text"
+                            size="small"
+                            className="pool-card-action"
+                            loading={!!deletingUsers[user.username]}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void removeUser(user.username);
+                            }}
+                          >
+                            删除用户
+                          </Button>
                         </div>
                       </GlassCard>
                     )),
@@ -273,14 +313,30 @@ const AdminPage: React.FC = () => {
                     'exclusive',
                     exclusiveUsers.map((user) => (
                       <GlassCard key={user.username} hover={false} className="pool-card pool-card-exclusive">
-                        <div
-                          draggable
-                          onDragStart={() => {
-                            dragPayloadRef.current = { kind: 'user', name: user.username, poolType: 'exclusive' };
-                          }}
-                        >
-                          <strong>{user.username}</strong>
-                          <div className="pool-card-meta">{user.email || '未记录邮箱'}</div>
+                        <div className="pool-card-row">
+                          <div
+                            className="pool-card-inner pool-card-handle"
+                            draggable
+                            onDragStart={() => {
+                              dragPayloadRef.current = { kind: 'user', name: user.username, poolType: 'exclusive' };
+                            }}
+                          >
+                            <strong className="pool-card-title">{user.username}</strong>
+                            <div className="pool-card-meta">{user.email || '未记录邮箱'}</div>
+                          </div>
+                          <Button
+                            danger
+                            type="text"
+                            size="small"
+                            className="pool-card-action"
+                            loading={!!deletingUsers[user.username]}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void removeUser(user.username);
+                            }}
+                          >
+                            删除用户
+                          </Button>
                         </div>
                       </GlassCard>
                     )),

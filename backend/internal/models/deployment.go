@@ -18,19 +18,23 @@ type DeploymentRequest struct {
 
 // DeploymentResponse Deployment 响应
 type DeploymentResponse struct {
-	ID            string        `json:"id"`
-	Name          string        `json:"name"`
-	Namespace     string        `json:"namespace"`
-	Status        string        `json:"status"`
-	Image         string        `json:"image"`
-	GPUType       string        `json:"gpuType"`
-	GPUCount      int           `json:"gpuCount"`
-	CPU           string        `json:"cpu"`
-	Memory        string        `json:"memory"`
-	Replicas      int32         `json:"replicas"`
-	ReadyReplicas int32         `json:"readyReplicas"`
-	CreatedAt     time.Time     `json:"createdAt"`
-	Pods          []PodResponse `json:"pods"`
+	ID                string        `json:"id"`
+	Name              string        `json:"name"`
+	Namespace         string        `json:"namespace"`
+	Status            string        `json:"status"`
+	Image             string        `json:"image"`
+	GPUType           string        `json:"gpuType"`
+	GPUCount          int           `json:"gpuCount"`
+	CPU               string        `json:"cpu"`
+	Memory            string        `json:"memory"`
+	Replicas          int32         `json:"replicas"`
+	ReadyReplicas     int32         `json:"readyReplicas"`
+	CreatedAt         time.Time     `json:"createdAt"`
+	Pods              []PodResponse `json:"pods"`
+	Suspended         bool          `json:"suspended"`
+	SuspendedImage    string        `json:"suspendedImage,omitempty"`
+	SuspendedReplicas int32         `json:"suspendedReplicas,omitempty"`
+	SuspendedAt       *time.Time    `json:"suspendedAt,omitempty"`
 }
 
 // DeploymentListResponse Deployment 列表响应

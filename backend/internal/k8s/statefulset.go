@@ -72,16 +72,17 @@ func (c *Client) CreateStatefulSet(ctx context.Context, spec *StatefulSetSpec) (
 		"app":                    spec.Name,
 	}
 	annotations := map[string]string{
-		"genet.io/created-at":   time.Now().Format(time.RFC3339),
-		"genet.io/email":        spec.Email,
-		"genet.io/gpu-type":     spec.GPUType,
-		"genet.io/gpu-count":    fmt.Sprintf("%d", spec.GPUCount),
-		"genet.io/cpu":          spec.CPU,
-		"genet.io/memory":       spec.Memory,
-		"genet.io/shm-size":     spec.ShmSize,
-		"genet.io/image":        spec.Image,
-		"genet.io/replicas":     fmt.Sprintf("%d", spec.Replicas),
-		"genet.io/service-name": statefulSetServiceName(spec.Name),
+		"genet.io/created-at":      time.Now().Format(time.RFC3339),
+		"genet.io/email":           spec.Email,
+		"genet.io/gpu-type":        spec.GPUType,
+		"genet.io/gpu-count":       fmt.Sprintf("%d", spec.GPUCount),
+		"genet.io/cpu":             spec.CPU,
+		"genet.io/memory":          spec.Memory,
+		"genet.io/shm-size":        spec.ShmSize,
+		"genet.io/image":           spec.Image,
+		"genet.io/replicas":        fmt.Sprintf("%d", spec.Replicas),
+		"genet.io/service-name":    statefulSetServiceName(spec.Name),
+		"genet.io/suspend-enabled": "true",
 	}
 
 	for _, vol := range c.config.Storage.GetEffectiveVolumes() {
@@ -260,6 +261,37 @@ func (c *Client) DeleteStatefulSet(ctx context.Context, namespace, name string) 
 		return fmt.Errorf("删除 StatefulSet 头服务失败: %w", err)
 	}
 	return nil
+}
+
+func (c *Client) ResumeStatefulSet(ctx context.Context, namespace, name string) (*appsv1.StatefulSet, error) {
+	sts, err := c.clientset.AppsV1().StatefulSets(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	if !strings.EqualFold(sts.Annotations["genet.io/suspended"], "true") {
+		return nil, fmt.Errorf("statefulset 未处于挂起状态")
+	}
+	image := strings.TrimSpace(sts.Annotations["genet.io/suspended-image"])
+	if image == "" {
+		return nil, fmt.Errorf("statefulset 缺少挂起恢复元数据")
+	}
+	replicas, err := parseSuspendedReplicas(sts.Annotations, "statefulset")
+	if err != nil {
+		return nil, err
+	}
+	if len(sts.Spec.Template.Spec.Containers) == 0 {
+		return nil, fmt.Errorf("statefulset 模板缺少容器")
+	}
+
+	sts.Spec.Template.Spec.Containers[0].Image = image
+	sts.Spec.Replicas = &replicas
+	sts.Annotations = applyResumeMetadata(sts.Annotations)
+
+	updated, err := c.clientset.AppsV1().StatefulSets(namespace).Update(ctx, sts, metav1.UpdateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("恢复 StatefulSet 失败: %w", err)
+	}
+	return updated, nil
 }
 
 func cloneStringMap(input map[string]string) map[string]string {

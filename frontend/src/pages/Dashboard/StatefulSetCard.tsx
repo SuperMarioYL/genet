@@ -4,7 +4,7 @@ import dayjs from 'dayjs';
 import React, { useMemo, useState } from 'react';
 import GlassCard from '../../components/GlassCard';
 import StatusBadge from '../../components/StatusBadge';
-import { deleteStatefulSet } from '../../services/api';
+import { deleteStatefulSet, resumeStatefulSet } from '../../services/api';
 import PodCard from './PodCard';
 import './StatefulSetCard.css';
 
@@ -20,6 +20,8 @@ interface StatefulSetCardProps {
 const StatefulSetCard: React.FC<StatefulSetCardProps> = ({ statefulSet, onUpdate, cleanupSchedule, cleanupTimezone }) => {
   const [expanded, setExpanded] = useState(true);
   const [deleting, setDeleting] = useState(false);
+  const [resuming, setResuming] = useState(false);
+  const isSuspended = statefulSet.suspended || statefulSet.status === 'Suspended';
 
   const subtitle = useMemo(() => {
     const parts = [
@@ -57,6 +59,19 @@ const StatefulSetCard: React.FC<StatefulSetCardProps> = ({ statefulSet, onUpdate
     });
   };
 
+  const handleResume = async () => {
+    setResuming(true);
+    try {
+      await resumeStatefulSet(statefulSet.id);
+      message.success('StatefulSet 已恢复');
+      onUpdate();
+    } catch (error: any) {
+      message.error(`恢复失败: ${error.message}`);
+    } finally {
+      setResuming(false);
+    }
+  };
+
   return (
     <GlassCard className="statefulset-card">
       <div className="statefulset-card-header">
@@ -69,7 +84,7 @@ const StatefulSetCard: React.FC<StatefulSetCardProps> = ({ statefulSet, onUpdate
           <div className="statefulset-card-subtitle">{subtitle}</div>
         </div>
         <Space size={8} wrap>
-          <Tag color="blue">{statefulSet.readyReplicas}/{statefulSet.replicas} Ready</Tag>
+          {isSuspended ? <Tag color="gold">挂起</Tag> : <Tag color="blue">{statefulSet.readyReplicas}/{statefulSet.replicas} Ready</Tag>}
           <Tag>Service: {statefulSet.serviceName || '-'}</Tag>
           <Text type="secondary">{dayjs(statefulSet.createdAt).format('MM-DD HH:mm')}</Text>
         </Space>
@@ -79,6 +94,11 @@ const StatefulSetCard: React.FC<StatefulSetCardProps> = ({ statefulSet, onUpdate
         <Button size="small" icon={<DownOutlined rotate={expanded ? 180 : 0} />} onClick={() => setExpanded((v) => !v)}>
           {expanded ? '收起副本' : '展开副本'}
         </Button>
+        {isSuspended && (
+          <Button size="small" type="primary" onClick={handleResume} loading={resuming}>
+            恢复
+          </Button>
+        )}
         <Button size="small" danger icon={<DeleteOutlined />} onClick={handleDelete} loading={deleting}>
           删除 StatefulSet
         </Button>
@@ -88,16 +108,20 @@ const StatefulSetCard: React.FC<StatefulSetCardProps> = ({ statefulSet, onUpdate
         <>
           <Divider className="statefulset-card-divider" />
           <div className="statefulset-child-list">
-            {(statefulSet.pods || []).map((pod: any) => (
-              <PodCard
-                key={pod.id}
-                pod={pod}
-                onUpdate={onUpdate}
-                cleanupSchedule={cleanupSchedule}
-                cleanupTimezone={cleanupTimezone}
-                allowDelete={false}
-              />
-            ))}
+            {isSuspended ? (
+              <Text type="secondary">已挂起，无运行副本</Text>
+            ) : (
+              (statefulSet.pods || []).map((pod: any) => (
+                <PodCard
+                  key={pod.id}
+                  pod={pod}
+                  onUpdate={onUpdate}
+                  cleanupSchedule={cleanupSchedule}
+                  cleanupTimezone={cleanupTimezone}
+                  allowDelete={false}
+                />
+              ))
+            )}
           </div>
         </>
       )}

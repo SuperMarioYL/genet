@@ -4,7 +4,7 @@
 
 **Goal:** Build a unified user/admin entry, an admin console for node pool and user pool drag-and-drop management, and enforce user pool bindings during Pod scheduling.
 
-**Architecture:** Add admin APIs for node pool and user pool management on top of existing admin auth, persist user pool bindings in Kubernetes, and apply the resolved pool as scheduling constraints in the Pod creation path. On the frontend, add a shared user menu, a personal details page, and a unified admin page with tabs for overview, node pool management, user pool management, and API key management.
+**Architecture:** Add admin APIs for node pool and user pool management on top of existing admin auth, persist user pool bindings in Kubernetes, and apply the resolved pool as scheduling constraints in the Pod creation path. On the frontend, add a shared user menu, a personal details page, and a unified admin page with tabs for overview, node pool management, user pool management, and API key management. Limit pool management lists to compute-related entities and allow admins to force-delete a user together with namespace resources.
 
 **Tech Stack:** Go, Gin, client-go, React, TypeScript, Ant Design, Jest, React Testing Library
 
@@ -124,7 +124,7 @@ Implement:
 Node pool updates should mutate the existing `genet.io/node-pool` label. User lists should merge:
 
 - active Genet Pods
-- `user-*` namespaces
+- Genet Deployments and StatefulSets
 - stored bindings
 
 **Step 4: Run test to verify it passes**
@@ -138,6 +138,54 @@ Expected: PASS
 git add backend/cmd/api/main.go backend/internal/handlers/admin.go backend/internal/handlers/admin_test.go
 git commit -m "feat: add admin node and user pool endpoints"
 ```
+
+### Task 3.1: Filter management lists and support force-deleting users
+
+**Files:**
+- Modify: `backend/internal/handlers/admin.go`
+- Modify: `backend/internal/k8s/namespace.go`
+- Modify: `backend/internal/k8s/user_pool_store.go`
+- Modify: `backend/cmd/api/main.go`
+- Modify: `frontend/src/pages/Admin/index.tsx`
+- Modify: `frontend/src/pages/Admin/index.css`
+- Modify: `frontend/src/services/api.ts`
+- Test: `backend/internal/handlers/admin_test.go`
+- Test: `frontend/src/pages/Admin/index.test.tsx`
+
+**Step 1: Write the failing test**
+
+Add tests covering:
+
+- namespace-only users are excluded from user management
+- `DELETE /api/admin/users/:username` removes the user pool binding and deletes user resources
+- the admin page exposes a delete action for each user card
+
+**Step 2: Run test to verify it fails**
+
+Run:
+
+- `go test ./internal/handlers -run 'TestAdmin(ListUserPools_OK|DeleteUser_OK)$'`
+- `npm test -- --watch=false --runInBand src/pages/Admin/index.test.tsx`
+
+Expected: FAIL because the filter and delete flow do not exist yet.
+
+**Step 3: Write minimal implementation**
+
+Implement:
+
+- user list aggregation from bindings + actual workloads only
+- `DELETE /api/admin/users/:username`
+- namespace force-delete helper for the user namespace and its main resources
+- frontend delete button and optimistic refresh
+
+**Step 4: Run test to verify it passes**
+
+Run:
+
+- `go test ./internal/handlers -run 'TestAdmin(ListUserPools_OK|DeleteUser_OK)$'`
+- `npm test -- --watch=false --runInBand src/pages/Admin/index.test.tsx`
+
+Expected: PASS
 
 ### Task 4: Enforce user pool bindings in Pod scheduling
 

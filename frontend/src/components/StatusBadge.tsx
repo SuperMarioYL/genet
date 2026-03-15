@@ -17,6 +17,8 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, size = 'default' }) =
         return { color: 'warning', text: '等待中', pulse: true };
       case 'terminating':
         return { color: 'warning', text: '删除中', pulse: true };
+      case 'suspended':
+        return { color: 'info', text: '挂起', pulse: false };
       case 'containercreating':
         return { color: 'info', text: '创建中', pulse: true };
       case 'crashloopbackoff':

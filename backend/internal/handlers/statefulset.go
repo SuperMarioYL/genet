@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -223,6 +224,30 @@ func (h *StatefulSetHandler) DeleteStatefulSet(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "StatefulSet 删除成功"})
 }
 
+func (h *StatefulSetHandler) ResumeStatefulSet(c *gin.Context) {
+	username, _ := auth.GetUsername(c)
+	email, _ := auth.GetEmail(c)
+	userIdentifier := k8s.GetUserIdentifier(username, email)
+	namespace := k8s.GetNamespaceForUserIdentifier(userIdentifier)
+	ctx := context.Background()
+
+	name := c.Param("id")
+	sts, err := h.k8sClient.ResumeStatefulSet(ctx, namespace, name)
+	if err != nil {
+		status := http.StatusInternalServerError
+		switch {
+		case strings.Contains(err.Error(), "未处于挂起状态"):
+			status = http.StatusConflict
+		case strings.Contains(err.Error(), "缺少挂起恢复元数据"), strings.Contains(err.Error(), "副本数无效"), strings.Contains(err.Error(), "缺少容器"):
+			status = http.StatusBadRequest
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, h.buildStatefulSetResponse(ctx, sts))
+}
+
 func (h *StatefulSetHandler) buildStatefulSetResponse(ctx context.Context, sts *appsv1.StatefulSet) models.StatefulSetResponse {
 	pods, err := h.k8sClient.ListStatefulSetPods(ctx, sts.Namespace, sts.Name)
 	if err != nil {
@@ -258,9 +283,24 @@ func (h *StatefulSetHandler) buildStatefulSetResponse(ctx context.Context, sts *
 	if sts.Spec.Replicas != nil {
 		replicas = *sts.Spec.Replicas
 	}
+	suspended := strings.EqualFold(sts.Annotations["genet.io/suspended"], "true")
+	var suspendedReplicas int32
+	if value := sts.Annotations["genet.io/suspended-replicas"]; value != "" {
+		if parsed, err := strconv.ParseInt(value, 10, 32); err == nil {
+			suspendedReplicas = int32(parsed)
+		}
+	}
+	var suspendedAt *time.Time
+	if value := sts.Annotations["genet.io/suspended-at"]; value != "" {
+		if parsed, err := time.Parse(time.RFC3339, value); err == nil {
+			suspendedAt = &parsed
+		}
+	}
 	switch {
 	case sts.DeletionTimestamp != nil:
 		status = "Terminating"
+	case suspended && replicas == 0:
+		status = "Suspended"
 	case sts.Status.ReadyReplicas == replicas && replicas > 0:
 		status = "Running"
 	case sts.Status.CurrentReplicas > 0:
@@ -268,20 +308,24 @@ func (h *StatefulSetHandler) buildStatefulSetResponse(ctx context.Context, sts *
 	}
 
 	return models.StatefulSetResponse{
-		ID:            sts.Name,
-		Name:          sts.Name,
-		Namespace:     sts.Namespace,
-		Status:        status,
-		Image:         display.Image,
-		GPUType:       display.GPUType,
-		GPUCount:      display.GPUCount,
-		CPU:           display.CPU,
-		Memory:        display.Memory,
-		Replicas:      replicas,
-		ReadyReplicas: sts.Status.ReadyReplicas,
-		CreatedAt:     display.CreatedAt,
-		ServiceName:   sts.Spec.ServiceName,
-		Pods:          podResponses,
+		ID:                sts.Name,
+		Name:              sts.Name,
+		Namespace:         sts.Namespace,
+		Status:            status,
+		Image:             display.Image,
+		GPUType:           display.GPUType,
+		GPUCount:          display.GPUCount,
+		CPU:               display.CPU,
+		Memory:            display.Memory,
+		Replicas:          replicas,
+		ReadyReplicas:     sts.Status.ReadyReplicas,
+		CreatedAt:         display.CreatedAt,
+		ServiceName:       sts.Spec.ServiceName,
+		Pods:              podResponses,
+		Suspended:         suspended,
+		SuspendedImage:    sts.Annotations["genet.io/suspended-image"],
+		SuspendedReplicas: suspendedReplicas,
+		SuspendedAt:       suspendedAt,
 	}
 }
 

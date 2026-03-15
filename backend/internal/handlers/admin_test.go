@@ -11,7 +11,11 @@ import (
 	"github.com/uc-package/genet/internal/auth"
 	"github.com/uc-package/genet/internal/k8s"
 	"github.com/uc-package/genet/internal/models"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 )
@@ -69,11 +73,22 @@ func TestAdminListNodePools_OK(t *testing.T) {
 	clientset := fake.NewSimpleClientset(
 		&corev1.Node{
 			ObjectMeta: metav1.ObjectMeta{
+				Name:   "node-cpu-only",
+				Labels: map[string]string{},
+			},
+			Status: corev1.NodeStatus{
+				Addresses: []corev1.NodeAddress{{Type: corev1.NodeInternalIP, Address: "10.0.0.9"}},
+			},
+		},
+		&corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
 				Name:   "node-shared",
 				Labels: map[string]string{},
 			},
 			Status: corev1.NodeStatus{
-				Addresses: []corev1.NodeAddress{{Type: corev1.NodeInternalIP, Address: "10.0.0.1"}},
+				Capacity:    corev1.ResourceList{corev1.ResourceName("nvidia.com/gpu"): resource.MustParse("8")},
+				Allocatable: corev1.ResourceList{corev1.ResourceName("nvidia.com/gpu"): resource.MustParse("8")},
+				Addresses:   []corev1.NodeAddress{{Type: corev1.NodeInternalIP, Address: "10.0.0.1"}},
 			},
 		},
 		&corev1.Node{
@@ -82,7 +97,9 @@ func TestAdminListNodePools_OK(t *testing.T) {
 				Labels: map[string]string{"genet.io/node-pool": "non-shared"},
 			},
 			Status: corev1.NodeStatus{
-				Addresses: []corev1.NodeAddress{{Type: corev1.NodeInternalIP, Address: "10.0.0.2"}},
+				Capacity:    corev1.ResourceList{corev1.ResourceName("nvidia.com/gpu"): resource.MustParse("8")},
+				Allocatable: corev1.ResourceList{corev1.ResourceName("nvidia.com/gpu"): resource.MustParse("8")},
+				Addresses:   []corev1.NodeAddress{{Type: corev1.NodeInternalIP, Address: "10.0.0.2"}},
 			},
 		},
 	)
@@ -103,6 +120,11 @@ func TestAdminListNodePools_OK(t *testing.T) {
 	}
 	if len(resp.Nodes) != 2 {
 		t.Fatalf("expected 2 nodes, got %d", len(resp.Nodes))
+	}
+	for _, node := range resp.Nodes {
+		if node.NodeName == "node-cpu-only" {
+			t.Fatal("expected cpu-only node to be excluded from node pools")
+		}
 	}
 }
 
@@ -141,7 +163,7 @@ func TestAdminListUserPools_OK(t *testing.T) {
 	cfg := adminTestConfig()
 	clientset := fake.NewSimpleClientset(
 		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: cfg.OpenAPI.Namespace}},
-		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "user-alice"}},
+		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "user-empty"}},
 		&corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "pod-bob-dev",
@@ -154,6 +176,30 @@ func TestAdminListUserPools_OK(t *testing.T) {
 				},
 			},
 			Status: corev1.PodStatus{Phase: corev1.PodRunning},
+		},
+		&appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "deploy-carol-dev",
+				Namespace: "user-carol",
+				Labels: map[string]string{
+					"genet.io/user": "carol",
+				},
+				Annotations: map[string]string{
+					"genet.io/email": "carol@example.com",
+				},
+			},
+		},
+		&appsv1.StatefulSet{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "sts-dave-train",
+				Namespace: "user-dave",
+				Labels: map[string]string{
+					"genet.io/user": "dave",
+				},
+				Annotations: map[string]string{
+					"genet.io/email": "dave@example.com",
+				},
+			},
 		},
 	)
 	client := k8s.NewClientForTest(clientset, cfg)
@@ -180,8 +226,21 @@ func TestAdminListUserPools_OK(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if len(resp.Users) < 2 {
-		t.Fatalf("expected at least 2 users, got %d", len(resp.Users))
+	if len(resp.Users) != 4 {
+		t.Fatalf("expected 4 users, got %d: %#v", len(resp.Users), resp.Users)
+	}
+
+	usernames := map[string]bool{}
+	for _, user := range resp.Users {
+		usernames[user.Username] = true
+	}
+	for _, username := range []string{"alice", "bob", "carol", "dave"} {
+		if !usernames[username] {
+			t.Fatalf("expected user %q to be present, got %#v", username, resp.Users)
+		}
+	}
+	if usernames["empty"] {
+		t.Fatalf("expected namespace-only user to be excluded, got %#v", resp.Users)
 	}
 }
 
@@ -211,6 +270,65 @@ func TestAdminUpdateUserPool_OK(t *testing.T) {
 	}
 }
 
+func TestAdminDeleteUser_OK(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	cfg := adminTestConfig()
+	clientset := fake.NewSimpleClientset(
+		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: cfg.OpenAPI.Namespace}},
+		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "user-alice"}},
+		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod-alice-dev", Namespace: "user-alice"}},
+		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "deploy-alice-dev", Namespace: "user-alice"}},
+		&appsv1.StatefulSet{ObjectMeta: metav1.ObjectMeta{Name: "sts-alice-train", Namespace: "user-alice"}},
+		&corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: "pvc-alice-data", Namespace: "user-alice"}},
+		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: k8s.UserImagesConfigMapName, Namespace: "user-alice"}},
+		&rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Name: "user-alice-role", Namespace: "user-alice"}},
+		&rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Name: "user-alice-binding", Namespace: "user-alice"}},
+	)
+	client := k8s.NewClientForTest(clientset, cfg)
+	if err := client.UpsertUserPoolBinding(t.Context(), k8s.UserPoolBindingRecord{
+		Username:  "alice",
+		PoolType:  k8s.UserPoolTypeExclusive,
+		UpdatedAt: metav1.Now().UTC(),
+		UpdatedBy: "admin",
+	}); err != nil {
+		t.Fatalf("failed to seed user pool binding: %v", err)
+	}
+
+	rec := performAdminRequest(t, cfg, client, http.MethodDelete, "/api/admin/users/alice", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	if _, err := clientset.CoreV1().Namespaces().Get(t.Context(), "user-alice", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected namespace to be deleted, got err=%v", err)
+	}
+	if _, err := clientset.CoreV1().Pods("user-alice").Get(t.Context(), "pod-alice-dev", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected pod to be deleted, got err=%v", err)
+	}
+	if _, err := clientset.AppsV1().Deployments("user-alice").Get(t.Context(), "deploy-alice-dev", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected deployment to be deleted, got err=%v", err)
+	}
+	if _, err := clientset.AppsV1().StatefulSets("user-alice").Get(t.Context(), "sts-alice-train", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected statefulset to be deleted, got err=%v", err)
+	}
+	if _, err := clientset.CoreV1().PersistentVolumeClaims("user-alice").Get(t.Context(), "pvc-alice-data", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected pvc to be deleted, got err=%v", err)
+	}
+	if _, err := clientset.RbacV1().Roles("user-alice").Get(t.Context(), "user-alice-role", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected role to be deleted, got err=%v", err)
+	}
+	if _, err := clientset.RbacV1().RoleBindings("user-alice").Get(t.Context(), "user-alice-binding", metav1.GetOptions{}); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected rolebinding to be deleted, got err=%v", err)
+	}
+
+	if _, ok, err := client.GetUserPoolBinding(t.Context(), "alice"); err != nil {
+		t.Fatalf("GetUserPoolBinding returned error: %v", err)
+	} else if ok {
+		t.Fatal("expected user pool binding to be deleted")
+	}
+}
+
 func adminTestConfig() *models.Config {
 	cfg := models.DefaultConfig()
 	cfg.OAuth.Enabled = true
@@ -231,6 +349,7 @@ func performAdminRequest(t *testing.T, cfg *models.Config, client *k8s.Client, m
 	admin.PATCH("/nodes/:name/pool", h.UpdateNodePool)
 	admin.GET("/users/pools", h.ListUserPools)
 	admin.PATCH("/users/:username/pool", h.UpdateUserPool)
+	admin.DELETE("/users/:username", h.DeleteUser)
 
 	var reqBody *bytes.Reader
 	if body == nil {

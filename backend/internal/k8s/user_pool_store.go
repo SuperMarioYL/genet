@@ -105,6 +105,29 @@ func (c *Client) UpsertUserPoolBinding(ctx context.Context, rec UserPoolBindingR
 	return c.saveUserPoolBindings(ctx, records)
 }
 
+func (c *Client) DeleteUserPoolBinding(ctx context.Context, username string) error {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return nil
+	}
+
+	records, err := c.ListUserPoolBindings(ctx)
+	if err != nil {
+		return err
+	}
+
+	filtered := make([]UserPoolBindingRecord, 0, len(records))
+	for _, record := range records {
+		if record.Username != username {
+			filtered = append(filtered, record)
+		}
+	}
+	if len(filtered) == len(records) {
+		return nil
+	}
+	return c.saveUserPoolBindings(ctx, filtered)
+}
+
 func (c *Client) saveUserPoolBindings(ctx context.Context, records []UserPoolBindingRecord) error {
 	ns := c.getOpenAPINamespace()
 	if err := c.EnsureNamespace(ctx, ns); err != nil {

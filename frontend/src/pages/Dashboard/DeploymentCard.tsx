@@ -4,7 +4,7 @@ import dayjs from 'dayjs';
 import React, { useMemo, useState } from 'react';
 import GlassCard from '../../components/GlassCard';
 import StatusBadge from '../../components/StatusBadge';
-import { deleteDeployment } from '../../services/api';
+import { deleteDeployment, resumeDeployment } from '../../services/api';
 import PodCard from './PodCard';
 import './StatefulSetCard.css';
 
@@ -20,6 +20,8 @@ interface DeploymentCardProps {
 const DeploymentCard: React.FC<DeploymentCardProps> = ({ deployment, onUpdate, cleanupSchedule, cleanupTimezone }) => {
   const [expanded, setExpanded] = useState(true);
   const [deleting, setDeleting] = useState(false);
+  const [resuming, setResuming] = useState(false);
+  const isSuspended = deployment.suspended || deployment.status === 'Suspended';
 
   const subtitle = useMemo(() => {
     const parts = [
@@ -57,6 +59,19 @@ const DeploymentCard: React.FC<DeploymentCardProps> = ({ deployment, onUpdate, c
     });
   };
 
+  const handleResume = async () => {
+    setResuming(true);
+    try {
+      await resumeDeployment(deployment.id);
+      message.success('Deployment 已恢复');
+      onUpdate();
+    } catch (error: any) {
+      message.error(`恢复失败: ${error.message}`);
+    } finally {
+      setResuming(false);
+    }
+  };
+
   return (
     <GlassCard className="statefulset-card">
       <div className="statefulset-card-header">
@@ -69,7 +84,7 @@ const DeploymentCard: React.FC<DeploymentCardProps> = ({ deployment, onUpdate, c
           <div className="statefulset-card-subtitle">{subtitle}</div>
         </div>
         <Space size={8} wrap>
-          <Tag color="blue">{deployment.readyReplicas}/{deployment.replicas} Ready</Tag>
+          {isSuspended ? <Tag color="gold">挂起</Tag> : <Tag color="blue">{deployment.readyReplicas}/{deployment.replicas} Ready</Tag>}
           <Text type="secondary">{dayjs(deployment.createdAt).format('MM-DD HH:mm')}</Text>
         </Space>
       </div>
@@ -78,6 +93,11 @@ const DeploymentCard: React.FC<DeploymentCardProps> = ({ deployment, onUpdate, c
         <Button size="small" icon={<DownOutlined rotate={expanded ? 180 : 0} />} onClick={() => setExpanded((v) => !v)}>
           {expanded ? '收起副本' : '展开副本'}
         </Button>
+        {isSuspended && (
+          <Button size="small" type="primary" onClick={handleResume} loading={resuming}>
+            恢复
+          </Button>
+        )}
         <Button size="small" danger icon={<DeleteOutlined />} onClick={handleDelete} loading={deleting}>
           删除 Deployment
         </Button>
@@ -87,16 +107,20 @@ const DeploymentCard: React.FC<DeploymentCardProps> = ({ deployment, onUpdate, c
         <>
           <Divider className="statefulset-card-divider" />
           <div className="statefulset-child-list">
-            {(deployment.pods || []).map((pod: any) => (
-              <PodCard
-                key={pod.id}
-                pod={pod}
-                onUpdate={onUpdate}
-                cleanupSchedule={cleanupSchedule}
-                cleanupTimezone={cleanupTimezone}
-                allowDelete={false}
-              />
-            ))}
+            {isSuspended ? (
+              <Text type="secondary">已挂起，无运行副本</Text>
+            ) : (
+              (deployment.pods || []).map((pod: any) => (
+                <PodCard
+                  key={pod.id}
+                  pod={pod}
+                  onUpdate={onUpdate}
+                  cleanupSchedule={cleanupSchedule}
+                  cleanupTimezone={cleanupTimezone}
+                  allowDelete={false}
+                />
+              ))
+            )}
           </div>
         </>
       )}

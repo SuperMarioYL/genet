@@ -165,6 +165,10 @@ export const updateAdminUserPool = (username: string, poolType: 'shared' | 'excl
   return api.patch(`/admin/users/${encodeURIComponent(username)}/pool`, { poolType });
 };
 
+export const deleteAdminUser = (username: string): Promise<{ message: string }> => {
+  return api.delete(`/admin/users/${encodeURIComponent(username)}`);
+};
+
 export const listAdminAPIKeys = (): Promise<AdminAPIKeyListResponse> => {
   return api.get('/admin/apikeys');
 };
@@ -288,6 +292,10 @@ export interface ManagedDeployment {
   readyReplicas: number;
   createdAt: string;
   pods: ManagedPod[];
+  suspended?: boolean;
+  suspendedImage?: string;
+  suspendedReplicas?: number;
+  suspendedAt?: string;
 }
 
 export interface ManagedStatefulSet {
@@ -305,6 +313,10 @@ export interface ManagedStatefulSet {
   createdAt: string;
   serviceName: string;
   pods: ManagedPod[];
+  suspended?: boolean;
+  suspendedImage?: string;
+  suspendedReplicas?: number;
+  suspendedAt?: string;
 }
 
 export interface StatefulSetListResponse {
@@ -343,6 +355,10 @@ export const deleteDeployment = (id: string) => {
   return api.delete(`/deployments/${id}`);
 };
 
+export const resumeDeployment = (id: string): Promise<ManagedDeployment> => {
+  return api.post(`/deployments/${id}/resume`);
+};
+
 export const listStatefulSets = (): Promise<StatefulSetListResponse> => {
   return api.get('/statefulsets');
 };
@@ -357,6 +373,10 @@ export const getStatefulSet = (id: string): Promise<ManagedStatefulSet> => {
 
 export const deleteStatefulSet = (id: string) => {
   return api.delete(`/statefulsets/${id}`);
+};
+
+export const resumeStatefulSet = (id: string): Promise<ManagedStatefulSet> => {
+  return api.post(`/statefulsets/${id}/resume`);
 };
 
 export const downloadPodYAML = (id: string) => {

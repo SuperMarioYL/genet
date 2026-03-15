@@ -273,6 +273,37 @@ func (h *AdminHandler) UpdateUserPool(c *gin.Context) {
 	})
 }
 
+func (h *AdminHandler) DeleteUser(c *gin.Context) {
+	if h.k8sClient == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "k8s client is not initialized"})
+		return
+	}
+
+	username := strings.TrimSpace(c.Param("username"))
+	if username == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "username is required"})
+		return
+	}
+
+	namespace := k8s.GetNamespaceForUserIdentifier(username)
+	if err := h.k8sClient.DeleteUserPoolBinding(c.Request.Context(), username); err != nil {
+		h.log.Error("Failed to delete user pool binding", zap.String("username", username), zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete user pool binding"})
+		return
+	}
+	if err := h.k8sClient.ForceDeleteNamespace(c.Request.Context(), namespace); err != nil {
+		h.log.Error("Failed to delete user namespace", zap.String("username", username), zap.String("namespace", namespace), zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete user resources"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":   "user deletion requested",
+		"username":  username,
+		"namespace": namespace,
+	})
+}
+
 // ListAPIKeys 列出所有管理 API Key。
 func (h *AdminHandler) ListAPIKeys(c *gin.Context) {
 	if h.k8sClient == nil {
@@ -529,8 +560,12 @@ func (h *AdminHandler) listAdminPoolState(ctx context.Context) ([]AdminNodePoolI
 	if err != nil {
 		return nil, nil, err
 	}
+	acceleratorTypes := h.config.GetAcceleratorTypes()
 	nodeItems := make([]AdminNodePoolItem, 0, len(nodes.Items))
 	for _, node := range nodes.Items {
+		if !adminNodeHasAccelerator(node, acceleratorTypes) {
+			continue
+		}
 		nodeItems = append(nodeItems, AdminNodePoolItem{
 			NodeName: node.Name,
 			NodeIP:   adminNodeInternalIP(node),
@@ -561,39 +596,23 @@ func (h *AdminHandler) listAdminPoolState(ctx context.Context) ([]AdminNodePoolI
 		return nil, nil, err
 	}
 	for _, pod := range pods.Items {
-		username := strings.TrimSpace(pod.Labels["genet.io/user"])
-		if username == "" {
-			continue
-		}
-		item := userMap[username]
-		item.Username = username
-		if item.PoolType == "" {
-			item.PoolType = k8s.UserPoolTypeShared
-		}
-		if item.Email == "" {
-			item.Email = strings.TrimSpace(pod.Annotations["genet.io/email"])
-		}
-		userMap[username] = item
+		adminMergeUserPoolItem(userMap, pod.Labels["genet.io/user"], pod.Annotations["genet.io/email"])
 	}
 
-	namespaces, err := h.k8sClient.GetClientset().CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
+	deployments, err := h.k8sClient.GetClientset().AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, nil, err
 	}
-	for _, ns := range namespaces.Items {
-		if !strings.HasPrefix(ns.Name, "user-") {
-			continue
-		}
-		username := strings.TrimSpace(strings.TrimPrefix(ns.Name, "user-"))
-		if username == "" {
-			continue
-		}
-		item := userMap[username]
-		item.Username = username
-		if item.PoolType == "" {
-			item.PoolType = k8s.UserPoolTypeShared
-		}
-		userMap[username] = item
+	for _, deployment := range deployments.Items {
+		adminMergeUserPoolItem(userMap, deployment.Labels["genet.io/user"], deployment.Annotations["genet.io/email"])
+	}
+
+	statefulSets, err := h.k8sClient.GetClientset().AppsV1().StatefulSets("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, statefulSet := range statefulSets.Items {
+		adminMergeUserPoolItem(userMap, statefulSet.Labels["genet.io/user"], statefulSet.Annotations["genet.io/email"])
 	}
 
 	userItems := make([]AdminUserPoolItem, 0, len(userMap))
@@ -617,4 +636,37 @@ func adminNodeInternalIP(node corev1.Node) string {
 		}
 	}
 	return ""
+}
+
+func adminNodeHasAccelerator(node corev1.Node, acceleratorTypes []models.AcceleratorType) bool {
+	for _, accType := range acceleratorTypes {
+		resourceName := corev1.ResourceName(strings.TrimSpace(accType.ResourceName))
+		if resourceName == "" {
+			continue
+		}
+		if quantity, ok := node.Status.Capacity[resourceName]; ok && quantity.Value() > 0 {
+			return true
+		}
+		if quantity, ok := node.Status.Allocatable[resourceName]; ok && quantity.Value() > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func adminMergeUserPoolItem(userMap map[string]AdminUserPoolItem, username, email string) {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return
+	}
+
+	item := userMap[username]
+	item.Username = username
+	if item.PoolType == "" {
+		item.PoolType = k8s.UserPoolTypeShared
+	}
+	if item.Email == "" {
+		item.Email = strings.TrimSpace(email)
+	}
+	userMap[username] = item
 }

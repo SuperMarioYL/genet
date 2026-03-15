@@ -19,22 +19,26 @@ type StatefulSetRequest struct {
 
 // StatefulSetResponse StatefulSet 响应
 type StatefulSetResponse struct {
-	ID               string        `json:"id"`
-	Name             string        `json:"name"`
-	Namespace        string        `json:"namespace"`
-	Status           string        `json:"status"`
-	Image            string        `json:"image"`
-	GPUType          string        `json:"gpuType"`
-	GPUCount         int           `json:"gpuCount"`
-	CPU              string        `json:"cpu"`
-	Memory           string        `json:"memory"`
-	Replicas         int32         `json:"replicas"`
-	ReadyReplicas    int32         `json:"readyReplicas"`
-	CreatedAt        time.Time     `json:"createdAt"`
-	ServiceName      string        `json:"serviceName"`
-	Pods             []PodResponse `json:"pods"`
-	ProtectedUntil   *time.Time    `json:"protectedUntil,omitempty"`
-	ParentConnection string        `json:"parentConnection,omitempty"`
+	ID                string        `json:"id"`
+	Name              string        `json:"name"`
+	Namespace         string        `json:"namespace"`
+	Status            string        `json:"status"`
+	Image             string        `json:"image"`
+	GPUType           string        `json:"gpuType"`
+	GPUCount          int           `json:"gpuCount"`
+	CPU               string        `json:"cpu"`
+	Memory            string        `json:"memory"`
+	Replicas          int32         `json:"replicas"`
+	ReadyReplicas     int32         `json:"readyReplicas"`
+	CreatedAt         time.Time     `json:"createdAt"`
+	ServiceName       string        `json:"serviceName"`
+	Pods              []PodResponse `json:"pods"`
+	Suspended         bool          `json:"suspended"`
+	SuspendedImage    string        `json:"suspendedImage,omitempty"`
+	SuspendedReplicas int32         `json:"suspendedReplicas,omitempty"`
+	SuspendedAt       *time.Time    `json:"suspendedAt,omitempty"`
+	ProtectedUntil    *time.Time    `json:"protectedUntil,omitempty"`
+	ParentConnection  string        `json:"parentConnection,omitempty"`
 }
 
 // StatefulSetListResponse StatefulSet 列表响应

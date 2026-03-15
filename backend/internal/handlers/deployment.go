@@ -230,6 +230,30 @@ func (h *DeploymentHandler) DeleteDeployment(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Deployment 删除成功"})
 }
 
+func (h *DeploymentHandler) ResumeDeployment(c *gin.Context) {
+	username, _ := auth.GetUsername(c)
+	email, _ := auth.GetEmail(c)
+	userIdentifier := k8s.GetUserIdentifier(username, email)
+	namespace := k8s.GetNamespaceForUserIdentifier(userIdentifier)
+	ctx := context.Background()
+
+	name := c.Param("id")
+	deploy, err := h.k8sClient.ResumeDeployment(ctx, namespace, name)
+	if err != nil {
+		status := http.StatusInternalServerError
+		switch {
+		case strings.Contains(err.Error(), "未处于挂起状态"):
+			status = http.StatusConflict
+		case strings.Contains(err.Error(), "缺少挂起恢复元数据"), strings.Contains(err.Error(), "副本数无效"), strings.Contains(err.Error(), "缺少容器"):
+			status = http.StatusBadRequest
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, h.buildDeploymentResponse(ctx, deploy))
+}
+
 func (h *DeploymentHandler) buildDeploymentResponse(ctx context.Context, deploy *appsv1.Deployment) models.DeploymentResponse {
 	pods, err := h.k8sClient.ListDeploymentPods(ctx, deploy.Namespace, deploy.Name)
 	if err != nil {
@@ -265,9 +289,24 @@ func (h *DeploymentHandler) buildDeploymentResponse(ctx context.Context, deploy 
 	if deploy.Spec.Replicas != nil {
 		replicas = *deploy.Spec.Replicas
 	}
+	suspended := strings.EqualFold(deploy.Annotations["genet.io/suspended"], "true")
+	var suspendedReplicas int32
+	if value := deploy.Annotations["genet.io/suspended-replicas"]; value != "" {
+		if parsed, err := strconv.ParseInt(value, 10, 32); err == nil {
+			suspendedReplicas = int32(parsed)
+		}
+	}
+	var suspendedAt *time.Time
+	if value := deploy.Annotations["genet.io/suspended-at"]; value != "" {
+		if parsed, err := time.Parse(time.RFC3339, value); err == nil {
+			suspendedAt = &parsed
+		}
+	}
 	switch {
 	case deploy.DeletionTimestamp != nil:
 		status = "Terminating"
+	case suspended && replicas == 0:
+		status = "Suspended"
 	case deploy.Status.ReadyReplicas == replicas && replicas > 0:
 		status = "Running"
 	case deploy.Status.AvailableReplicas > 0 || deploy.Status.UpdatedReplicas > 0 || deploy.Status.Replicas > 0:
@@ -275,19 +314,23 @@ func (h *DeploymentHandler) buildDeploymentResponse(ctx context.Context, deploy 
 	}
 
 	return models.DeploymentResponse{
-		ID:            deploy.Name,
-		Name:          deploy.Name,
-		Namespace:     deploy.Namespace,
-		Status:        status,
-		Image:         display.Image,
-		GPUType:       display.GPUType,
-		GPUCount:      display.GPUCount,
-		CPU:           display.CPU,
-		Memory:        display.Memory,
-		Replicas:      replicas,
-		ReadyReplicas: deploy.Status.ReadyReplicas,
-		CreatedAt:     display.CreatedAt,
-		Pods:          podResponses,
+		ID:                deploy.Name,
+		Name:              deploy.Name,
+		Namespace:         deploy.Namespace,
+		Status:            status,
+		Image:             display.Image,
+		GPUType:           display.GPUType,
+		GPUCount:          display.GPUCount,
+		CPU:               display.CPU,
+		Memory:            display.Memory,
+		Replicas:          replicas,
+		ReadyReplicas:     deploy.Status.ReadyReplicas,
+		CreatedAt:         display.CreatedAt,
+		Pods:              podResponses,
+		Suspended:         suspended,
+		SuspendedImage:    deploy.Annotations["genet.io/suspended-image"],
+		SuspendedReplicas: suspendedReplicas,
+		SuspendedAt:       suspendedAt,
 	}
 }
 

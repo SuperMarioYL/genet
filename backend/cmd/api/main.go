@@ -220,6 +220,7 @@ func main() {
 			statefulSets.GET("", statefulSetHandler.ListStatefulSets)
 			statefulSets.POST("", statefulSetHandler.CreateStatefulSet)
 			statefulSets.GET("/:id", statefulSetHandler.GetStatefulSet)
+			statefulSets.POST("/:id/resume", statefulSetHandler.ResumeStatefulSet)
 			statefulSets.DELETE("/:id", statefulSetHandler.DeleteStatefulSet)
 		}
 
@@ -229,6 +230,7 @@ func main() {
 			deployments.GET("", deploymentHandler.ListDeployments)
 			deployments.POST("", deploymentHandler.CreateDeployment)
 			deployments.GET("/:id", deploymentHandler.GetDeployment)
+			deployments.POST("/:id/resume", deploymentHandler.ResumeDeployment)
 			deployments.DELETE("/:id", deploymentHandler.DeleteDeployment)
 		}
 
@@ -265,6 +267,7 @@ func main() {
 			admin.PATCH("/nodes/:name/pool", adminHandler.UpdateNodePool)
 			admin.GET("/users/pools", adminHandler.ListUserPools)
 			admin.PATCH("/users/:username/pool", adminHandler.UpdateUserPool)
+			admin.DELETE("/users/:username", adminHandler.DeleteUser)
 			admin.GET("/apikeys", adminHandler.ListAPIKeys)
 			admin.POST("/apikeys", adminHandler.CreateAPIKey)
 			admin.PATCH("/apikeys/:id", adminHandler.UpdateAPIKey)
