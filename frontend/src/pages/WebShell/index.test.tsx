@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
 import { createRoot } from 'react-dom/client';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import WebShellPage from './index';
-import { createWebShellSession, deleteWebShellSession } from '../../services/api';
+import { createWebShellSession, deleteWebShellSession, getPod } from '../../services/api';
 
 const mockTerminalState = {
   open: jest.fn(),
@@ -49,12 +49,14 @@ jest.mock('../../components/GlassCard', () => (props) => (
 ));
 
 jest.mock('../../components/ThemeToggle', () => () => <button type="button">theme</button>);
+jest.mock('../../components/StatusBadge', () => (props) => <span>{props.status}</span>);
 
 jest.mock('../../services/api', () => {
   const { fn } = require('jest-mock');
   return {
     createWebShellSession: fn(),
     deleteWebShellSession: fn(),
+    getPod: fn(),
   };
 });
 
@@ -118,12 +120,23 @@ describe('WebShellPage', () => {
       sessionId: 'session-1',
       webSocketURL: '/api/pods/pod-alice-dev/webshell/sessions/session-1/ws',
       container: 'workspace',
-      shell: '/bin/sh',
+      shell: '/bin/bash (fallback /bin/sh)',
       cols: 120,
       rows: 40,
       expiresAt: '2026-03-13T11:00:00Z',
     });
     deleteWebShellSession.mockResolvedValue({ message: 'closed' });
+    getPod.mockResolvedValue({
+      id: 'pod-alice-dev',
+      name: 'pod-alice-dev',
+      status: 'Running',
+      cpu: '8',
+      memory: '32Gi',
+      gpuType: 'NVIDIA A100',
+      gpuCount: 1,
+      nodeIP: '10.0.0.8',
+      createdAt: '2026-03-15T09:30:00Z',
+    });
 
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -153,9 +166,14 @@ describe('WebShellPage', () => {
     await flushEffects();
 
     expect(createWebShellSession).toHaveBeenCalledWith('pod-alice-dev', { cols: 120, rows: 40 });
+    expect(getPod).toHaveBeenCalledWith('pod-alice-dev');
     expect(MockWebSocket.instances).toHaveLength(1);
     expect(MockWebSocket.instances[0].url).toContain('/api/pods/pod-alice-dev/webshell/sessions/session-1/ws');
     expect(mockTerminalState.focus).toHaveBeenCalled();
+    expect(container.textContent).toContain('pod-alice-dev');
+    expect(container.textContent).toContain('8 核 / 32Gi');
+    expect(container.textContent).toContain('NVIDIA A100 ×1');
+    expect(container.textContent).toContain('10.0.0.8');
 
     await act(async () => {
       MockWebSocket.instances[0].onmessage({ data: new Uint8Array([101, 99, 104, 111]) });

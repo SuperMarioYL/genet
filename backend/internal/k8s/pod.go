@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"text/template"
@@ -37,6 +38,33 @@ type PodSpec struct {
 	NodeName   string             // 指定调度节点（可选）
 	GPUDevices []int              // 指定 GPU 卡编号（可选），如 [0, 2, 5]
 	UserMounts []models.UserMount // 用户自定义挂载（可选）
+}
+
+type PodLogOptions struct {
+	TailLines  int64
+	Previous   bool
+	Follow     bool
+	Timestamps bool
+	SinceTime  *time.Time
+}
+
+func buildPodLogOptions(options PodLogOptions) *corev1.PodLogOptions {
+	podLogOptions := &corev1.PodLogOptions{
+		Previous:   options.Previous,
+		Follow:     options.Follow,
+		Timestamps: options.Timestamps,
+	}
+
+	if options.TailLines > 0 {
+		tailLines := options.TailLines
+		podLogOptions.TailLines = &tailLines
+	}
+	if options.SinceTime != nil {
+		sinceTime := metav1.NewTime(options.SinceTime.UTC())
+		podLogOptions.SinceTime = &sinceTime
+	}
+
+	return podLogOptions
 }
 
 func buildAutoInjectedDownwardEnvVars(containerName string) []corev1.EnvVar {
@@ -768,15 +796,16 @@ func isManagedWorkloadChildPod(pod *corev1.Pod) bool {
 }
 
 // GetPodLogs 获取 Pod 日志
-func (c *Client) GetPodLogs(ctx context.Context, namespace, name string, tailLines int64) (string, error) {
+func (c *Client) GetPodLogs(ctx context.Context, namespace, name string, options PodLogOptions) (string, error) {
 	c.log.Debug("Getting pod logs",
 		zap.String("name", name),
 		zap.String("namespace", namespace),
-		zap.Int64("tailLines", tailLines))
+		zap.Int64("tailLines", options.TailLines),
+		zap.Bool("previous", options.Previous),
+		zap.Bool("follow", options.Follow),
+		zap.Bool("timestamps", options.Timestamps))
 
-	req := c.clientset.CoreV1().Pods(namespace).GetLogs(name, &corev1.PodLogOptions{
-		TailLines: &tailLines,
-	})
+	req := c.clientset.CoreV1().Pods(namespace).GetLogs(name, buildPodLogOptions(options))
 
 	logs, err := req.Do(ctx).Raw()
 	if err != nil {
@@ -788,6 +817,29 @@ func (c *Client) GetPodLogs(ctx context.Context, namespace, name string, tailLin
 	}
 
 	return string(logs), nil
+}
+
+// StreamPodLogs 获取 Pod 日志流
+func (c *Client) StreamPodLogs(ctx context.Context, namespace, name string, options PodLogOptions) (io.ReadCloser, error) {
+	c.log.Debug("Streaming pod logs",
+		zap.String("name", name),
+		zap.String("namespace", namespace),
+		zap.Int64("tailLines", options.TailLines),
+		zap.Bool("previous", options.Previous),
+		zap.Bool("follow", options.Follow),
+		zap.Bool("timestamps", options.Timestamps))
+
+	req := c.clientset.CoreV1().Pods(namespace).GetLogs(name, buildPodLogOptions(options))
+	stream, err := req.Stream(ctx)
+	if err != nil {
+		c.log.Error("Failed to stream pod logs",
+			zap.String("name", name),
+			zap.String("namespace", namespace),
+			zap.Error(err))
+		return nil, err
+	}
+
+	return stream, nil
 }
 
 // buildShmVolume 构建 /dev/shm 共享内存卷

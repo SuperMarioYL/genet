@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -33,9 +34,12 @@ type PodHandler struct {
 	config              *models.Config
 	log                 *zap.Logger
 	getPodFn            func(ctx context.Context, namespace, name string) (*corev1.Pod, error)
+	getPodLogsFn        func(ctx context.Context, namespace, name string, options k8s.PodLogOptions) (string, error)
+	streamPodLogsFn     func(ctx context.Context, namespace, name string, options k8s.PodLogOptions) (io.ReadCloser, error)
 	codeServerProbe     func(ctx context.Context, host string, port int32) bool
 	codeServerTargetURL func(pod *corev1.Pod) (*url.URL, error)
 	sessions            *WebShellSessionManager
+	podLogsUpgrader     websocket.Upgrader
 	webShellUpgrader    websocket.Upgrader
 	webShellStreamFn    func(ctx context.Context, session WebShellSession, conn *websocket.Conn) error
 }
@@ -84,6 +88,13 @@ func NewPodHandler(k8sClient *k8s.Client, promClient *prometheus.Client, config 
 	}
 	if k8sClient != nil {
 		handler.getPodFn = k8sClient.GetPod
+		handler.getPodLogsFn = k8sClient.GetPodLogs
+		handler.streamPodLogsFn = k8sClient.StreamPodLogs
+	}
+	handler.podLogsUpgrader = websocket.Upgrader{
+		CheckOrigin: func(_ *http.Request) bool {
+			return true
+		},
 	}
 	handler.codeServerProbe = probeCodeServer
 	handler.codeServerTargetURL = handler.defaultCodeServerTargetURL
@@ -102,6 +113,20 @@ func (h *PodHandler) getPod(ctx context.Context, namespace, name string) (*corev
 		return h.getPodFn(ctx, namespace, name)
 	}
 	return h.k8sClient.GetPod(ctx, namespace, name)
+}
+
+func (h *PodHandler) getPodLogs(ctx context.Context, namespace, name string, options k8s.PodLogOptions) (string, error) {
+	if h.getPodLogsFn != nil {
+		return h.getPodLogsFn(ctx, namespace, name, options)
+	}
+	return h.k8sClient.GetPodLogs(ctx, namespace, name, options)
+}
+
+func (h *PodHandler) streamPodLogs(ctx context.Context, namespace, name string, options k8s.PodLogOptions) (io.ReadCloser, error) {
+	if h.streamPodLogsFn != nil {
+		return h.streamPodLogsFn(ctx, namespace, name, options)
+	}
+	return h.k8sClient.StreamPodLogs(ctx, namespace, name, options)
 }
 
 func (h *PodHandler) buildPodResponse(ctx context.Context, pod *corev1.Pod) models.PodResponse {
@@ -215,6 +240,78 @@ func (h *PodHandler) defaultCodeServerTargetURL(pod *corev1.Pod) (*url.URL, erro
 		port = 13337
 	}
 	return url.Parse(fmt.Sprintf("http://%s:%d", pod.Status.PodIP, port))
+}
+
+type podLogsResponse struct {
+	Logs   string `json:"logs"`
+	Cursor string `json:"cursor,omitempty"`
+}
+
+type podLogStreamMessage struct {
+	Type    string `json:"type"`
+	Content string `json:"content,omitempty"`
+	Cursor  string `json:"cursor,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+func parsePodLogSince(value string) (*time.Time, error) {
+	if strings.TrimSpace(value) == "" {
+		return nil, nil
+	}
+
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return nil, err
+	}
+	return &parsed, nil
+}
+
+func normalizePodLogs(raw string) podLogsResponse {
+	if raw == "" {
+		return podLogsResponse{}
+	}
+
+	var builder strings.Builder
+	var cursor string
+
+	for _, segment := range strings.SplitAfter(raw, "\n") {
+		if segment == "" {
+			continue
+		}
+		content, lineCursor := parseTimestampedPodLogLine(segment)
+		builder.WriteString(content)
+		if lineCursor != "" {
+			cursor = lineCursor
+		}
+	}
+
+	return podLogsResponse{
+		Logs:   builder.String(),
+		Cursor: cursor,
+	}
+}
+
+func parseTimestampedPodLogLine(segment string) (string, string) {
+	line := strings.TrimSuffix(segment, "\n")
+	if line == "" {
+		return segment, ""
+	}
+
+	splitAt := strings.IndexByte(line, ' ')
+	if splitAt <= 0 {
+		return segment, ""
+	}
+
+	timestampText := line[:splitAt]
+	if _, err := time.Parse(time.RFC3339Nano, timestampText); err != nil {
+		return segment, ""
+	}
+
+	content := line[splitAt+1:]
+	if strings.HasSuffix(segment, "\n") {
+		content += "\n"
+	}
+	return content, timestampText
 }
 
 func probeCodeServer(ctx context.Context, host string, port int32) bool {
@@ -979,43 +1076,98 @@ func (h *PodHandler) GetPodLogs(c *gin.Context) {
 	podID := c.Param("id")
 	userIdentifier := k8s.GetUserIdentifier(username, email)
 	namespace := k8s.GetNamespaceForUserIdentifier(userIdentifier)
-	ctx := context.Background()
+	ctx := c.Request.Context()
+	previous, _ := strconv.ParseBool(c.DefaultQuery("previous", "false"))
+	tailLines := int64(100)
+	if tailLinesText := strings.TrimSpace(c.Query("tailLines")); tailLinesText != "" {
+		parsedTailLines, err := strconv.ParseInt(tailLinesText, 10, 64)
+		if err != nil || parsedTailLines <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 tailLines 参数"})
+			return
+		}
+		tailLines = parsedTailLines
+	}
+	sinceTime, err := parsePodLogSince(c.Query("since"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 since 参数"})
+		return
+	}
 
 	h.log.Debug("Getting pod logs",
 		zap.String("user", username),
-		zap.String("podID", podID))
+		zap.String("podID", podID),
+		zap.Bool("previous", previous),
+		zap.Int64("tailLines", tailLines))
 
-	// 获取日志
-	clientset := h.k8sClient.GetClientset()
-	tailLines := int64(100)
-	req := clientset.CoreV1().Pods(namespace).GetLogs(podID, &corev1.PodLogOptions{
-		TailLines: &tailLines,
+	logs, err := h.getPodLogs(ctx, namespace, podID, k8s.PodLogOptions{
+		TailLines:  tailLines,
+		Previous:   previous,
+		Timestamps: true,
+		SinceTime:  sinceTime,
 	})
-
-	logs, err := req.Stream(ctx)
 	if err != nil {
 		h.log.Error("Failed to get pod logs",
 			zap.String("user", username),
 			zap.String("podID", podID),
+			zap.Bool("previous", previous),
 			zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("获取日志失败: %v", err)})
 		return
 	}
-	defer logs.Close()
 
-	// 读取日志
-	buf := new(strings.Builder)
-	_, err = io.Copy(buf, logs)
+	c.JSON(http.StatusOK, normalizePodLogs(logs))
+}
+
+func (h *PodHandler) PodLogsWebSocket(c *gin.Context) {
+	username, _ := auth.GetUsername(c)
+	email, _ := auth.GetEmail(c)
+	podID := c.Param("id")
+	userIdentifier := k8s.GetUserIdentifier(username, email)
+	namespace := k8s.GetNamespaceForUserIdentifier(userIdentifier)
+	sinceTime, err := parsePodLogSince(c.Query("since"))
 	if err != nil {
-		h.log.Error("Failed to read pod logs",
-			zap.String("user", username),
-			zap.String("podID", podID),
-			zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("读取日志失败: %v", err)})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 since 参数"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"logs": buf.String()})
+	conn, err := h.podLogsUpgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+
+	stream, err := h.streamPodLogs(c.Request.Context(), namespace, podID, k8s.PodLogOptions{
+		Follow:     true,
+		Timestamps: true,
+		SinceTime:  sinceTime,
+	})
+	if err != nil {
+		_ = conn.WriteJSON(podLogStreamMessage{Type: "error", Message: err.Error()})
+		return
+	}
+	defer stream.Close()
+
+	reader := bufio.NewReader(stream)
+	for {
+		line, readErr := reader.ReadString('\n')
+		if line != "" {
+			content, cursor := parseTimestampedPodLogLine(line)
+			if marshalErr := conn.WriteJSON(podLogStreamMessage{
+				Type:    "chunk",
+				Content: content,
+				Cursor:  cursor,
+			}); marshalErr != nil {
+				return
+			}
+		}
+		if readErr != nil {
+			if readErr == io.EOF {
+				return
+			}
+			_ = conn.WriteJSON(podLogStreamMessage{Type: "error", Message: readErr.Error()})
+			return
+		}
+	}
 }
 
 // CommitImageRequest 镜像 commit 请求

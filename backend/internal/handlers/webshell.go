@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/gin-gonic/gin"
@@ -15,6 +16,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/remotecommand"
+)
+
+const (
+	webShellPrimaryShell  = "/bin/bash"
+	webShellFallbackShell = "/bin/sh"
+	webShellDisplayShell  = "/bin/bash (fallback /bin/sh)"
 )
 
 type createWebShellSessionRequest struct {
@@ -111,7 +118,7 @@ func (h *PodHandler) CreateWebShellSession(c *gin.Context) {
 		Namespace:      namespace,
 		UserIdentifier: userIdentifier,
 		Container:      container,
-		Shell:          "/bin/sh",
+		Shell:          webShellPrimaryShell,
 		Cols:           req.Cols,
 		Rows:           req.Rows,
 	})
@@ -120,7 +127,7 @@ func (h *PodHandler) CreateWebShellSession(c *gin.Context) {
 		SessionID:    session.ID,
 		WebSocketURL: fmt.Sprintf("/api/pods/%s/webshell/sessions/%s/ws", podID, session.ID),
 		Container:    session.Container,
-		Shell:        session.Shell,
+		Shell:        webShellDisplayShell,
 		Cols:         session.Cols,
 		Rows:         session.Rows,
 		ExpiresAt:    session.ExpiresAt,
@@ -178,25 +185,6 @@ func (h *PodHandler) streamWebShell(ctx context.Context, session WebShellSession
 		return fmt.Errorf("kubernetes rest config unavailable")
 	}
 
-	req := h.k8sClient.GetClientset().CoreV1().RESTClient().Post().
-		Resource("pods").
-		Namespace(session.Namespace).
-		Name(session.PodID).
-		SubResource("exec").
-		VersionedParams(&corev1.PodExecOptions{
-			Container: session.Container,
-			Command:   []string{session.Shell},
-			Stdin:     true,
-			Stdout:    true,
-			Stderr:    true,
-			TTY:       true,
-		}, scheme.ParameterCodec)
-
-	executor, err := remotecommand.NewSPDYExecutor(restConfig, http.MethodPost, req.URL())
-	if err != nil {
-		return err
-	}
-
 	stdinReader, stdinWriter := io.Pipe()
 	defer stdinReader.Close()
 	sizeQueue := newWebShellSizeQueue(session.Cols, session.Rows)
@@ -236,11 +224,60 @@ func (h *PodHandler) streamWebShell(ctx context.Context, session WebShellSession
 		}
 	}()
 
-	return executor.Stream(remotecommand.StreamOptions{
-		Stdin:             stdinReader,
-		Stdout:            outputWriter,
-		Stderr:            outputWriter,
-		Tty:               true,
-		TerminalSizeQueue: sizeQueue,
-	})
+	stream := func(shell string) error {
+		req := h.k8sClient.GetClientset().CoreV1().RESTClient().Post().
+			Resource("pods").
+			Namespace(session.Namespace).
+			Name(session.PodID).
+			SubResource("exec").
+			VersionedParams(&corev1.PodExecOptions{
+				Container: session.Container,
+				Command:   []string{shell},
+				Stdin:     true,
+				Stdout:    true,
+				Stderr:    true,
+				TTY:       true,
+			}, scheme.ParameterCodec)
+
+		executor, err := remotecommand.NewSPDYExecutor(restConfig, http.MethodPost, req.URL())
+		if err != nil {
+			return err
+		}
+
+		return executor.Stream(remotecommand.StreamOptions{
+			Stdin:             stdinReader,
+			Stdout:            outputWriter,
+			Stderr:            outputWriter,
+			Tty:               true,
+			TerminalSizeQueue: sizeQueue,
+		})
+	}
+
+	err := stream(session.Shell)
+	if err == nil || session.Shell == webShellFallbackShell || !shouldFallbackWebShell(err) {
+		return err
+	}
+
+	return stream(webShellFallbackShell)
+}
+
+func shouldFallbackWebShell(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	markers := []string{
+		"not found",
+		"no such file",
+		"executable file",
+		"failed to exec",
+		"exit code 126",
+		"exit code 127",
+	}
+	for _, marker := range markers {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	return false
 }

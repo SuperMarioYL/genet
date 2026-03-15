@@ -16,6 +16,7 @@
 
 .tab-content { padding: 16px 0; }
 .tab-actions { margin-bottom: 16px; }
+.tab-actions .ant-space { width: 100%; }
 .info-card { margin-bottom: 0; }
 
 .logs-container { background: #0d1117; padding: 16px; border-radius: 8px; max-height: 500px; overflow-y: auto; border: 1px solid var(--border-color); }

@@ -11,6 +11,12 @@ import './PodCard.css';
 
 const { Text } = Typography;
 
+const buildShellFallbackCommand = () =>
+  `/bin/sh -lc 'if [ -x /bin/bash ]; then exec /bin/bash; elif [ -x /bin/sh ]; then exec /bin/sh; else echo "No shell found" >&2; exit 127; fi'`;
+
+const buildKubectlExecCommand = (namespace: string, podName: string, container: string) =>
+  `kubectl exec -it -n ${namespace} ${podName} -c ${container} -- ${buildShellFallbackCommand()}`;
+
 interface PodCardProps {
   pod: any;
   onUpdate: () => void;
@@ -85,7 +91,7 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate, cleanupSchedule, clean
     const namespace = pod.namespace;
     const podName = pod.name;
     const container = pod.container || 'workspace';
-    const kubectlCmd = `kubectl exec -it -n ${namespace} ${podName} -c ${container} -- /bin/sh`;
+    const kubectlCmd = buildKubectlExecCommand(namespace, podName, container);
 
     // 命令定义
     const commands = {
@@ -218,7 +224,7 @@ const PodCard: React.FC<PodCardProps> = ({ pod, onUpdate, cleanupSchedule, clean
     const namespace = pod.namespace;
     const podName = pod.name;
     const container = pod.container || 'workspace';
-    const cmd = `kubectl exec -it -n ${namespace} ${podName} -c ${container} -- /bin/sh`;
+    const cmd = buildKubectlExecCommand(namespace, podName, container);
     copyToClipboard(cmd, 'kubectl exec 命令');
   };
 

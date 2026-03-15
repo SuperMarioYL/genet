@@ -6,17 +6,61 @@ import { useNavigate, useParams } from 'react-router-dom';
 import GlassCard from '../../components/GlassCard';
 import StatusBadge from '../../components/StatusBadge';
 import ThemeToggle from '../../components/ThemeToggle';
-import { commitImage, CommitStatus, deleteUserImage, getCommitLogs, getCommitStatus, getConfig, getPod, getPodDescribe, getPodEvents, getPodLogs, getSharedGPUPods, listUserImages, SharedGPUPod, StorageVolumeInfo, UserSavedImage } from '../../services/api';
+import { commitImage, CommitStatus, deleteUserImage, getCommitLogs, getCommitStatus, getConfig, getPod, getPodDescribe, getPodEvents, getPodLogs, getPodLogStreamURL, getSharedGPUPods, listUserImages, SharedGPUPod, StorageVolumeInfo, UserSavedImage } from '../../services/api';
 import './index.css';
 
 const { Header, Content } = Layout;
 const { Text } = Typography;
+const CURRENT_LOG_TAIL_LINES = 200;
+const LOG_FOLLOW_THRESHOLD_PX = 24;
+const MAX_LOG_LINES = 3000;
+
+type CurrentLogStreamState = 'connecting' | 'connected' | 'disconnected' | 'error';
+
+interface PodLogStreamMessage {
+  type: 'chunk' | 'error';
+  content?: string;
+  cursor?: string;
+  message?: string;
+}
+
+const toWebSocketURL = (value: string) => {
+  const baseURL = new URL(value, window.location.origin);
+  const protocol = baseURL.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${baseURL.host}${baseURL.pathname}${baseURL.search}`;
+};
+
+const trimLogBuffer = (value: string) => {
+  if (!value) {
+    return '';
+  }
+
+  const hasTrailingNewline = value.endsWith('\n');
+  const lines = value.split('\n');
+  if (hasTrailingNewline) {
+    lines.pop();
+  }
+  if (lines.length <= MAX_LOG_LINES) {
+    return value;
+  }
+
+  const trimmed = lines.slice(-MAX_LOG_LINES).join('\n');
+  return hasTrailingNewline ? `${trimmed}\n` : trimmed;
+};
+
+const appendLogBuffer = (current: string, chunk: string) => {
+  if (!chunk) {
+    return current;
+  }
+  return trimLogBuffer(`${current}${chunk}`);
+};
 
 const PodDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [pod, setPod] = useState<any>(null);
-  const [logs, setLogs] = useState<string>('');
+  const [currentLogs, setCurrentLogs] = useState<string>('');
+  const [previousLogs, setPreviousLogs] = useState<string>('');
   const [events, setEvents] = useState<any[]>([]);
   const [describe, setDescribe] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -32,9 +76,17 @@ const PodDetail: React.FC = () => {
   const commitPollRef = useRef<NodeJS.Timeout | null>(null);
   const [sharedGPUPods, setSharedGPUPods] = useState<SharedGPUPod[]>([]);
   const [sharedGPULoading, setSharedGPULoading] = useState(false);
-  const [autoRefreshLogs, setAutoRefreshLogs] = useState(false);
+  const [autoRefreshLogs, setAutoRefreshLogs] = useState(true);
+  const [followLatestLogs, setFollowLatestLogs] = useState(true);
+  const [showPreviousLogs, setShowPreviousLogs] = useState(false);
+  const [currentLogStreamState, setCurrentLogStreamState] = useState<CurrentLogStreamState>('disconnected');
   const [activeTab, setActiveTab] = useState('overview');
-  const logRefreshRef = useRef<NodeJS.Timeout | null>(null);
+  const logsContainerRef = useRef<HTMLDivElement | null>(null);
+  const logSocketRef = useRef<WebSocket | null>(null);
+  const logReconnectTimerRef = useRef<number | null>(null);
+  const logCursorRef = useRef<string | null>(null);
+  const manualLogSocketCloseRef = useRef(false);
+  const reconnectSequenceRef = useRef(0);
   const [storageVolumes, setStorageVolumes] = useState<StorageVolumeInfo[]>([]);
   const [userImages, setUserImages] = useState<UserSavedImage[]>([]);
   const [userImagesLoading, setUserImagesLoading] = useState(false);
@@ -42,6 +94,10 @@ const PodDetail: React.FC = () => {
 
   useEffect(() => {
     if (id) {
+      setCurrentLogs('');
+      setPreviousLogs('');
+      logCursorRef.current = null;
+      setCurrentLogStreamState('disconnected');
       loadPod();
       loadCommitStatus();
       loadSharedGPUPods();
@@ -52,6 +108,7 @@ const PodDetail: React.FC = () => {
       if (commitPollRef.current) {
         clearInterval(commitPollRef.current);
       }
+      closeLogStream();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
@@ -89,21 +146,18 @@ const PodDetail: React.FC = () => {
     }
   };
 
-  // 日志自动刷新
   useEffect(() => {
-    if (autoRefreshLogs && activeTab === 'logs') {
-      logRefreshRef.current = setInterval(() => {
-        loadLogs();
-      }, 3000);
+    if (!followLatestLogs || activeTab !== 'logs') {
+      return;
     }
-    return () => {
-      if (logRefreshRef.current) {
-        clearInterval(logRefreshRef.current);
-        logRefreshRef.current = null;
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoRefreshLogs, activeTab]);
+
+    const container = logsContainerRef.current;
+    if (!container) {
+      return;
+    }
+
+    container.scrollTop = container.scrollHeight;
+  }, [activeTab, followLatestLogs, showPreviousLogs, currentLogs, previousLogs]);
 
   const loadPod = async () => {
     setLoading(true);
@@ -117,18 +171,181 @@ const PodDetail: React.FC = () => {
     }
   };
 
-  const loadLogs = async () => {
+  const clearLogReconnectTimer = () => {
+    if (logReconnectTimerRef.current !== null) {
+      window.clearTimeout(logReconnectTimerRef.current);
+      logReconnectTimerRef.current = null;
+    }
+  };
+
+  const closeLogStream = () => {
+    clearLogReconnectTimer();
+    manualLogSocketCloseRef.current = true;
+    if (logSocketRef.current) {
+      logSocketRef.current.close();
+      logSocketRef.current = null;
+    }
+  };
+
+  const loadPreviousLogs = async () => {
     setLogsLoading(true);
     try {
-      const data: any = await getPodLogs(id!);
-      setLogs(data.logs || '暂无日志');
+      const data = await getPodLogs(id!, { previous: true });
+      setPreviousLogs(data.logs || '');
     } catch (error: any) {
       message.error(`加载日志失败: ${error.message}`);
-      setLogs('加载日志失败');
+      setPreviousLogs('加载日志失败');
     } finally {
       setLogsLoading(false);
     }
   };
+
+  const loadCurrentLogs = async (options?: { since?: string; reset?: boolean }) => {
+    setLogsLoading(true);
+    try {
+      const data = await getPodLogs(id!, options?.since
+        ? { previous: false, since: options.since }
+        : { previous: false, tailLines: CURRENT_LOG_TAIL_LINES });
+      const nextLogs = data.logs || '';
+      if (options?.since) {
+        setCurrentLogs((prev) => appendLogBuffer(prev, nextLogs));
+      } else {
+        setCurrentLogs(trimLogBuffer(nextLogs));
+      }
+      logCursorRef.current = data.cursor || logCursorRef.current;
+    } catch (error: any) {
+      message.error(`加载日志失败: ${error.message}`);
+      if (!options?.since) {
+        setCurrentLogs('加载日志失败');
+      }
+      throw error;
+    } finally {
+      setLogsLoading(false);
+    }
+  };
+
+  const isLogsContainerNearBottom = (container: HTMLDivElement) => {
+    const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    return distanceToBottom <= LOG_FOLLOW_THRESHOLD_PX;
+  };
+
+  const handleLogsScroll = () => {
+    const container = logsContainerRef.current;
+    if (!container || !followLatestLogs) {
+      return;
+    }
+
+    if (!isLogsContainerNearBottom(container)) {
+      setFollowLatestLogs(false);
+    }
+  };
+
+  const handleFollowLatestLogsChange = (checked: boolean) => {
+    setFollowLatestLogs(checked);
+    if (checked && logsContainerRef.current) {
+      logsContainerRef.current.scrollTop = logsContainerRef.current.scrollHeight;
+    }
+  };
+
+  const handleLogSourceChange = (nextShowPreviousLogs: boolean) => {
+    setShowPreviousLogs(nextShowPreviousLogs);
+  };
+
+  const connectCurrentLogStream = async (reason: 'initial' | 'reconnect' | 'manual') => {
+    if (!id) {
+      return;
+    }
+
+    closeLogStream();
+    manualLogSocketCloseRef.current = false;
+    setCurrentLogStreamState('connecting');
+
+    try {
+      if (reason === 'initial' && !logCursorRef.current) {
+        await loadCurrentLogs();
+      } else if (reason !== 'initial' && logCursorRef.current) {
+        await loadCurrentLogs({ since: logCursorRef.current });
+      }
+    } catch {
+      setCurrentLogStreamState('error');
+      return;
+    }
+
+    const socket = new WebSocket(toWebSocketURL(getPodLogStreamURL(id, {
+      since: logCursorRef.current || undefined,
+    })));
+    logSocketRef.current = socket;
+
+    socket.onopen = () => {
+      setCurrentLogStreamState('connected');
+    };
+
+    socket.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(String(event.data)) as PodLogStreamMessage;
+        if (payload.type === 'chunk' && payload.content) {
+          setCurrentLogs((prev) => appendLogBuffer(prev, payload.content || ''));
+          if (payload.cursor) {
+            logCursorRef.current = payload.cursor;
+          }
+          return;
+        }
+        if (payload.type === 'error') {
+          setCurrentLogStreamState('error');
+        }
+      } catch {
+        setCurrentLogStreamState('error');
+      }
+    };
+
+    socket.onerror = () => {
+      setCurrentLogStreamState('error');
+    };
+
+    socket.onclose = () => {
+      logSocketRef.current = null;
+      if (manualLogSocketCloseRef.current) {
+        setCurrentLogStreamState('disconnected');
+        return;
+      }
+      setCurrentLogStreamState('disconnected');
+      clearLogReconnectTimer();
+      reconnectSequenceRef.current += 1;
+      const reconnectToken = reconnectSequenceRef.current;
+      logReconnectTimerRef.current = window.setTimeout(() => {
+        if (reconnectToken !== reconnectSequenceRef.current) {
+          return;
+        }
+        if (activeTab === 'logs' && !showPreviousLogs && autoRefreshLogs) {
+          void connectCurrentLogStream('reconnect');
+        }
+      }, 1500);
+    };
+  };
+
+  useEffect(() => {
+    if (activeTab !== 'logs' || showPreviousLogs || !autoRefreshLogs || !id) {
+      closeLogStream();
+      if (activeTab === 'logs' && !showPreviousLogs && !autoRefreshLogs) {
+        setCurrentLogStreamState('disconnected');
+      }
+      return;
+    }
+
+    void connectCurrentLogStream(logCursorRef.current ? 'manual' : 'initial');
+
+    return () => {
+      closeLogStream();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, showPreviousLogs, autoRefreshLogs, id]);
+
+  useEffect(() => {
+    if (activeTab === 'logs' && showPreviousLogs && !previousLogs) {
+      void loadPreviousLogs();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, showPreviousLogs]);
 
   const loadEvents = async () => {
     setEventsLoading(true);
@@ -329,6 +546,14 @@ const PodDetail: React.FC = () => {
   const hasCodeServer = Boolean(connections?.apps?.codeServerURL);
   const hasWebShell = Boolean(connections?.apps?.webShellURL);
   const hasConnections = hasSSHConnection || hasCodeServer || hasWebShell;
+  const visibleLogs = showPreviousLogs ? previousLogs : currentLogs;
+  const currentLogStreamLabel = currentLogStreamState === 'connected'
+    ? '已连接'
+    : currentLogStreamState === 'connecting'
+      ? '连接中'
+      : currentLogStreamState === 'error'
+        ? '连接异常'
+        : '未连接';
   const injectedEnvVars = Array.isArray(describe?.injectedEnvVars) ? describe.injectedEnvVars : [];
   const mountRows = (describe?.mounts && describe.mounts.length > 0)
     ? describe.mounts
@@ -491,18 +716,55 @@ const PodDetail: React.FC = () => {
       children: (
         <div className="tab-content">
           <div className="tab-actions">
-            <Space>
-              <Switch
-                checked={autoRefreshLogs}
-                onChange={setAutoRefreshLogs}
-                checkedChildren="自动刷新"
-                unCheckedChildren="手动刷新"
-              />
-              <Button onClick={loadLogs} loading={logsLoading} icon={<ReloadOutlined />}>刷新日志</Button>
+            <Space wrap>
+              <Space.Compact>
+                <Button
+                  type={!showPreviousLogs ? 'primary' : 'default'}
+                  onClick={() => handleLogSourceChange(false)}
+                >
+                  当前日志
+                </Button>
+                <Button
+                  type={showPreviousLogs ? 'primary' : 'default'}
+                  onClick={() => handleLogSourceChange(true)}
+                >
+                  之前日志
+                </Button>
+              </Space.Compact>
+              {!showPreviousLogs && (
+                <Switch
+                  checked={autoRefreshLogs}
+                  onChange={setAutoRefreshLogs}
+                  checkedChildren="实时流"
+                  unCheckedChildren="手动模式"
+                />
+              )}
+              {!showPreviousLogs && (
+                <Switch
+                  checked={followLatestLogs}
+                  onChange={handleFollowLatestLogsChange}
+                  checkedChildren="跟随最新"
+                  unCheckedChildren="停止跟随"
+                />
+              )}
+              {!showPreviousLogs && (
+                <Tag color={currentLogStreamState === 'connected' ? 'green' : currentLogStreamState === 'error' ? 'red' : 'blue'}>
+                  {currentLogStreamLabel}
+                </Tag>
+              )}
+              {showPreviousLogs ? (
+                <Button onClick={loadPreviousLogs} loading={logsLoading} icon={<ReloadOutlined />}>刷新日志</Button>
+              ) : (
+                <Button onClick={() => { void connectCurrentLogStream('manual'); }} loading={logsLoading} icon={<ReloadOutlined />}>重新连接</Button>
+              )}
             </Space>
           </div>
-          <div className="logs-container">
-            <pre className="mono">{logs || '点击刷新按钮加载日志'}</pre>
+          <div
+            ref={logsContainerRef}
+            className="logs-container"
+            onScroll={handleLogsScroll}
+          >
+            <pre className="mono">{visibleLogs || (showPreviousLogs ? '点击刷新按钮加载日志' : '正在等待日志流...')}</pre>
           </div>
         </div>
       ),

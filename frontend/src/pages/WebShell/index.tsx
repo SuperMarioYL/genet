@@ -3,11 +3,13 @@ import { Alert, Button, Layout, Space, Tag, Typography, message } from 'antd';
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
+import dayjs from 'dayjs';
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import GlassCard from '../../components/GlassCard';
+import StatusBadge from '../../components/StatusBadge';
 import ThemeToggle from '../../components/ThemeToggle';
-import { createWebShellSession, deleteWebShellSession } from '../../services/api';
+import { createWebShellSession, deleteWebShellSession, getPod } from '../../services/api';
 import './index.css';
 
 const { Header, Content } = Layout;
@@ -17,6 +19,18 @@ const DEFAULT_COLS = 120;
 const DEFAULT_ROWS = 40;
 
 type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error';
+
+interface WebShellPodSummary {
+  name: string;
+  status: string;
+  image?: string;
+  gpuType?: string;
+  gpuCount?: number;
+  cpu?: string;
+  memory?: string;
+  nodeIP?: string;
+  createdAt?: string;
+}
 
 interface WebShellControlMessage {
   type: 'resize';
@@ -50,11 +64,14 @@ const WebShellPage: React.FC = () => {
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
+  const resizeFrameRef = useRef<number | null>(null);
+  const lastMeasuredRef = useRef({ width: 0, height: 0, cols: 0, rows: 0 });
   const socketRef = useRef<WebSocket | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const sessionClosedRef = useRef(false);
   const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
   const [statusText, setStatusText] = useState('正在创建终端会话...');
+  const [podSummary, setPodSummary] = useState<WebShellPodSummary | null>(null);
   const handleBack = () => {
     navigate(id ? `/pods/${id}` : '/');
   };
@@ -85,19 +102,58 @@ const WebShellPage: React.FC = () => {
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
 
-    const sendResize = () => {
-      const socket = socketRef.current;
+    const syncTerminalSize = () => {
       const activeTerminal = terminalRef.current;
-      if (!socket || socket.readyState !== WebSocket.OPEN || !activeTerminal) {
+      const container = terminalContainerRef.current;
+      if (!activeTerminal || !container) {
         return;
       }
+
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+      const lastMeasured = lastMeasuredRef.current;
+      if (lastMeasured.width === width && lastMeasured.height === height) {
+        return;
+      }
+
+      fitAddon.fit();
+
+      if (
+        lastMeasured.width === width &&
+        lastMeasured.height === height &&
+        lastMeasured.cols === activeTerminal.cols &&
+        lastMeasured.rows === activeTerminal.rows
+      ) {
+        return;
+      }
+
+      lastMeasuredRef.current = {
+        width,
+        height,
+        cols: activeTerminal.cols,
+        rows: activeTerminal.rows,
+      };
 
       const controlMessage: WebShellControlMessage = {
         type: 'resize',
         cols: activeTerminal.cols,
         rows: activeTerminal.rows,
       };
-      socket.send(JSON.stringify(controlMessage));
+
+      const socket = socketRef.current;
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify(controlMessage));
+      }
+    };
+
+    const requestTerminalResize = () => {
+      if (resizeFrameRef.current !== null) {
+        cancelAnimationFrame(resizeFrameRef.current);
+      }
+      resizeFrameRef.current = window.requestAnimationFrame(() => {
+        resizeFrameRef.current = null;
+        syncTerminalSize();
+      });
     };
 
     const dataDisposable = terminal.onData((data) => {
@@ -110,14 +166,12 @@ const WebShellPage: React.FC = () => {
 
     if (typeof ResizeObserver !== 'undefined') {
       resizeObserverRef.current = new ResizeObserver(() => {
-        fitAddon.fit();
-        sendResize();
+        requestTerminalResize();
       });
       resizeObserverRef.current.observe(terminalContainerRef.current);
     } else {
       const handleResize = () => {
-        fitAddon.fit();
-        sendResize();
+        requestTerminalResize();
       };
       window.addEventListener('resize', handleResize);
       resizeObserverRef.current = {
@@ -126,6 +180,10 @@ const WebShellPage: React.FC = () => {
     }
 
     return () => {
+      if (resizeFrameRef.current !== null) {
+        cancelAnimationFrame(resizeFrameRef.current);
+        resizeFrameRef.current = null;
+      }
       resizeObserverRef.current?.disconnect();
       resizeObserverRef.current = null;
       dataDisposable.dispose();
@@ -134,6 +192,34 @@ const WebShellPage: React.FC = () => {
       fitAddonRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    if (!id) {
+      setPodSummary(null);
+      return;
+    }
+
+    let cancelled = false;
+    const loadPodSummary = async () => {
+      try {
+        const pod: any = await getPod(id);
+        if (cancelled) {
+          return;
+        }
+        setPodSummary(pod as WebShellPodSummary);
+      } catch {
+        if (!cancelled) {
+          setPodSummary(null);
+        }
+      }
+    };
+
+    loadPodSummary();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
 
   useEffect(() => {
     if (!id) {
@@ -173,12 +259,19 @@ const WebShellPage: React.FC = () => {
           const terminal = terminalRef.current;
           if (terminal) {
             terminal.focus();
-            const controlMessage: WebShellControlMessage = {
+            lastMeasuredRef.current = { width: 0, height: 0, cols: 0, rows: 0 };
+            const container = terminalContainerRef.current;
+            if (container) {
+              lastMeasuredRef.current.width = container.clientWidth;
+              lastMeasuredRef.current.height = container.clientHeight;
+            }
+            lastMeasuredRef.current.cols = terminal.cols;
+            lastMeasuredRef.current.rows = terminal.rows;
+            socket.send(JSON.stringify({
               type: 'resize',
               cols: terminal.cols,
               rows: terminal.rows,
-            };
-            socket.send(JSON.stringify(controlMessage));
+            } satisfies WebShellControlMessage));
           }
         };
 
@@ -274,6 +367,41 @@ const WebShellPage: React.FC = () => {
               ) : undefined
             }
           />
+          {podSummary && (
+            <div className="web-shell-summary">
+              <div className="web-shell-summary-main">
+                <div className="web-shell-summary-title">
+                  <span className="label">Pod</span>
+                  <span className="value">{podSummary.name}</span>
+                </div>
+                <StatusBadge status={podSummary.status} />
+              </div>
+              <div className="web-shell-summary-grid">
+                <div className="summary-chip">
+                  <span className="label">CPU / 内存</span>
+                  <span className="value">{podSummary.cpu || '-'} 核 / {podSummary.memory || '-'}</span>
+                </div>
+                <div className="summary-chip">
+                  <span className="label">GPU</span>
+                  <span className="value">
+                    {podSummary.gpuType
+                      ? `${podSummary.gpuType} ×${podSummary.gpuCount ?? 0}`
+                      : ((podSummary.gpuCount ?? 0) > 0 ? `GPU ×${podSummary.gpuCount}` : '无')}
+                  </span>
+                </div>
+                <div className="summary-chip">
+                  <span className="label">节点 IP</span>
+                  <span className="value">{podSummary.nodeIP || '-'}</span>
+                </div>
+                <div className="summary-chip">
+                  <span className="label">创建时间</span>
+                  <span className="value">
+                    {podSummary.createdAt ? dayjs(podSummary.createdAt).format('MM-DD HH:mm') : '-'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
           <div className="web-shell-terminal" ref={terminalContainerRef} />
         </GlassCard>
       </Content>

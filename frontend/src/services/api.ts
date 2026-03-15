@@ -399,8 +399,41 @@ export const extendPod = (id: string): Promise<ExtendPodResponse> => {
   return api.post(`/pods/${id}/extend`);
 };
 
-export const getPodLogs = (id: string) => {
-  return api.get(`/pods/${id}/logs`);
+export interface GetPodLogsOptions {
+  previous?: boolean;
+  tailLines?: number;
+  since?: string;
+}
+
+export interface PodLogsResponse {
+  logs: string;
+  cursor?: string;
+}
+
+export const getPodLogs = (id: string, options?: GetPodLogsOptions): Promise<PodLogsResponse> => {
+  const params: Record<string, string | number | boolean> = {};
+  if (options?.previous) {
+    params.previous = true;
+  }
+  if (options?.tailLines) {
+    params.tailLines = options.tailLines;
+  }
+  if (options?.since) {
+    params.since = options.since;
+  }
+
+  return api.get(`/pods/${id}/logs`, {
+    params: Object.keys(params).length > 0 ? params : undefined,
+  });
+};
+
+export const getPodLogStreamURL = (id: string, options?: { since?: string }) => {
+  const params = new URLSearchParams();
+  if (options?.since) {
+    params.set('since', options.since);
+  }
+  const query = params.toString();
+  return `/api/pods/${encodeURIComponent(id)}/logs/stream${query ? `?${query}` : ''}`;
 };
 
 export const getPodEvents = (id: string) => {
