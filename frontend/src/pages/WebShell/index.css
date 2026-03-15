@@ -114,6 +114,36 @@
   padding: 16px;
 }
 
+.web-shell-terminal-placeholder {
+  flex: 1;
+  min-height: 480px;
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at top, rgba(59, 130, 246, 0.18), transparent 48%),
+    rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+}
+
+.web-shell-terminal-placeholder .placeholder-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: rgba(248, 250, 252, 0.98);
+}
+
+.web-shell-terminal-placeholder .placeholder-text {
+  max-width: 420px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(148, 163, 184, 0.92);
+}
+
 .web-shell-terminal .xterm {
   height: 100%;
 }
@@ -141,6 +171,11 @@
   .web-shell-terminal {
     min-height: 360px;
     padding: 12px;
+  }
+
+  .web-shell-terminal-placeholder {
+    min-height: 360px;
+    padding: 20px;
   }
 }
 

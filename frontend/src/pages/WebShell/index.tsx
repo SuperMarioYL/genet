@@ -17,6 +17,9 @@ const { Text } = Typography;
 
 const DEFAULT_COLS = 120;
 const DEFAULT_ROWS = 40;
+const MAX_CONNECT_ATTEMPTS = 5;
+const CONNECT_RETRY_DELAY_MS = 800;
+const CONNECT_STABLE_DELAY_MS = 300;
 
 type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error';
 
@@ -69,15 +72,18 @@ const WebShellPage: React.FC = () => {
   const socketRef = useRef<WebSocket | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const sessionClosedRef = useRef(false);
+  const reconnectTimerRef = useRef<number | null>(null);
+  const outputBufferRef = useRef<Array<string | Uint8Array>>([]);
   const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
   const [statusText, setStatusText] = useState('正在创建终端会话...');
   const [podSummary, setPodSummary] = useState<WebShellPodSummary | null>(null);
+  const [showTerminal, setShowTerminal] = useState(false);
   const handleBack = () => {
     navigate(id ? `/pods/${id}` : '/');
   };
 
   useEffect(() => {
-    if (!terminalContainerRef.current || terminalRef.current) {
+    if (!showTerminal || !terminalContainerRef.current || terminalRef.current) {
       return;
     }
 
@@ -98,9 +104,20 @@ const WebShellPage: React.FC = () => {
     terminal.open(terminalContainerRef.current);
     fitAddon.fit();
     terminal.focus();
+    lastMeasuredRef.current = {
+      width: terminalContainerRef.current.clientWidth,
+      height: terminalContainerRef.current.clientHeight,
+      cols: terminal.cols,
+      rows: terminal.rows,
+    };
 
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
+
+    for (const chunk of outputBufferRef.current) {
+      terminal.write(chunk);
+    }
+    outputBufferRef.current = [];
 
     const syncTerminalSize = () => {
       const activeTerminal = terminalRef.current;
@@ -179,6 +196,8 @@ const WebShellPage: React.FC = () => {
       } as ResizeObserver;
     }
 
+    requestTerminalResize();
+
     return () => {
       if (resizeFrameRef.current !== null) {
         cancelAnimationFrame(resizeFrameRef.current);
@@ -191,7 +210,7 @@ const WebShellPage: React.FC = () => {
       terminalRef.current = null;
       fitAddonRef.current = null;
     };
-  }, []);
+  }, [showTerminal]);
 
   useEffect(() => {
     if (!id) {
@@ -229,84 +248,172 @@ const WebShellPage: React.FC = () => {
     }
 
     let cancelled = false;
-    const openSession = async () => {
+    sessionClosedRef.current = false;
+    setShowTerminal(false);
+    outputBufferRef.current = [];
+
+    const clearReconnectTimer = () => {
+      if (reconnectTimerRef.current !== null) {
+        window.clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+    };
+
+    const waitForRetry = async (ms: number) => {
+      await new Promise<void>((resolve) => {
+        reconnectTimerRef.current = window.setTimeout(() => {
+          reconnectTimerRef.current = null;
+          resolve();
+        }, ms);
+      });
+    };
+
+    const releaseSession = async (sessionId: string | null) => {
+      if (!id || !sessionId) {
+        return;
+      }
       try {
-        setConnectionState('connecting');
-        setStatusText('正在创建终端会话...');
-        const session = await createWebShellSession(id, {
-          cols: DEFAULT_COLS,
-          rows: DEFAULT_ROWS,
-        });
-
-        if (cancelled) {
-          return;
+        await deleteWebShellSession(id, sessionId);
+      } catch {
+        return;
+      } finally {
+        if (sessionIdRef.current === sessionId) {
+          sessionIdRef.current = null;
         }
+      }
+    };
 
-        sessionIdRef.current = session.sessionId;
-        setStatusText(`正在连接 ${session.container} 容器...`);
+    const connectSocket = async (
+      session: Awaited<ReturnType<typeof createWebShellSession>>,
+      attempt: number,
+    ): Promise<boolean> => {
+      const socket = new WebSocket(toWebSocketURL(session.webSocketURL));
+      socket.binaryType = 'arraybuffer';
+      socketRef.current = socket;
 
-        const socket = new WebSocket(toWebSocketURL(session.webSocketURL));
-        socket.binaryType = 'arraybuffer';
-        socketRef.current = socket;
+      return await new Promise<boolean>((resolve) => {
+        let settled = false;
+        let stableConnected = false;
+        let stableTimer: number | null = null;
+
+        const finish = (result: boolean) => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          if (stableTimer !== null) {
+            window.clearTimeout(stableTimer);
+            stableTimer = null;
+          }
+          resolve(result);
+        };
 
         socket.onopen = () => {
           if (cancelled) {
+            socket.close();
+            finish(false);
             return;
           }
-          setConnectionState('connected');
-          setStatusText(`已连接 ${session.container}，Shell: ${session.shell}`);
-          fitAddonRef.current?.fit();
-          const terminal = terminalRef.current;
-          if (terminal) {
-            terminal.focus();
-            lastMeasuredRef.current = { width: 0, height: 0, cols: 0, rows: 0 };
-            const container = terminalContainerRef.current;
-            if (container) {
-              lastMeasuredRef.current.width = container.clientWidth;
-              lastMeasuredRef.current.height = container.clientHeight;
+          setStatusText(`正在建立终端连接（第 ${attempt}/${MAX_CONNECT_ATTEMPTS} 次）...`);
+          stableTimer = window.setTimeout(() => {
+            if (cancelled || socket.readyState !== WebSocket.OPEN) {
+              finish(false);
+              return;
             }
-            lastMeasuredRef.current.cols = terminal.cols;
-            lastMeasuredRef.current.rows = terminal.rows;
-            socket.send(JSON.stringify({
-              type: 'resize',
-              cols: terminal.cols,
-              rows: terminal.rows,
-            } satisfies WebShellControlMessage));
-          }
+            stableConnected = true;
+            setConnectionState('connected');
+            setStatusText(`已连接 ${session.container}，Shell: ${session.shell}`);
+            setShowTerminal(true);
+            finish(true);
+          }, CONNECT_STABLE_DELAY_MS);
         };
 
         socket.onmessage = async (event) => {
+          const content = await decodeOutput(event.data);
           const terminal = terminalRef.current;
           if (!terminal) {
+            outputBufferRef.current.push(content);
             return;
           }
-          const content = await decodeOutput(event.data);
           terminal.write(content);
         };
 
         socket.onclose = () => {
-          socketRef.current = null;
+          if (socketRef.current === socket) {
+            socketRef.current = null;
+          }
           if (cancelled || sessionClosedRef.current) {
+            finish(false);
             return;
           }
-          setConnectionState('disconnected');
-          setStatusText('终端连接已关闭。');
+          if (stableConnected) {
+            setConnectionState('disconnected');
+            setStatusText('终端连接已关闭。');
+            return;
+          }
+          finish(false);
         };
 
         socket.onerror = () => {
+          if (cancelled || stableConnected) {
+            return;
+          }
+          setStatusText(`终端连接失败，准备重试（第 ${attempt}/${MAX_CONNECT_ATTEMPTS} 次）...`);
+        };
+      });
+    };
+
+    const openSession = async () => {
+      let lastError = '终端连接失败，请稍后重试。';
+      setConnectionState('connecting');
+
+      for (let attempt = 1; attempt <= MAX_CONNECT_ATTEMPTS; attempt += 1) {
+        let sessionId: string | null = null;
+
+        try {
+          setShowTerminal(false);
+          setStatusText(`正在创建终端会话（第 ${attempt}/${MAX_CONNECT_ATTEMPTS} 次）...`);
+          const session = await createWebShellSession(id, {
+            cols: DEFAULT_COLS,
+            rows: DEFAULT_ROWS,
+          });
+
           if (cancelled) {
             return;
           }
-          setConnectionState('error');
-          setStatusText('终端连接失败，请刷新重试。');
-        };
-      } catch (error: any) {
+
+          sessionId = session.sessionId;
+          sessionIdRef.current = session.sessionId;
+          setStatusText(`正在连接 ${session.container} 容器（第 ${attempt}/${MAX_CONNECT_ATTEMPTS} 次）...`);
+
+          const connected = await connectSocket(session, attempt);
+          if (connected) {
+            return;
+          }
+
+          lastError = '终端连接已关闭。';
+        } catch (error: any) {
+          if (cancelled) {
+            return;
+          }
+          lastError = error.message || '创建终端会话失败';
+        }
+
+        await releaseSession(sessionId);
         if (cancelled) {
           return;
         }
+
+        if (attempt < MAX_CONNECT_ATTEMPTS) {
+          setConnectionState('connecting');
+          setStatusText(`终端连接失败，正在重试（第 ${attempt + 1}/${MAX_CONNECT_ATTEMPTS} 次）...`);
+          await waitForRetry(CONNECT_RETRY_DELAY_MS);
+          continue;
+        }
+
         setConnectionState('error');
-        setStatusText(error.message || '创建终端会话失败');
-        message.error(error.message || '创建终端会话失败');
+        setStatusText(lastError);
+        message.error(lastError);
       }
     };
 
@@ -315,6 +422,7 @@ const WebShellPage: React.FC = () => {
     return () => {
       cancelled = true;
       sessionClosedRef.current = true;
+      clearReconnectTimer();
       socketRef.current?.close();
       socketRef.current = null;
       if (sessionIdRef.current) {
@@ -402,7 +510,14 @@ const WebShellPage: React.FC = () => {
               </div>
             </div>
           )}
-          <div className="web-shell-terminal" ref={terminalContainerRef} />
+          {showTerminal ? (
+            <div className="web-shell-terminal" ref={terminalContainerRef} />
+          ) : (
+            <div className="web-shell-terminal-placeholder">
+              <div className="placeholder-title">正在建立 Web Shell 连接</div>
+              <div className="placeholder-text">最多自动重试 {MAX_CONNECT_ATTEMPTS} 次，连接稳定后再展示终端界面。</div>
+            </div>
+          )}
         </GlassCard>
       </Content>
     </Layout>
