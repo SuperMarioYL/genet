@@ -282,6 +282,7 @@ export interface ManagedDeployment {
   id: string;
   name: string;
   namespace: string;
+  managed: boolean;
   status: string;
   image: string;
   gpuType: string;
@@ -302,6 +303,7 @@ export interface ManagedStatefulSet {
   id: string;
   name: string;
   namespace: string;
+  managed: boolean;
   status: string;
   image: string;
   gpuType: string;

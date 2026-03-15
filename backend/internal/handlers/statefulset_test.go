@@ -121,6 +121,9 @@ func TestResumeStatefulSet(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "sts-alice-train",
 			Namespace: "user-alice",
+			Labels: map[string]string{
+				"genet.io/managed": "true",
+			},
 			Annotations: map[string]string{
 				"genet.io/suspended":          "true",
 				"genet.io/suspended-image":    "registry.example.com/alice/suspend-train:20260315",
@@ -167,5 +170,36 @@ func TestResumeStatefulSet(t *testing.T) {
 	}
 	if sts.Annotations["genet.io/suspended"] != "false" {
 		t.Fatalf("expected suspended=false, got %q", sts.Annotations["genet.io/suspended"])
+	}
+}
+
+func TestDeleteStatefulSetRejectsUnmanagedStatefulSet(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	config := models.DefaultConfig()
+	clientset := fake.NewSimpleClientset(
+		&appsv1.StatefulSet{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "external-train",
+				Namespace: "user-alice",
+			},
+		},
+	)
+	handler := NewStatefulSetHandler(
+		k8s.NewClientWithClientset(clientset, config),
+		config,
+	)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodDelete, "/api/statefulsets/external-train", nil)
+	c.Params = gin.Params{{Key: "id", Value: "external-train"}}
+	c.Set("username", "alice")
+	c.Set("email", "")
+
+	handler.DeleteStatefulSet(c)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status 409, got %d, body=%s", rec.Code, rec.Body.String())
 	}
 }

@@ -224,9 +224,7 @@ func (c *Client) GetStatefulSet(ctx context.Context, namespace, name string) (*a
 }
 
 func (c *Client) ListStatefulSets(ctx context.Context, namespace string) ([]appsv1.StatefulSet, error) {
-	list, err := c.clientset.AppsV1().StatefulSets(namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: "genet.io/managed=true,genet.io/workload-kind=statefulset",
-	})
+	list, err := c.clientset.AppsV1().StatefulSets(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -238,13 +236,23 @@ func (c *Client) ListStatefulSets(ctx context.Context, namespace string) ([]apps
 }
 
 func (c *Client) ListStatefulSetPods(ctx context.Context, namespace, name string) ([]corev1.Pod, error) {
-	list, err := c.clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: fmt.Sprintf("genet.io/workload-name=%s", name),
-	})
+	list, err := c.clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
-	items := append([]corev1.Pod(nil), list.Items...)
+	items := make([]corev1.Pod, 0, len(list.Items))
+	for _, pod := range list.Items {
+		if pod.Labels["genet.io/workload-name"] == name {
+			items = append(items, pod)
+			continue
+		}
+		for _, owner := range pod.OwnerReferences {
+			if owner.Kind == "StatefulSet" && owner.Name == name {
+				items = append(items, pod)
+				break
+			}
+		}
+	}
 	sort.Slice(items, func(i, j int) bool {
 		return items[i].Name < items[j].Name
 	})
@@ -303,6 +311,10 @@ func cloneStringMap(input map[string]string) map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+func isGenetManaged(labels map[string]string) bool {
+	return labels["genet.io/managed"] == "true"
 }
 
 func int32Ptr(v int32) *int32 {

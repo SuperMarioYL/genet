@@ -140,9 +140,7 @@ func (c *Client) GetDeployment(ctx context.Context, namespace, name string) (*ap
 }
 
 func (c *Client) ListDeployments(ctx context.Context, namespace string) ([]appsv1.Deployment, error) {
-	list, err := c.clientset.AppsV1().Deployments(namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: "genet.io/managed=true,genet.io/workload-kind=deployment",
-	})
+	list, err := c.clientset.AppsV1().Deployments(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -154,18 +152,42 @@ func (c *Client) ListDeployments(ctx context.Context, namespace string) ([]appsv
 }
 
 func (c *Client) ListDeploymentPods(ctx context.Context, namespace, name string) ([]corev1.Pod, error) {
-	list, err := c.clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: fmt.Sprintf("genet.io/workload-name=%s", name),
-	})
+	list, err := c.clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
-	items := make([]corev1.Pod, 0, len(list.Items))
-	for _, pod := range list.Items {
-		if pod.Labels["genet.io/workload-kind"] != "deployment" {
+	replicaSets, err := c.clientset.AppsV1().ReplicaSets(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	replicaSetNames := make(map[string]struct{}, len(replicaSets.Items))
+	for _, rs := range replicaSets.Items {
+		if rs.Labels["genet.io/workload-name"] == name {
+			replicaSetNames[rs.Name] = struct{}{}
 			continue
 		}
-		items = append(items, pod)
+		for _, owner := range rs.OwnerReferences {
+			if owner.Kind == "Deployment" && owner.Name == name {
+				replicaSetNames[rs.Name] = struct{}{}
+				break
+			}
+		}
+	}
+
+	items := make([]corev1.Pod, 0, len(list.Items))
+	for _, pod := range list.Items {
+		if pod.Labels["genet.io/workload-name"] == name {
+			items = append(items, pod)
+			continue
+		}
+		for _, owner := range pod.OwnerReferences {
+			if owner.Kind == "ReplicaSet" {
+				if _, ok := replicaSetNames[owner.Name]; ok {
+					items = append(items, pod)
+					break
+				}
+			}
+		}
 	}
 	sort.Slice(items, func(i, j int) bool {
 		return items[i].Name < items[j].Name

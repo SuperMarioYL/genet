@@ -210,6 +210,15 @@ func (h *StatefulSetHandler) DeleteStatefulSet(c *gin.Context) {
 	ctx := context.Background()
 
 	name := c.Param("id")
+	sts, err := h.k8sClient.GetStatefulSet(ctx, namespace, name)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "StatefulSet 不存在"})
+		return
+	}
+	if !isManagedWorkload(sts.Labels) {
+		c.JSON(http.StatusConflict, gin.H{"error": "外部 StatefulSet 为只读展示，不能在 Genet 中删除"})
+		return
+	}
 	if err := h.k8sClient.DeleteStatefulSet(ctx, namespace, name); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -232,6 +241,15 @@ func (h *StatefulSetHandler) ResumeStatefulSet(c *gin.Context) {
 	ctx := context.Background()
 
 	name := c.Param("id")
+	existing, err := h.k8sClient.GetStatefulSet(ctx, namespace, name)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "StatefulSet 不存在"})
+		return
+	}
+	if !isManagedWorkload(existing.Labels) {
+		c.JSON(http.StatusConflict, gin.H{"error": "外部 StatefulSet 不支持在 Genet 中恢复"})
+		return
+	}
 	sts, err := h.k8sClient.ResumeStatefulSet(ctx, namespace, name)
 	if err != nil {
 		status := http.StatusInternalServerError
@@ -277,6 +295,27 @@ func (h *StatefulSetHandler) buildStatefulSetResponse(ctx context.Context, sts *
 	if gpuCount, err := strconv.Atoi(sts.Annotations["genet.io/gpu-count"]); err == nil {
 		display.GPUCount = gpuCount
 	}
+	if len(pods) > 0 {
+		podDisplay := h.podHandler.getPodDisplayInfo(&pods[0])
+		if display.Image == "" {
+			display.Image = podDisplay.Image
+		}
+		if display.CPU == "" {
+			display.CPU = podDisplay.CPU
+		}
+		if display.Memory == "" {
+			display.Memory = podDisplay.Memory
+		}
+		if display.GPUType == "" {
+			display.GPUType = podDisplay.GPUType
+		}
+		if display.GPUCount == 0 {
+			display.GPUCount = podDisplay.GPUCount
+		}
+	}
+	if display.Image == "" && len(sts.Spec.Template.Spec.Containers) > 0 {
+		display.Image = sts.Spec.Template.Spec.Containers[0].Image
+	}
 
 	status := "Pending"
 	replicas := int32(0)
@@ -311,6 +350,7 @@ func (h *StatefulSetHandler) buildStatefulSetResponse(ctx context.Context, sts *
 		ID:                sts.Name,
 		Name:              sts.Name,
 		Namespace:         sts.Namespace,
+		Managed:           isManagedWorkload(sts.Labels),
 		Status:            status,
 		Image:             display.Image,
 		GPUType:           display.GPUType,
@@ -327,6 +367,10 @@ func (h *StatefulSetHandler) buildStatefulSetResponse(ctx context.Context, sts *
 		SuspendedReplicas: suspendedReplicas,
 		SuspendedAt:       suspendedAt,
 	}
+}
+
+func isManagedWorkload(labels map[string]string) bool {
+	return labels["genet.io/managed"] == "true"
 }
 
 func (h *StatefulSetHandler) checkQuota(ctx context.Context, namespace string, replicas, gpuCount int) error {

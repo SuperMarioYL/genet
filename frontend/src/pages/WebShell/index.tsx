@@ -55,6 +55,9 @@ const WebShellPage: React.FC = () => {
   const sessionClosedRef = useRef(false);
   const [connectionState, setConnectionState] = useState<ConnectionState>('connecting');
   const [statusText, setStatusText] = useState('正在创建终端会话...');
+  const handleBack = () => {
+    navigate(id ? `/pods/${id}` : '/');
+  };
 
   useEffect(() => {
     if (!terminalContainerRef.current || terminalRef.current) {
@@ -77,6 +80,7 @@ const WebShellPage: React.FC = () => {
     terminal.loadAddon(fitAddon);
     terminal.open(terminalContainerRef.current);
     fitAddon.fit();
+    terminal.focus();
 
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
@@ -101,7 +105,7 @@ const WebShellPage: React.FC = () => {
       if (!socket || socket.readyState !== WebSocket.OPEN) {
         return;
       }
-      socket.send(data);
+      socket.send(new Blob([data]));
     });
 
     if (typeof ResizeObserver !== 'undefined') {
@@ -168,6 +172,7 @@ const WebShellPage: React.FC = () => {
           fitAddonRef.current?.fit();
           const terminal = terminalRef.current;
           if (terminal) {
+            terminal.focus();
             const controlMessage: WebShellControlMessage = {
               type: 'resize',
               cols: terminal.cols,
@@ -239,7 +244,7 @@ const WebShellPage: React.FC = () => {
     <Layout className="web-shell-layout">
       <Header className="web-shell-header glass-header">
         <Space size="middle">
-          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(-1)} className="glass-button">
+          <Button icon={<ArrowLeftOutlined />} onClick={handleBack} className="glass-button">
             返回
           </Button>
           <div className="web-shell-title">

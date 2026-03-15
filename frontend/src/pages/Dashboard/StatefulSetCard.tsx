@@ -22,6 +22,7 @@ const StatefulSetCard: React.FC<StatefulSetCardProps> = ({ statefulSet, onUpdate
   const [deleting, setDeleting] = useState(false);
   const [resuming, setResuming] = useState(false);
   const isSuspended = statefulSet.suspended || statefulSet.status === 'Suspended';
+  const isManaged = statefulSet.managed !== false;
 
   const subtitle = useMemo(() => {
     const parts = [
@@ -84,6 +85,7 @@ const StatefulSetCard: React.FC<StatefulSetCardProps> = ({ statefulSet, onUpdate
           <div className="statefulset-card-subtitle">{subtitle}</div>
         </div>
         <Space size={8} wrap>
+          {!isManaged && <Tag>外部</Tag>}
           {isSuspended ? <Tag color="gold">挂起</Tag> : <Tag color="blue">{statefulSet.readyReplicas}/{statefulSet.replicas} Ready</Tag>}
           <Tag>Service: {statefulSet.serviceName || '-'}</Tag>
           <Text type="secondary">{dayjs(statefulSet.createdAt).format('MM-DD HH:mm')}</Text>
@@ -94,14 +96,18 @@ const StatefulSetCard: React.FC<StatefulSetCardProps> = ({ statefulSet, onUpdate
         <Button size="small" icon={<DownOutlined rotate={expanded ? 180 : 0} />} onClick={() => setExpanded((v) => !v)}>
           {expanded ? '收起副本' : '展开副本'}
         </Button>
-        {isSuspended && (
+        {isManaged && isSuspended && (
           <Button size="small" type="primary" onClick={handleResume} loading={resuming}>
             恢复
           </Button>
         )}
-        <Button size="small" danger icon={<DeleteOutlined />} onClick={handleDelete} loading={deleting}>
-          删除 StatefulSet
-        </Button>
+        {isManaged ? (
+          <Button size="small" danger icon={<DeleteOutlined />} onClick={handleDelete} loading={deleting}>
+            删除 StatefulSet
+          </Button>
+        ) : (
+          <Text type="secondary">只读展示</Text>
+        )}
       </div>
 
       {expanded && (

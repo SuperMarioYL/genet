@@ -219,6 +219,15 @@ func (h *DeploymentHandler) DeleteDeployment(c *gin.Context) {
 	ctx := context.Background()
 
 	name := c.Param("id")
+	deploy, err := h.k8sClient.GetDeployment(ctx, namespace, name)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Deployment 不存在"})
+		return
+	}
+	if !isManagedWorkload(deploy.Labels) {
+		c.JSON(http.StatusConflict, gin.H{"error": "外部 Deployment 为只读展示，不能在 Genet 中删除"})
+		return
+	}
 	if err := h.k8sClient.DeleteDeployment(ctx, namespace, name); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -238,6 +247,15 @@ func (h *DeploymentHandler) ResumeDeployment(c *gin.Context) {
 	ctx := context.Background()
 
 	name := c.Param("id")
+	existing, err := h.k8sClient.GetDeployment(ctx, namespace, name)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Deployment 不存在"})
+		return
+	}
+	if !isManagedWorkload(existing.Labels) {
+		c.JSON(http.StatusConflict, gin.H{"error": "外部 Deployment 不支持在 Genet 中恢复"})
+		return
+	}
 	deploy, err := h.k8sClient.ResumeDeployment(ctx, namespace, name)
 	if err != nil {
 		status := http.StatusInternalServerError
@@ -283,6 +301,27 @@ func (h *DeploymentHandler) buildDeploymentResponse(ctx context.Context, deploy 
 	if gpuCount, err := strconv.Atoi(deploy.Annotations["genet.io/gpu-count"]); err == nil {
 		display.GPUCount = gpuCount
 	}
+	if len(pods) > 0 {
+		podDisplay := h.podHandler.getPodDisplayInfo(&pods[0])
+		if display.Image == "" {
+			display.Image = podDisplay.Image
+		}
+		if display.CPU == "" {
+			display.CPU = podDisplay.CPU
+		}
+		if display.Memory == "" {
+			display.Memory = podDisplay.Memory
+		}
+		if display.GPUType == "" {
+			display.GPUType = podDisplay.GPUType
+		}
+		if display.GPUCount == 0 {
+			display.GPUCount = podDisplay.GPUCount
+		}
+	}
+	if display.Image == "" && len(deploy.Spec.Template.Spec.Containers) > 0 {
+		display.Image = deploy.Spec.Template.Spec.Containers[0].Image
+	}
 
 	status := "Pending"
 	replicas := int32(0)
@@ -317,6 +356,7 @@ func (h *DeploymentHandler) buildDeploymentResponse(ctx context.Context, deploy 
 		ID:                deploy.Name,
 		Name:              deploy.Name,
 		Namespace:         deploy.Namespace,
+		Managed:           isManagedWorkload(deploy.Labels),
 		Status:            status,
 		Image:             display.Image,
 		GPUType:           display.GPUType,

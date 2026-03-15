@@ -21,6 +21,7 @@ type DeploymentResponse struct {
 	ID                string        `json:"id"`
 	Name              string        `json:"name"`
 	Namespace         string        `json:"namespace"`
+	Managed           bool          `json:"managed"`
 	Status            string        `json:"status"`
 	Image             string        `json:"image"`
 	GPUType           string        `json:"gpuType"`

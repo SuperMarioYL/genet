@@ -225,6 +225,10 @@ func (h *PodHandler) streamWebShell(ctx context.Context, session WebShellSession
 				var control webShellControlMessage
 				if err := json.Unmarshal(payload, &control); err == nil && control.Type == "resize" {
 					sizeQueue.Push(control.Cols, control.Rows)
+					continue
+				}
+				if _, err := stdinWriter.Write(payload); err != nil {
+					return
 				}
 			case websocket.CloseMessage:
 				return

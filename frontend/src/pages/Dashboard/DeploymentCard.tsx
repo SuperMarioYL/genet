@@ -22,6 +22,7 @@ const DeploymentCard: React.FC<DeploymentCardProps> = ({ deployment, onUpdate, c
   const [deleting, setDeleting] = useState(false);
   const [resuming, setResuming] = useState(false);
   const isSuspended = deployment.suspended || deployment.status === 'Suspended';
+  const isManaged = deployment.managed !== false;
 
   const subtitle = useMemo(() => {
     const parts = [
@@ -84,6 +85,7 @@ const DeploymentCard: React.FC<DeploymentCardProps> = ({ deployment, onUpdate, c
           <div className="statefulset-card-subtitle">{subtitle}</div>
         </div>
         <Space size={8} wrap>
+          {!isManaged && <Tag>外部</Tag>}
           {isSuspended ? <Tag color="gold">挂起</Tag> : <Tag color="blue">{deployment.readyReplicas}/{deployment.replicas} Ready</Tag>}
           <Text type="secondary">{dayjs(deployment.createdAt).format('MM-DD HH:mm')}</Text>
         </Space>
@@ -93,14 +95,18 @@ const DeploymentCard: React.FC<DeploymentCardProps> = ({ deployment, onUpdate, c
         <Button size="small" icon={<DownOutlined rotate={expanded ? 180 : 0} />} onClick={() => setExpanded((v) => !v)}>
           {expanded ? '收起副本' : '展开副本'}
         </Button>
-        {isSuspended && (
+        {isManaged && isSuspended && (
           <Button size="small" type="primary" onClick={handleResume} loading={resuming}>
             恢复
           </Button>
         )}
-        <Button size="small" danger icon={<DeleteOutlined />} onClick={handleDelete} loading={deleting}>
-          删除 Deployment
-        </Button>
+        {isManaged ? (
+          <Button size="small" danger icon={<DeleteOutlined />} onClick={handleDelete} loading={deleting}>
+            删除 Deployment
+          </Button>
+        ) : (
+          <Text type="secondary">只读展示</Text>
+        )}
       </div>
 
       {expanded && (

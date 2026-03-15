@@ -9,6 +9,7 @@ import { createWebShellSession, deleteWebShellSession } from '../../services/api
 const mockTerminalState = {
   open: jest.fn(),
   loadAddon: jest.fn(),
+  focus: jest.fn(),
   write: jest.fn(),
   dispose: jest.fn(),
   onDataCallback: undefined,
@@ -20,6 +21,7 @@ jest.mock('@xterm/xterm', () => {
     Terminal: fn().mockImplementation(() => ({
       open: mockTerminalState.open,
       loadAddon: mockTerminalState.loadAddon,
+      focus: mockTerminalState.focus,
       write: mockTerminalState.write,
       dispose: mockTerminalState.dispose,
       onData: (cb) => {
@@ -107,6 +109,7 @@ describe('WebShellPage', () => {
     MockWebSocket.instances = [];
     mockTerminalState.open.mockClear();
     mockTerminalState.loadAddon.mockClear();
+    mockTerminalState.focus.mockClear();
     mockTerminalState.write.mockClear();
     mockTerminalState.dispose.mockClear();
     mockTerminalState.onDataCallback = undefined;
@@ -152,6 +155,7 @@ describe('WebShellPage', () => {
     expect(createWebShellSession).toHaveBeenCalledWith('pod-alice-dev', { cols: 120, rows: 40 });
     expect(MockWebSocket.instances).toHaveLength(1);
     expect(MockWebSocket.instances[0].url).toContain('/api/pods/pod-alice-dev/webshell/sessions/session-1/ws');
+    expect(mockTerminalState.focus).toHaveBeenCalled();
 
     await act(async () => {
       MockWebSocket.instances[0].onmessage({ data: new Uint8Array([101, 99, 104, 111]) });
@@ -160,9 +164,42 @@ describe('WebShellPage', () => {
     expect(mockTerminalState.write).toHaveBeenCalled();
 
     await act(async () => {
+      mockTerminalState.onDataCallback('ls\n');
+    });
+
+    const sentPayload = MockWebSocket.instances[0].send.mock.calls.at(-1)?.[0];
+    expect(sentPayload).toBeInstanceOf(Blob);
+
+    await act(async () => {
       root.unmount();
     });
 
     expect(deleteWebShellSession).toHaveBeenCalledWith('pod-alice-dev', 'session-1');
+  });
+
+  it('returns to the pod detail page when clicking back', async () => {
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={['/pods/pod-alice-dev/webshell']}>
+          <Routes>
+            <Route path="/pods/:id/webshell" element={<WebShellPage />} />
+            <Route path="/pods/:id" element={<div>pod detail page</div>} />
+          </Routes>
+        </MemoryRouter>,
+      );
+    });
+
+    await flushEffects();
+
+    const backButton = Array.from(container.querySelectorAll('button')).find(
+      (candidate) => candidate.textContent?.includes('返回'),
+    );
+    expect(backButton).toBeTruthy();
+
+    await act(async () => {
+      backButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain('pod detail page');
   });
 });

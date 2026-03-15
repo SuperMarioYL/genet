@@ -89,3 +89,56 @@ func TestListPodsSkipsDeploymentChildren(t *testing.T) {
 		t.Fatalf("expected standalone pod to remain, got %s", pods[0].Name)
 	}
 }
+
+func TestListStatefulSetsIncludesUnmanagedStatefulSet(t *testing.T) {
+	clientset := fake.NewSimpleClientset(
+		&appsv1.StatefulSet{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "external-train",
+				Namespace: "user-alice",
+			},
+		},
+	)
+
+	client := NewClientWithClientset(clientset, &models.Config{})
+	items, err := client.ListStatefulSets(context.Background(), "user-alice")
+	if err != nil {
+		t.Fatalf("list statefulsets: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 statefulset, got %d", len(items))
+	}
+	if items[0].Name != "external-train" {
+		t.Fatalf("expected external statefulset to be returned, got %s", items[0].Name)
+	}
+}
+
+func TestListStatefulSetPodsIncludesOwnerReferencedPods(t *testing.T) {
+	clientset := fake.NewSimpleClientset(
+		&corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "external-train-0",
+				Namespace: "user-alice",
+				OwnerReferences: []metav1.OwnerReference{
+					{
+						APIVersion: appsv1.SchemeGroupVersion.String(),
+						Kind:       "StatefulSet",
+						Name:       "external-train",
+					},
+				},
+			},
+		},
+	)
+
+	client := NewClientWithClientset(clientset, &models.Config{})
+	pods, err := client.ListStatefulSetPods(context.Background(), "user-alice", "external-train")
+	if err != nil {
+		t.Fatalf("list statefulset pods: %v", err)
+	}
+	if len(pods) != 1 {
+		t.Fatalf("expected 1 pod, got %d", len(pods))
+	}
+	if pods[0].Name != "external-train-0" {
+		t.Fatalf("expected owner referenced pod, got %s", pods[0].Name)
+	}
+}
