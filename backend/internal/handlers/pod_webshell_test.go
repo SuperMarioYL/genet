@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 	"time"
 
@@ -125,24 +125,14 @@ func TestCreateWebShellSessionCreatesSessionForRunningPod(t *testing.T) {
 	}
 }
 
-func TestShouldFallbackWebShell(t *testing.T) {
-	testCases := []struct {
-		name string
-		err  error
-		want bool
-	}{
-		{name: "nil", err: nil, want: false},
-		{name: "not found", err: errors.New("exec: \"/bin/bash\": stat /bin/bash: no such file or directory"), want: true},
-		{name: "exit 127", err: errors.New("command terminated with exit code 127"), want: true},
-		{name: "other", err: errors.New("websocket closed"), want: false},
+func TestBuildWebShellCommand(t *testing.T) {
+	expected := []string{
+		webShellExecShell,
+		"-lc",
+		webShellExecScript,
 	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := shouldFallbackWebShell(tc.err); got != tc.want {
-				t.Fatalf("expected %v, got %v", tc.want, got)
-			}
-		})
+	if got := buildWebShellCommand(); !reflect.DeepEqual(got, expected) {
+		t.Fatalf("unexpected command: %+v", got)
 	}
 }
 
